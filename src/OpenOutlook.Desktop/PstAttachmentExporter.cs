@@ -81,8 +81,14 @@ public static class PstAttachmentExporter
                 var candidate = Path.Combine(directory, ".pst-attachment-" + Guid.NewGuid().ToString("N") + ".tmp");
                 try
                 {
-                    await using var output = new FileStream(candidate, FileMode.CreateNew, FileAccess.Write,
-                        FileShare.None, 81920, FileOptions.Asynchronous);
+                    var options = new FileStreamOptions
+                    {
+                        Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None,
+                        Options = FileOptions.Asynchronous, BufferSize = 81920
+                    };
+                    if (!OperatingSystem.IsWindows())
+                        options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                    await using var output = new FileStream(candidate, options);
                     temporary = candidate;
                     await output.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
                     await output.FlushAsync(cancellationToken).ConfigureAwait(false);

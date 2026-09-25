@@ -13,6 +13,10 @@ public sealed class PstAttachmentExporterTests
         var destination = temp.PathFor("document.bin");
         await PstAttachmentExporter.ExportAsync(Attachment(size: content.Length), destination, () => content);
         Assert.Equal(content, File.ReadAllBytes(destination));
+        if (!OperatingSystem.IsWindows())
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                File.GetUnixFileMode(destination) & (UnixFileMode.UserRead | UnixFileMode.UserWrite |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.OtherRead | UnixFileMode.OtherWrite));
         Assert.Single(Directory.GetFiles(temp.Path));
     }
 

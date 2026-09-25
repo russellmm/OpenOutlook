@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <ProjectReference Include="../../src/OpenOutlook.JunkCleaner/OpenOutlook.JunkCleaner.csproj" />
+    <ProjectReference Include="../../src/PstCore/PstCore.csproj" />
+    <ProjectReference Include="../../src/OpenOutlook.Domain/OpenOutlook.Domain.csproj" />
+    <ProjectReference Include="../../src/OpenOutlook.Providers.Microsoft/OpenOutlook.Providers.Microsoft.csproj" />
+    <ProjectReference Include="../../src/OpenOutlook.Providers.Google/OpenOutlook.Providers.Google.csproj" />
+    <ProjectReference Include="../../src/OpenOutlook.Auth/OpenOutlook.Auth.csproj" />
+    <ProjectReference Include="../../src/OpenOutlook.Desktop/OpenOutlook.Desktop.csproj" />
+  </ItemGroup>
+
+</Project>

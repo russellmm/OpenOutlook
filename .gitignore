@@ -1,0 +1,43 @@
+# Private mail archives and exports
+*.pst
+*.ost
+*.pst.bak
+*.eml
+*.mbox
+*.msg
+
+# Local account credentials, caches, logs, and user settings
+.env
+.env.*
+!.env.example
+**/secrets.json
+**/appsettings.Local.json
+**/junk-cleaner.json
+**/tokens*.json
+.cache/
+.local/
+.local-share/
+data/
+logs/
+exports/
+backups/
+
+# .NET and IDE outputs
+**/bin/
+**/obj/
+**/publish/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+
+# Local headless screenshots and test artifacts
+headless-*.png
+headless-*.log
+headless-run.log
+TestResults/
+
+# OS-generated files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="OpenOutlook.Desktop.MainWindow" Title="OpenOutlook — archive preview" Width="1380" Height="850" MinWidth="850" MinHeight="560">
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Border Name="TitleBand" Grid.Row="0" Background="#174879" Padding="18,12">
+      <StackPanel Orientation="Horizontal" Spacing="16">
+        <TextBlock Text="OpenOutlook" FontSize="22" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
+        <TextBlock Text="Archive preview · read-only development build" Foreground="White" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+    <Border Name="ToolbarBand" Grid.Row="1" Background="#EDF2F7" Padding="12,8">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button Name="OpenPstButton" Content="Open PST" Click="OpenPstClicked" />
+        <Button Name="DetachButton" Content="Detach PST" Click="DetachClicked" />
+        <TextBox Name="ArchiveSearchBox" Width="200" Watermark="Search selected PST folder" />
+        <Button Name="ArchiveSearchButton" Content="Search" Click="SearchClicked" />
+        <Button Name="ExportAttachmentButton" Content="Export attachment" Click="ExportAttachmentClicked" IsEnabled="False" />
+        <Button Name="ExportMessageButton" Content="Export EML" Click="ExportMessageClicked" IsEnabled="False" />
+        <Button Name="PreviewJunkImportButton" Content="Preview Junk rules" Click="PreviewJunkImportClicked" />
+        <Button Name="AccountSetupButton" Content="Account setup" Click="AccountSetupClicked" />
+        <Button Name="ThemeButton" Content="Light / Dark" Click="ToggleThemeClicked" />
+        <TextBlock Text="Accent" VerticalAlignment="Center" />
+        <ComboBox Name="AccentPicker" Width="90" SelectionChanged="AccentChanged">
+          <ComboBoxItem Content="Blue" /><ComboBoxItem Content="Green" />
+          <ComboBoxItem Content="Purple" /><ComboBoxItem Content="Orange" />
+        </ComboBox>
+        <TextBlock Text="Text size" VerticalAlignment="Center" />
+        <Slider Name="TextScaleSlider" Minimum="12" Maximum="23" Value="15" Width="130" ValueChanged="TextScaleChanged" />
+        <TextBlock Text="Read-only preview · account setup not connected" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+    <Grid Grid.Row="2" ColumnDefinitions="240,5,430,5,*" Margin="8">
+      <Border Grid.Column="0" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="Archives and folders" FontWeight="Bold" Margin="4,4,0,10" />
+          <TreeView Name="FolderTree" SelectionChanged="FolderSelected" />
+        </DockPanel>
+      </Border>
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
+      <Border Grid.Column="2" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="Messages" FontWeight="Bold" Margin="4,4,0,10" />
+          <ListBox Name="MessageList" SelectionChanged="MessageSelected" />
+        </DockPanel>
+      </Border>
+      <GridSplitter Grid.Column="3" ResizeDirection="Columns" />
+      <Border Grid.Column="4" BorderBrush="#CBD5E1" BorderThickness="1" Padding="16">
+        <ScrollViewer>
+          <StackPanel Spacing="12">
+            <TextBlock Name="SubjectText" Text="Select an archive to begin" FontWeight="Bold" FontSize="20" TextWrapping="Wrap" />
+            <TextBlock Name="SenderText" TextWrapping="Wrap" />
+            <TextBlock Name="RecipientText" TextWrapping="Wrap" />
+            <TextBlock Name="AttachmentText" TextWrapping="Wrap" />
+            <Separator />
+            <TextBlock Name="BodyText" Text="PST files are opened read-only. HTML mail is displayed as plain text in this prototype." TextWrapping="Wrap" />
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <Border Name="StatusBand" Grid.Row="3" Background="#EDF2F7" Padding="12,6">
+      <TextBlock Name="StatusText" Text="Ready. No PST is modified by this build." />
+    </Border>
+  </Grid>
+</Window>

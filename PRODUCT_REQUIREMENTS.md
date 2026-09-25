@@ -1,6 +1,6 @@
 # OpenOutlook — Product Requirements (draft for review)
 
-Status: **Approved requirements baseline**, amended with owner-confirmed deletion, Hotmail Junk Cleaner and reuse decisions on 2026-09-24. The 4 GB validation gap and remaining feasibility questions in section 7 are explicit. This documents requirements; application implementation has not yet been requested.
+Status: **Approved requirements baseline**, amended with owner-confirmed deletion, Hotmail Junk Cleaner and reuse decisions on 2026-09-24. The 4 GB validation gap and remaining feasibility questions in section 7 are explicit. This is the requirements baseline; implementation is underway. See `BUILD_STATUS.md` for what is currently built and what remains.
 
 ## 1. Vision and audience
 
@@ -21,7 +21,7 @@ A personal, local-first desktop mail client for Ubuntu 26.04 that feels familiar
 ### 3.1 Accounts and mail
 
 - Interactive, system-browser OAuth authorization for personal Microsoft and Google accounts with clear account identity and reconnect/revocation handling. No passwords, embedded web login, hard-coded app secrets, or authentication bypass.
-- Guided setup for user-owned Microsoft and Google app registrations. Account settings must allow adding/removing accounts; removing an account revokes tokens where supported and deletes or offers to delete its local cache. Document Google OAuth testing/verification limitations for GitHub users.
+- Guided Microsoft and Google sign-in using OpenOutlook-owned app registrations. End users must not need to obtain or enter application client IDs. Account settings must allow adding/removing accounts; removing an account revokes tokens where supported and deletes or offers to delete its local cache. Document Google OAuth testing/verification limitations for GitHub users.
 - Send and receive with account-specific From identity; read, search, compose, reply, reply-all, forward, drafts, sent items, trash/delete, mark read/unread, flags/star where the provider supports them, folder/label organization, attachments, and an optional signature per account with **both plain-text and rich-HTML editing options**. No aliases or scheduled send in v1.
 - Automatic sync on startup and periodically while open plus manual **Send/Receive**; visible progress/errors and last successful sync per account. Refresh/reauth problems must not silently drop pending work.
 - Offline: all synchronized folders' headers and bodies cached locally; attachments downloaded on demand and thereafter available offline. Draft editing, send queue, and supported mailbox mutations work while disconnected, then reconcile on reconnect with explicit conflict/error handling. Never claim a queued message was sent until provider confirmation.

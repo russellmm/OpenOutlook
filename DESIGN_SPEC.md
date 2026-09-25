@@ -1,6 +1,6 @@
 # OpenOutlook — Design Specification (draft for review)
 
-Status: **Approved design baseline**, amended with owner-confirmed deletion, Hotmail Junk Cleaner and reuse decisions on 2026-09-24. Companion: `PRODUCT_REQUIREMENTS.md`. This documents design, not authorization to implement; specified feasibility gates still apply.
+Status: **Approved design baseline**, amended with owner-confirmed deletion, Hotmail Junk Cleaner and reuse decisions on 2026-09-24. Companion: `PRODUCT_REQUIREMENTS.md`. Implementation is underway; this remains the target design and its feasibility gates still apply. See `BUILD_STATUS.md` for current progress.
 
 ## 1. Technical direction
 
@@ -10,9 +10,9 @@ Status: **Approved design baseline**, amended with owner-confirmed deletion, Hot
 - **Junk Cleaner:** reuse or adapt the existing cross-platform `OutlookJunkCleaner.Core` keyword/matching rules after reviewing test coverage; do not copy WPF, tray, Outlook COM or Windows-specific config paths. Run scans through OpenOutlook's Microsoft mailbox provider, tied to a real account ID and well-known Junk folder ID.
 - **PST:** an adapter around the existing cross-platform `PstCore` (`net8.0`) for reading, with attach/detach archive lifecycle operations (detach closes the handle and leaves its file untouched). The owner built `PstCore` from scratch and permits incorporation and distribution; prefer a tracked source copy within the OpenOutlook repository (or equivalent reproducible source dependency) so a public checkout builds independently of the owner's filesystem. Avoid copying private PST fixtures or the WPF app unintentionally. The WPF app is *not* reused. PST writing is a dedicated engineering track; existing in-place flag/move/delete functions are not production-ready proof of correctness, and there is no demonstrated folder-creation or MIME-insertion API.
 
-## 2. Project structure (proposed; not yet created)
+## 2. Project structure
 
-`OpenOutlook.Desktop` (Avalonia views/ViewModels and OS integration); `OpenOutlook.Domain` (mail/identity models and operations); `OpenOutlook.Storage` (SQLite/FTS, migrations, blobs); `OpenOutlook.Providers.Microsoft` (Graph); `OpenOutlook.Providers.Google` (Gmail); optional `OpenOutlook.Providers.ImapSmtp` (provider-specific OAuth fallback, only if feasibility requires it); `OpenOutlook.Archives.Pst` (PstCore adapter, write validation); `OpenOutlook.JunkCleaner` (rule engine, import, scheduler, audit); `OpenOutlook.Tests` (domain, provider fixture, PST safety, UI smoke). Interactions use interfaces, not provider SDK types in UI.
+Created projects: `OpenOutlook.Desktop` (Avalonia shell and OS integration), `OpenOutlook.Domain` (initial policies/cache contract), `OpenOutlook.Providers.Microsoft` (Graph read adapters), `OpenOutlook.Providers.Google` (Gmail read adapter), `OpenOutlook.JunkCleaner` (portable rules/settings), `PstCore` (owner-contributed PST source), and `OpenOutlook.Tests`. Planned components include `OpenOutlook.Storage` (SQLite/FTS, migrations and blobs) and, only if needed after feasibility work, `OpenOutlook.Providers.ImapSmtp`. PST write validation remains a separate engineering track. The prototype UI still calls some provider types directly; moving those interactions behind application interfaces is part of the target design.
 
 ## 3. Unified model and provider semantics
 
@@ -29,7 +29,7 @@ Register a public desktop client for personal Microsoft accounts; use `/consumer
 
 ### Google
 
-Use desktop OAuth client, loopback redirect, PKCE/state and offline refresh. Proposed least scope for read/write/send is `gmail.modify`; verify exact drafts/send/label behaviors with tests, add `gmail.labels` only if needed for label management. Permanently deleting Gmail messages is now required; verify whether this requires the broader `https://mail.google.com/` scope for Gmail API `messages.delete`, obtain explicit informed consent if so, and prevent purge until consent succeeds. Compare narrower provider-approved alternatives without claiming that ordinary `gmail.modify` is sufficient. Gmail mail scopes are restricted and may trigger verification requirements beyond personal testing; testing-mode refresh tokens can expire after seven days. User-owned registration and consent/testing guide are part of delivery. Never put OAuth client credentials that claim secrecy into a public repository; desktop client IDs are not secrets, but refresh tokens are.
+Use OpenOutlook-owned desktop OAuth clients, loopback redirect, PKCE/state and offline refresh. The user-facing setup asks only which provider to sign into and opens that provider's browser sign-in page; registration IDs are supplied by the build owner. Proposed least scope for read/write/send is `gmail.modify`; verify exact drafts/send/label behaviors with tests, add `gmail.labels` only if needed for label management. Permanently deleting Gmail messages is now required; verify whether this requires the broader `https://mail.google.com/` scope for Gmail API `messages.delete`, obtain explicit informed consent if so, and prevent purge until consent succeeds. Compare narrower provider-approved alternatives without claiming that ordinary `gmail.modify` is sufficient. Gmail mail scopes are restricted and may trigger verification requirements beyond personal testing; testing-mode refresh tokens can expire after seven days. Provider registration and consent/testing guidance for the build owner are part of delivery. Never put OAuth client credentials that claim secrecy into a public repository; desktop client IDs are not secrets, but refresh tokens are.
 
 ### Sync pipeline
 

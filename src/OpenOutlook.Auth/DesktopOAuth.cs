@@ -43,9 +43,8 @@ public static class DesktopOAuth
     /// <summary>Creates an authorization URL for a registered, caller-supplied public desktop client ID.</summary>
     public static DesktopAuthorization Begin(OAuthProvider provider, string clientId, Uri redirectUri, IEnumerable<string> scopes)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
-        if (clientId.Length > 1024 || clientId.Any(char.IsControl)) throw new ArgumentException("Invalid client ID.", nameof(clientId));
-        ValidateRedirect(redirectUri);
+        ValidateClientId(clientId);
+        ValidateRedirect(provider, redirectUri);
         ArgumentNullException.ThrowIfNull(scopes);
         var scopeList = scopes.ToArray();
         if (scopeList.Length == 0 || scopeList.Length > 32 || scopeList.Any(s => string.IsNullOrWhiteSpace(s) || s.Length > 256 || s.Any(char.IsWhiteSpace) || s.Any(char.IsControl)))
@@ -69,7 +68,9 @@ public static class DesktopOAuth
             ["code_challenge"] = challenge,
             ["code_challenge_method"] = "S256"
         };
-        // A refresh token is provider-dependent; callers must supply the scopes their app requires.
+        if (provider == OAuthProvider.Google) parameters["access_type"] = "offline";
+        // Google needs offline access requested during authorization to issue a refresh token.
+        // Microsoft callers must include offline_access among the requested scopes.
         var url = new Uri(authorizationEndpoint.AbsoluteUri + "?" + Encode(parameters));
         return new DesktopAuthorization(provider, clientId, redirectUri, verifier, state, url);
     }
@@ -92,15 +93,7 @@ public static class DesktopOAuth
         if (!parameters.TryGetValue("code", out var code) || string.IsNullOrWhiteSpace(code) || code.Length > 4096)
             throw new InvalidOperationException("Invalid authorization response.");
 
-        var endpoint = authorization.Provider switch
-        {
-            OAuthProvider.MicrosoftConsumers => MicrosoftToken,
-            OAuthProvider.Google => GoogleToken,
-            _ => throw new InvalidOperationException("Invalid provider.")
-        };
-        // Pinned absolute endpoint; do not derive token URL from the callback, response or HttpClient.BaseAddress.
-        if (endpoint.Scheme != Uri.UriSchemeHttps || endpoint.IsDefaultPort == false || endpoint.UserInfo.Length != 0)
-            throw new InvalidOperationException("Invalid token endpoint.");
+        var endpoint = TokenEndpoint(authorization.Provider);
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -110,6 +103,50 @@ public static class DesktopOAuth
             ["redirect_uri"] = authorization.RedirectUri.AbsoluteUri,
             ["code_verifier"] = authorization.CodeVerifier
         });
+        return await SendTokenRequestAsync(request, httpClient, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Refreshes a provider token without logging it. The returned RefreshToken is the newly rotated
+    /// token when supplied, or the original token when the provider omits one. Store a rotation in
+    /// the keyring before treating the new access token as usable.
+    /// </summary>
+    /// <remarks>Use CreateHttpClient, or an injected client whose handler has redirects disabled.</remarks>
+    public static async Task<OAuthTokens> RefreshAsync(OAuthProvider provider, string clientId, string refreshToken,
+        HttpClient httpClient, CancellationToken cancellationToken = default)
+    {
+        ValidateClientId(clientId);
+        SecretStoreKeys.ValidateToken(refreshToken);
+        ArgumentNullException.ThrowIfNull(httpClient);
+        cancellationToken.ThrowIfCancellationRequested();
+        using var request = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint(provider));
+        request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["client_id"] = clientId,
+            ["refresh_token"] = refreshToken
+        });
+        var tokens = await SendTokenRequestAsync(request, httpClient, cancellationToken).ConfigureAwait(false);
+        return tokens with { RefreshToken = tokens.RefreshToken ?? refreshToken };
+    }
+
+    private static Uri TokenEndpoint(OAuthProvider provider)
+    {
+        var endpoint = provider switch
+        {
+            OAuthProvider.MicrosoftConsumers => MicrosoftToken,
+            OAuthProvider.Google => GoogleToken,
+            _ => throw new InvalidOperationException("Invalid provider.")
+        };
+        // Pinned absolute endpoint; do not derive token URL from the callback, response or HttpClient.BaseAddress.
+        if (endpoint.Scheme != Uri.UriSchemeHttps || endpoint.IsDefaultPort == false || endpoint.UserInfo.Length != 0)
+            throw new InvalidOperationException("Invalid token endpoint.");
+        return endpoint;
+    }
+
+    private static async Task<OAuthTokens> SendTokenRequestAsync(HttpRequestMessage request, HttpClient httpClient,
+        CancellationToken cancellationToken)
+    {
         HttpResponseMessage response;
         try { response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -119,7 +156,7 @@ public static class DesktopOAuth
             if ((int)response.StatusCode is >= 300 and < 400)
                 throw new InvalidOperationException("Token endpoint redirected unexpectedly.");
             if (!response.IsSuccessStatusCode)
-                throw new InvalidOperationException("Token endpoint rejected the authorization code.");
+                throw new InvalidOperationException("Token endpoint rejected the token request.");
             try
             {
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -135,7 +172,7 @@ public static class DesktopOAuth
                 using var json = await JsonDocument.ParseAsync(buffer, cancellationToken: cancellationToken).ConfigureAwait(false);
                 var root = json.RootElement;
                 if (root.ValueKind != JsonValueKind.Object ||
-                    !root.TryGetProperty("access_token", out var access) || access.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(access.GetString()) ||
+                    !root.TryGetProperty("access_token", out var access) || access.ValueKind != JsonValueKind.String || !ValidToken(access.GetString()) ||
                     !root.TryGetProperty("token_type", out var type) || type.ValueKind != JsonValueKind.String || type.GetString() != "Bearer")
                     throw new InvalidOperationException("Invalid token response.");
                 string? refresh = null;
@@ -143,6 +180,7 @@ public static class DesktopOAuth
                 {
                     if (refreshElement.ValueKind != JsonValueKind.String) throw new InvalidOperationException("Invalid token response.");
                     refresh = refreshElement.GetString();
+                    if (!ValidToken(refresh)) throw new InvalidOperationException("Invalid token response.");
                 }
                 DateTimeOffset? expires = null;
                 if (root.TryGetProperty("expires_in", out var seconds))
@@ -158,10 +196,22 @@ public static class DesktopOAuth
         }
     }
 
-    private static void ValidateRedirect(Uri uri)
+    private static bool ValidToken(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= 65536 && !value.Any(char.IsControl);
+
+    private static void ValidateClientId(string clientId)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
+        if (clientId.Length > 1024 || clientId.Any(char.IsControl))
+            throw new ArgumentException("Invalid client ID.", nameof(clientId));
+    }
+
+    private static void ValidateRedirect(OAuthProvider provider, Uri uri)
+    {
+        var hostAllowed = uri is not null && uri.IsAbsoluteUri &&
+            (uri.Host == "127.0.0.1" || provider == OAuthProvider.MicrosoftConsumers && uri.Host == "localhost");
         if (uri is null || !uri.IsAbsoluteUri || uri.Scheme != Uri.UriSchemeHttp || uri.UserInfo.Length != 0 ||
-            uri.Host is not ("127.0.0.1" or "[::1]") || uri.Port is < 1 or > 65535 || uri.IsDefaultPort ||
+            !hostAllowed || uri.Port is < 1 or > 65535 || uri.IsDefaultPort ||
             uri.Query.Length != 0 || uri.Fragment.Length != 0 || uri.AbsolutePath.Contains("%2f", StringComparison.OrdinalIgnoreCase) ||
             uri.AbsolutePath.Contains("%5c", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("Redirect URI must be an HTTP loopback URI with an explicit port, path and no query, fragment or credentials.", nameof(uri));

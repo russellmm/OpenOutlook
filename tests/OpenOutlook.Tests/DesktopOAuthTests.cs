@@ -25,6 +25,8 @@ public class DesktopOAuthTests
         Assert.Equal("code", values["response_type"]);
         Assert.Equal("S256", values["code_challenge_method"]);
         Assert.Equal("email openid", values["scope"]);
+        if (provider == OAuthProvider.Google) Assert.Equal("offline", values["access_type"]);
+        else Assert.False(values.ContainsKey("access_type"));
         Assert.Equal(43, pending.State.Length);
         Assert.Equal(43, pending.CodeVerifier.Length);
         Assert.NotEqual(pending.State, DesktopOAuth.Begin(provider, "public-client-id", Callback, ["email"]).State);
@@ -78,6 +80,17 @@ public class DesktopOAuthTests
     [InlineData("http://127.0.0.1/callback")]
     public void RejectsNonExactLoopbackRegistration(string address) =>
         Assert.Throws<ArgumentException>(() => DesktopOAuth.Begin(OAuthProvider.Google, "public-client", new Uri(address), ["openid"]));
+
+    [Fact]
+    public void MicrosoftAcceptsItsRegisteredLocalhostCallback()
+    {
+        var redirect = new Uri("http://localhost:54231/callback");
+        var pending = DesktopOAuth.Begin(OAuthProvider.MicrosoftConsumers, "public-client", redirect,
+            ["offline_access", "User.Read", "Mail.Read"]);
+        Assert.Equal(redirect, pending.RedirectUri);
+        Assert.Contains("redirect_uri=http://localhost:54231/callback",
+            Uri.UnescapeDataString(pending.AuthorizationUri.Query));
+    }
 
     [Theory]
     [InlineData("http://localhost:54231/callback")]

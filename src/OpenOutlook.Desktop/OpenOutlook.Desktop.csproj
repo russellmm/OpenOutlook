@@ -9,10 +9,15 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.2.3" />
     <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.2.3" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.3" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.3" />
     <ProjectReference Include="../PstCore/PstCore.csproj" />
     <ProjectReference Include="../OpenOutlook.JunkCleaner/OpenOutlook.JunkCleaner.csproj" />
     <ProjectReference Include="../OpenOutlook.Auth/OpenOutlook.Auth.csproj" />
+    <ProjectReference Include="../OpenOutlook.Providers.Microsoft/OpenOutlook.Providers.Microsoft.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('openoutlook-oauth.json')">
+    <None Include="openoutlook-oauth.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

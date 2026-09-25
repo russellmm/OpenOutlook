@@ -26,7 +26,7 @@ public sealed class MailSummary
     public bool IsRead { get; set; }
     public bool HasAttachment { get; init; }
     public bool Flagged { get; set; }
-    public int Size { get; init; }
+    public int Size { get; set; }
     public string MessageClass { get; init; } = "";
     public int Importance { get; init; }
 }

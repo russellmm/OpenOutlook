@@ -20,7 +20,8 @@ public static class DesktopOAuthCoordinator
         cancellationToken.ThrowIfCancellationRequested();
 
         // This reservation is private to the transaction: never accept a caller-supplied redirect URI.
-        using var callback = new LoopbackAuthorizationCallback();
+        using var callback = new LoopbackAuthorizationCallback(
+            useLocalhostRedirect: provider == OAuthProvider.MicrosoftConsumers);
         var authorization = DesktopOAuth.Begin(provider, clientId, callback.RedirectUri, scopes);
         // Enter the listener's accept loop before handing the authorization URI to the browser.
         var capture = callback.CaptureAsync(cancellationToken);

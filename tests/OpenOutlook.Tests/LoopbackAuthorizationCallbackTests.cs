@@ -8,6 +8,20 @@ namespace OpenOutlook.Tests;
 public class LoopbackAuthorizationCallbackTests
 {
     [Fact]
+    public async Task MicrosoftLocalhostRedirectAcceptsOnlyItsRegisteredHostHeader()
+    {
+        await using var receiver = new LoopbackAuthorizationCallback(useLocalhostRedirect: true);
+        Assert.Equal("localhost", receiver.RedirectUri.Host);
+        var port = receiver.RedirectUri.Port;
+        var capture = receiver.CaptureAsync();
+        var rejected = await SendAsync(port, $"GET /callback?code=bad HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n");
+        Assert.StartsWith("HTTP/1.1 400 Bad Request", rejected);
+        var accepted = await SendAsync(port, $"GET /callback?code=ok HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n");
+        Assert.StartsWith("HTTP/1.1 200 OK", accepted);
+        Assert.Equal("localhost", (await capture).Host);
+    }
+
+    [Fact]
     public async Task CapturesExactCallbackAndReturnsGenericResponse()
     {
         await using var receiver = new LoopbackAuthorizationCallback();

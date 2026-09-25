@@ -14,6 +14,7 @@
 **/appsettings.Local.json
 **/junk-cleaner.json
 **/tokens*.json
+**/openoutlook-oauth.json
 .cache/
 .local/
 .local-share/

@@ -20,7 +20,7 @@ public sealed class PstStore : IDisposable
         Header = ndb.Header;
         CanWrite = canWrite;
         _ansi = EncodingUtil.Ansi1252();
-        DisplayName = Path.GetFileName(Header.Path);
+        DisplayName = ReadStoreDisplayName();
         LoadFolders();
     }
 
@@ -39,6 +39,20 @@ public sealed class PstStore : IDisposable
     }
 
     public MailFolder? FindFolder(uint nid) => _folders.GetValueOrDefault(nid);
+
+    private string ReadStoreDisplayName()
+    {
+        try
+        {
+            var node = _ndb.GetNode(SpecialNids.MessageStore);
+            var heap = HeapOnNode.Load(_ndb, node);
+            var name = PropertyContext.Read(heap).GetString(Pid.DisplayName, _ansi).Trim();
+            if (!string.IsNullOrWhiteSpace(name) && name.Length <= 256 && !name.Any(char.IsControl))
+                return name;
+        }
+        catch (Exception) { /* A missing store name must not prevent read-only browsing. */ }
+        return Path.GetFileNameWithoutExtension(Header.Path);
+    }
 
     public IReadOnlyList<MailSummary> GetMessages(MailFolder folder)
     {
@@ -68,7 +82,11 @@ public sealed class PstStore : IDisposable
             if (node.Nid.Type != NidType.NormalMessage) continue;
             if (node.Parent.Value != folder.Nid) continue;
             if (byNid.TryGetValue(node.Nid.Value, out var cached))
+            {
+                if (cached.Size <= 0)
+                    cached.Size = MessageSizeFromNode(node);
                 list.Add(cached);
+            }
             else
                 list.Add(SummaryFromNode(folder.Nid, node));
         }
@@ -79,6 +97,16 @@ public sealed class PstStore : IDisposable
         return list
             .OrderByDescending(m => m.Received == DateTime.MinValue ? m.Sent : m.Received)
             .ToList();
+    }
+
+    private int MessageSizeFromNode(NbtEntry node)
+    {
+        try
+        {
+            var heap = HeapOnNode.Load(_ndb, node);
+            return Math.Max(0, PropertyContext.Read(heap).GetInt(Pid.MessageSize));
+        }
+        catch (Exception) { return 0; }
     }
 
     private MailSummary SummaryFromRow(uint folderNid, uint nid, TableContext table, TableRow row)

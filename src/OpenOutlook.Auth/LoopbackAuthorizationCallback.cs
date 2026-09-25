@@ -22,7 +22,7 @@ public sealed class LoopbackAuthorizationCallback : IDisposable, IAsyncDisposabl
     public Uri RedirectUri { get; }
 
     /// <summary>Reserves an OS-assigned port bound exclusively to IPv4 loopback.</summary>
-    public LoopbackAuthorizationCallback(TimeSpan? timeout = null)
+    public LoopbackAuthorizationCallback(TimeSpan? timeout = null, bool useLocalhostRedirect = false)
     {
         var duration = timeout ?? TimeSpan.FromMinutes(2);
         if (duration <= TimeSpan.Zero || duration > TimeSpan.FromMinutes(10))
@@ -30,7 +30,7 @@ public sealed class LoopbackAuthorizationCallback : IDisposable, IAsyncDisposabl
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start(8);
         var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
-        RedirectUri = new Uri($"http://127.0.0.1:{port}/callback");
+        RedirectUri = new Uri($"http://{(useLocalhostRedirect ? "localhost" : "127.0.0.1")}:{port}/callback");
         _deadline = new CancellationTokenSource(duration);
     }
 
@@ -133,7 +133,7 @@ public sealed class LoopbackAuthorizationCallback : IDisposable, IAsyncDisposabl
             if (name.Equals("Host", StringComparison.OrdinalIgnoreCase))
             {
                 hostCount++;
-                if (value != $" 127.0.0.1:{redirect.Port}" && value != $"127.0.0.1:{redirect.Port}") return null;
+                if (value != $" {redirect.Host}:{redirect.Port}" && value != $"{redirect.Host}:{redirect.Port}") return null;
             }
             else if (name.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase) ||
                      (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase) && value.Trim(' ') != "0")) return null;

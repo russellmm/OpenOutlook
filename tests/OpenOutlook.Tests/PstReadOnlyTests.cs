@@ -18,7 +18,12 @@ public sealed class PstReadOnlyTests
         // Exercise a real message read without asserting or logging private content.
         var summary = folders.SelectMany(store.GetMessages).FirstOrDefault();
         if (summary is not null && !summary.Subject.StartsWith("(unreadable", StringComparison.Ordinal))
-            Assert.NotNull(store.OpenMessage(summary));
+        {
+            var opened = store.OpenMessage(summary);
+            Assert.NotNull(opened);
+            if (opened.Summary.Size > 0)
+                Assert.Equal(opened.Summary.Size, summary.Size);
+        }
         Assert.Equal(sizeBefore, new FileInfo(path).Length);
     }
 }

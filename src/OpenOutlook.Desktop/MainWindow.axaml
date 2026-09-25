@@ -1,62 +1,87 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="OpenOutlook.Desktop.MainWindow" Title="OpenOutlook — archive preview" Width="1380" Height="850" MinWidth="850" MinHeight="560">
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="OpenOutlook.Desktop.MainWindow" Title="OpenOutlook — mail and archive preview" Width="1380" Height="850" MinWidth="850" MinHeight="560">
   <Grid RowDefinitions="Auto,Auto,*,Auto">
     <Border Name="TitleBand" Grid.Row="0" Background="#174879" Padding="18,12">
       <StackPanel Orientation="Horizontal" Spacing="16">
-        <TextBlock Text="OpenOutlook" FontSize="22" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
-        <TextBlock Text="Archive preview · read-only development build" Foreground="White" VerticalAlignment="Center" />
+        <TextBlock Name="AppTitleText" Text="OpenOutlook" FontSize="22" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
+        <TextBlock Text="Mail and archive preview · read-only development build" Foreground="White" VerticalAlignment="Center" />
       </StackPanel>
     </Border>
     <Border Name="ToolbarBand" Grid.Row="1" Background="#EDF2F7" Padding="12,8">
-      <StackPanel Orientation="Horizontal" Spacing="12">
+      <WrapPanel Orientation="Horizontal" HorizontalAlignment="Left">
+        <WrapPanel.Styles>
+          <Style Selector="Button"><Setter Property="Margin" Value="0,0,8,6" /></Style>
+          <Style Selector="TextBox"><Setter Property="Margin" Value="0,0,8,6" /></Style>
+        </WrapPanel.Styles>
         <Button Name="OpenPstButton" Content="Open PST" Click="OpenPstClicked" />
         <Button Name="DetachButton" Content="Detach PST" Click="DetachClicked" />
-        <TextBox Name="ArchiveSearchBox" Width="200" Watermark="Search selected PST folder" />
+        <TextBox Name="ArchiveSearchBox" Width="190" Watermark="Search selected folder" />
         <Button Name="ArchiveSearchButton" Content="Search" Click="SearchClicked" />
         <Button Name="ExportAttachmentButton" Content="Export attachment" Click="ExportAttachmentClicked" IsEnabled="False" />
         <Button Name="ExportMessageButton" Content="Export EML" Click="ExportMessageClicked" IsEnabled="False" />
         <Button Name="PreviewJunkImportButton" Content="Preview Junk rules" Click="PreviewJunkImportClicked" />
         <Button Name="AccountSetupButton" Content="Account setup" Click="AccountSetupClicked" />
-        <Button Name="ThemeButton" Content="Light / Dark" Click="ToggleThemeClicked" />
-        <TextBlock Text="Accent" VerticalAlignment="Center" />
-        <ComboBox Name="AccentPicker" Width="90" SelectionChanged="AccentChanged">
-          <ComboBoxItem Content="Blue" /><ComboBoxItem Content="Green" />
-          <ComboBoxItem Content="Purple" /><ComboBoxItem Content="Orange" />
-        </ComboBox>
-        <TextBlock Text="Text size" VerticalAlignment="Center" />
-        <Slider Name="TextScaleSlider" Minimum="12" Maximum="23" Value="15" Width="130" ValueChanged="TextScaleChanged" />
-        <TextBlock Text="Read-only preview · account setup not connected" VerticalAlignment="Center" />
-      </StackPanel>
+        <Button Name="RefreshInboxButton" Content="Refresh folder" Click="RefreshInboxClicked" IsEnabled="False" />
+        <Button Name="OptionsButton" Content="Options" Click="OptionsClicked" />
+      </WrapPanel>
     </Border>
-    <Grid Grid.Row="2" ColumnDefinitions="240,5,430,5,*" Margin="8">
+    <Grid Name="PaneGrid" Grid.Row="2" ColumnDefinitions="2*,5,5*,5,4*" Margin="8">
       <Border Grid.Column="0" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8">
         <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="Archives and folders" FontWeight="Bold" Margin="4,4,0,10" />
+          <TextBlock DockPanel.Dock="Top" Text="Accounts and archives" FontWeight="Bold" Margin="4,4,0,10" />
           <TreeView Name="FolderTree" SelectionChanged="FolderSelected" />
         </DockPanel>
       </Border>
       <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
       <Border Grid.Column="2" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8">
         <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="Messages" FontWeight="Bold" Margin="4,4,0,10" />
-          <ListBox Name="MessageList" SelectionChanged="MessageSelected" />
+          <DockPanel DockPanel.Dock="Top" Margin="4,4,0,10">
+            <CheckBox Name="GroupByDateCheck" DockPanel.Dock="Right" Content="Group by date" IsChecked="True" />
+            <TextBlock Text="Messages" FontWeight="Bold" />
+          </DockPanel>
+          <DataGrid Name="MessageList" SelectionChanged="MessageSelected" Sorting="MessageListSorting"
+                    LoadingRowGroup="MessageListLoadingRowGroup" AutoGenerateColumns="False"
+                    IsReadOnly="True" CanUserSortColumns="True" CanUserReorderColumns="True"
+                    CanUserResizeColumns="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                    RowHeight="28" ColumnHeaderHeight="30">
+            <DataGrid.Columns>
+              <DataGridTemplateColumn Width="42" SortMemberPath="HasAttachment">
+                <DataGridTemplateColumn.Header>
+                  <Path Width="14" Height="19" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="2"
+                        Data="M 14 7 L 14 17 C 14 19.5 12 21 10 21 C 8 21 6 19.5 6 17 L 6 5 C 6 3 8 2 10 2 C 12 2 14 3 14 5 L 14 16 C 14 17 13.5 18 12.5 18 C 11.5 18 11 17 11 16 L 11 7" ToolTip.Tip="Attachment" />
+                </DataGridTemplateColumn.Header>
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate>
+                    <Path Width="13" Height="17" HorizontalAlignment="Center" IsVisible="{Binding HasAttachment}"
+                          Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="2"
+                          Data="M 14 7 L 14 17 C 14 19.5 12 21 10 21 C 8 21 6 19.5 6 17 L 6 5 C 6 3 8 2 10 2 C 12 2 14 3 14 5 L 14 16 C 14 17 13.5 18 12.5 18 C 11.5 18 11 17 11 16 L 11 7" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
+              <DataGridTextColumn Header="From" Width="145" Binding="{Binding FromDisplay}" SortMemberPath="FromSort" />
+              <DataGridTextColumn Header="Subject" Width="2*" Binding="{Binding Subject}" SortMemberPath="Subject" />
+              <DataGridTextColumn Header="Received" Width="150" Binding="{Binding ReceivedDisplay}" SortMemberPath="ReceivedSort" />
+              <DataGridTextColumn Header="Size" Width="80" Binding="{Binding SizeDisplay}" SortMemberPath="SizeBytes" />
+            </DataGrid.Columns>
+          </DataGrid>
         </DockPanel>
       </Border>
       <GridSplitter Grid.Column="3" ResizeDirection="Columns" />
       <Border Grid.Column="4" BorderBrush="#CBD5E1" BorderThickness="1" Padding="16">
         <ScrollViewer>
           <StackPanel Spacing="12">
-            <TextBlock Name="SubjectText" Text="Select an archive to begin" FontWeight="Bold" FontSize="20" TextWrapping="Wrap" />
+            <TextBlock Name="SubjectText" Text="Select a folder to begin" FontWeight="Bold" FontSize="20" TextWrapping="Wrap" />
             <TextBlock Name="SenderText" TextWrapping="Wrap" />
             <TextBlock Name="RecipientText" TextWrapping="Wrap" />
             <TextBlock Name="AttachmentText" TextWrapping="Wrap" />
             <Separator />
-            <TextBlock Name="BodyText" Text="PST files are opened read-only. HTML mail is displayed as plain text in this prototype." TextWrapping="Wrap" />
+            <Button Name="BodyViewButton" Content="View plain text" IsVisible="False" HorizontalAlignment="Left" Click="ToggleBodyViewClicked" />
+            <TextBlock Name="BodyText" Text="Select a message to read it." TextWrapping="Wrap" />
           </StackPanel>
         </ScrollViewer>
       </Border>
     </Grid>
     <Border Name="StatusBand" Grid.Row="3" Background="#EDF2F7" Padding="12,6">
-      <TextBlock Name="StatusText" Text="Ready. No PST is modified by this build." />
+      <TextBlock Name="StatusText" Text="Ready. Open a PST or select a connected account." TextWrapping="Wrap" />
     </Border>
   </Grid>
 </Window>

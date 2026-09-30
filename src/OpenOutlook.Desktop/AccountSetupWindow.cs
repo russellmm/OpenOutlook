@@ -25,7 +25,7 @@ public sealed class AccountSetupWindow : Window
     private OAuthClientConfiguration? _clientConfiguration;
     private bool _configurationInvalid;
 
-    public AccountSetupWindow()
+    public AccountSetupWindow(ConnectedAccount? accountToReconnect = null)
     {
         Title = "Accounts — OpenOutlook";
         Width = 640;
@@ -73,7 +73,7 @@ public sealed class AccountSetupWindow : Window
         content.Children.Add(_provider);
         content.Children.Add(new TextBlock
         {
-            Text = "This preview requests read-only mail access. Microsoft Inbox can show the newest 50 messages; full sync and sending are not available yet.",
+            Text = "Microsoft sign-in requests access to read, organize and send mail, plus read and edit your Microsoft contacts for the planned address book. OpenOutlook sends only when you press Send. Gmail remains read-only.",
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -88,6 +88,10 @@ public sealed class AccountSetupWindow : Window
         content.Children.Add(_close);
         Content = new ScrollViewer { Content = content };
         RefreshAccounts();
+        if (accountToReconnect is not null)
+            _accounts.SelectedItem = _accounts.Items.OfType<ListBoxItem>().FirstOrDefault(item =>
+                item.Tag is ConnectedAccount saved && saved.Provider == accountToReconnect.Provider &&
+                saved.AccountId == accountToReconnect.AccountId);
         try { _clientConfiguration = OAuthClientConfiguration.Load(); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
         { _configurationInvalid = true; }
@@ -161,7 +165,7 @@ public sealed class AccountSetupWindow : Window
             _status.Text = "Opening your system browser. Return here after approving the requested access…";
             var scopes = provider == OAuthProvider.Google
                 ? new[] { "https://www.googleapis.com/auth/gmail.readonly" }
-                : ["offline_access", "User.Read", "Mail.Read"];
+                : MicrosoftAccountPermissions.PlannedPersonalScopes;
             var identity = await DesktopAccountConnector.ConnectAsync(provider, clientId, scopes,
                 SystemAuthorizationBrowser.LaunchAsync,
                 (verified, token) => ConfirmIdentityAsync(verified, selected, prior, token),
@@ -169,7 +173,7 @@ public sealed class AccountSetupWindow : Window
             try
             {
                 _registry.Upsert(new ConnectedAccount(provider, identity.AccountId, identity.DisplayAddress,
-                    clientId, DateTimeOffset.UtcNow));
+                    clientId, DateTimeOffset.UtcNow, scopes));
             }
             catch
             {
@@ -182,7 +186,7 @@ public sealed class AccountSetupWindow : Window
             }
             RefreshAccounts();
             _status.Text = provider == OAuthProvider.MicrosoftConsumers
-                ? $"{identity.DisplayAddress} is connected. Close this window and select Inbox to load the newest messages read-only."
+                ? $"{identity.DisplayAddress} is connected. Close this window and select a mail folder."
                 : $"{identity.DisplayAddress} is connected. Gmail mailbox display is still being built.";
         }
         catch (OperationCanceledException) { _status.Text = "Account connection canceled."; }

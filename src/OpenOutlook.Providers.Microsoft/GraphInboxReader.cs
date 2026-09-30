@@ -5,7 +5,8 @@ using System.Text.Json;
 namespace OpenOutlook.Providers.Microsoft;
 
 public sealed record GraphInboxMessage(string Id, string Subject, string From, string To,
-    DateTimeOffset? Received, int? SizeBytes, bool HasAttachments, bool IsRead, string Preview);
+    DateTimeOffset? Received, int? SizeBytes, bool HasAttachments, bool IsRead, string Preview,
+    bool IsFlagged = false, bool IsDraft = false);
 
 public sealed record GraphInboxPage(string FolderName, int TotalCount, int UnreadCount,
     IReadOnlyList<GraphInboxMessage> Messages, bool HasMore);
@@ -55,7 +56,7 @@ public sealed class GraphInboxReader
         var total = NonnegativeInt(folder.RootElement, "totalItemCount");
         var unread = NonnegativeInt(folder.RootElement, "unreadItemCount");
         var uri = new Uri(Origin + "/me/mailFolders/" + pathId + "/messages?$top=50&$orderby=receivedDateTime%20desc&" +
-            "$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview");
+            "$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview,flag,isDraft");
         using var page = await GetJsonAsync(uri, accessToken, cancellationToken).ConfigureAwait(false);
         if (!page.RootElement.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Array ||
             value.GetArrayLength() > 50)
@@ -81,7 +82,7 @@ public sealed class GraphInboxReader
             messages.Add(new GraphInboxMessage(id, OptionalString(item, "subject", 4096) ?? "(no subject)",
                 address, to, received, null,
                 Boolean(item, "hasAttachments"), Boolean(item, "isRead"),
-                OptionalString(item, "bodyPreview", 4096) ?? ""));
+                OptionalString(item, "bodyPreview", 4096) ?? "", IsFlagged(item), OptionalBoolean(item, "isDraft")));
         }
         var hasMore = page.RootElement.TryGetProperty("@odata.nextLink", out var next) && next.ValueKind == JsonValueKind.String;
         return new GraphInboxPage(folderName, total, unread, messages, hasMore);
@@ -187,6 +188,22 @@ public sealed class GraphInboxReader
         if (!root.TryGetProperty(name, out var field) || field.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
             throw new GraphMailException("Graph returned invalid inbox flag.");
         return field.GetBoolean();
+    }
+
+    private static bool OptionalBoolean(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var field) || field.ValueKind == JsonValueKind.Null) return false;
+        if (field.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new GraphMailException("Graph returned invalid inbox flag.");
+        return field.GetBoolean();
+    }
+
+    private static bool IsFlagged(JsonElement item)
+    {
+        if (!item.TryGetProperty("flag", out var flag) || flag.ValueKind == JsonValueKind.Null) return false;
+        if (flag.ValueKind != JsonValueKind.Object) throw new GraphMailException("Graph returned an invalid flag.");
+        var status = OptionalString(flag, "flagStatus", 32);
+        return string.Equals(status, "flagged", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string Address(JsonElement root, string name)

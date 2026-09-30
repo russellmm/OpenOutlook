@@ -67,9 +67,8 @@ public static class PstAttachmentExporter
             throw new InvalidDataException("Attachment contains no exportable data.");
         if (bytes.LongLength > maximumBytes)
             throw new InvalidDataException("Attachment exceeds the permitted length.");
-        // A zero size is generally missing metadata; only a positive size can be compared reliably.
-        if (attachment.Size > 0 && bytes.Length != attachment.Size)
-            throw new InvalidDataException("Attachment length differs from its metadata.");
+        // PST attachment size can include attachment-object overhead. The bounded reader and
+        // returned-byte limit enforce the cap; exact equality would reject real files.
 
         string? temporary = null;
         try

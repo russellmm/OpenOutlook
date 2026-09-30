@@ -20,7 +20,7 @@ public sealed class GraphInboxReaderTests
             {
                 "/v1.0/me" => Json("""{"id":"verified-id"}"""),
                 "/v1.0/me/mailFolders/inbox" => Json("""{"id":"inbox-id","displayName":"Inbox","totalItemCount":82,"unreadItemCount":7}"""),
-                "/v1.0/me/mailFolders/inbox/messages" => Json("""{"value":[{"id":"message-1","subject":"Hello","from":{"emailAddress":{"name":"Sender","address":"sender@example.test"}},"toRecipients":[{"emailAddress":{"address":"owner@example.test"}}],"receivedDateTime":"2026-09-25T16:00:00Z","hasAttachments":false,"isRead":false,"bodyPreview":"Short preview"}],"@odata.nextLink":"https://untrusted.example/never-follow"}"""),
+                "/v1.0/me/mailFolders/inbox/messages" => Json("""{"value":[{"id":"message-1","subject":"Hello","from":{"emailAddress":{"name":"Sender","address":"sender@example.test"}},"toRecipients":[{"emailAddress":{"address":"owner@example.test"}}],"receivedDateTime":"2026-09-25T16:00:00Z","hasAttachments":false,"isRead":false,"bodyPreview":"Short preview","flag":{"flagStatus":"flagged"}}],"@odata.nextLink":"https://untrusted.example/never-follow"}"""),
                 "/v1.0/me/messages/message-1" => Body(request),
                 _ => throw new Exception("Unexpected Graph path")
             };
@@ -33,6 +33,7 @@ public sealed class GraphInboxReaderTests
         var message = Assert.Single(page.Messages);
         Assert.Equal("Sender", message.From);
         Assert.False(message.IsRead);
+        Assert.True(message.IsFlagged);
         Assert.Null(message.SizeBytes);
         Assert.Equal("owner@example.test", message.To);
         Assert.Equal("Plain text body", await reader.GetPlainTextBodyAsync("fake-access", message.Id));

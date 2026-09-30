@@ -58,15 +58,23 @@ public sealed class PstAttachmentExporterTests
     }
 
     [Theory]
-    [InlineData(2, 1)]
     [InlineData(1, 0)]
-    public async Task RejectsEmptyOrMismatchedLengths(int declared, int actual)
+    public async Task RejectsEmptyData(int declared, int actual)
     {
         using var temp = new ExportDirectory();
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             PstAttachmentExporter.ExportAsync(Attachment(declared), temp.PathFor("out.bin"),
                 () => new byte[actual]));
         Assert.Empty(Directory.GetFiles(temp.Path));
+    }
+
+    [Fact]
+    public async Task AllowsPstAttachmentSizeToIncludeObjectOverhead()
+    {
+        using var temp = new ExportDirectory();
+        var destination = temp.PathFor("out.bin");
+        await PstAttachmentExporter.ExportAsync(Attachment(204), destination, () => [1, 2, 3]);
+        Assert.Equal(new byte[] { 1, 2, 3 }, File.ReadAllBytes(destination));
     }
 
     [Fact]

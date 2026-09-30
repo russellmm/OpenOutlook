@@ -1,28 +1,224 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="OpenOutlook.Desktop.MainWindow" Title="OpenOutlook — mail and archive preview" Width="1380" Height="850" MinWidth="850" MinHeight="560">
   <Grid RowDefinitions="Auto,Auto,*,Auto">
-    <Border Name="TitleBand" Grid.Row="0" Background="#174879" Padding="18,12">
-      <StackPanel Orientation="Horizontal" Spacing="16">
-        <TextBlock Name="AppTitleText" Text="OpenOutlook" FontSize="22" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
-        <TextBlock Text="Mail and archive preview · read-only development build" Foreground="White" VerticalAlignment="Center" />
+    <Border Name="TitleBand" Grid.Row="0" Background="#F4F5F7" BorderBrush="#D8DDE4" BorderThickness="0,0,0,1" Padding="14,9">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Border Name="AccentMark" Width="4" Background="#174879" CornerRadius="2" />
+        <TextBlock Name="AppTitleText" Text="OpenOutlook" FontSize="20" FontWeight="SemiBold" Foreground="#1E293B" VerticalAlignment="Center" />
+        <TextBlock Name="AppSubtitleText" Text="Mail and archive preview" Foreground="#64748B" VerticalAlignment="Center" />
       </StackPanel>
     </Border>
-    <Border Name="ToolbarBand" Grid.Row="1" Background="#EDF2F7" Padding="12,8">
-      <WrapPanel Orientation="Horizontal" HorizontalAlignment="Left">
-        <WrapPanel.Styles>
-          <Style Selector="Button"><Setter Property="Margin" Value="0,0,8,6" /></Style>
-          <Style Selector="TextBox"><Setter Property="Margin" Value="0,0,8,6" /></Style>
-        </WrapPanel.Styles>
-        <Button Name="OpenPstButton" Content="Open PST" Click="OpenPstClicked" />
-        <Button Name="DetachButton" Content="Detach PST" Click="DetachClicked" />
-        <TextBox Name="ArchiveSearchBox" Width="190" Watermark="Search selected folder" />
-        <Button Name="ArchiveSearchButton" Content="Search" Click="SearchClicked" />
-        <Button Name="ExportAttachmentButton" Content="Export attachment" Click="ExportAttachmentClicked" IsEnabled="False" />
-        <Button Name="ExportMessageButton" Content="Export EML" Click="ExportMessageClicked" IsEnabled="False" />
-        <Button Name="PreviewJunkImportButton" Content="Preview Junk rules" Click="PreviewJunkImportClicked" />
-        <Button Name="AccountSetupButton" Content="Account setup" Click="AccountSetupClicked" />
-        <Button Name="RefreshInboxButton" Content="Refresh folder" Click="RefreshInboxClicked" IsEnabled="False" />
-        <Button Name="OptionsButton" Content="Options" Click="OptionsClicked" />
-      </WrapPanel>
+    <Border Name="ToolbarBand" Grid.Row="1" Background="#F8F9FB" BorderBrush="#D8DDE4" BorderThickness="0,0,0,1">
+      <TabControl Name="RibbonTabs" SelectedIndex="1" BorderThickness="0" Padding="0">
+        <TabControl.Styles>
+          <Style Selector="Button.ribbonCommand">
+            <Setter Property="MinWidth" Value="82" />
+            <Setter Property="MinHeight" Value="68" />
+            <Setter Property="Margin" Value="2,1" />
+            <Setter Property="Padding" Value="7,4" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+          </Style>
+          <Style Selector="TextBlock.ribbonCaption">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#697586" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+          </Style>
+        </TabControl.Styles>
+        <TabItem Header="File">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Margin="10,5">
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Name="OpenPstButton" Classes="ribbonCommand" Click="OpenPstClicked" ToolTip.Tip="Attach a PST archive read-only">
+                      <StackPanel><TextBlock Text="▣" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Open PST" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                    <Button Name="DetachButton" Classes="ribbonCommand" Click="DetachClicked" ToolTip.Tip="Remove a PST from the sidebar without deleting it">
+                      <StackPanel><TextBlock Text="◧" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Detach PST" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                  </StackPanel>
+                  <TextBlock Classes="ribbonCaption" Text="Archives" />
+                </StackPanel>
+              </Border>
+              <StackPanel>
+                <Button Name="AccountSetupButton" Classes="ribbonCommand" Click="AccountSetupClicked">
+                  <StackPanel><TextBlock Text="◉" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Accounts" HorizontalAlignment="Center" /></StackPanel>
+                </Button>
+                <TextBlock Classes="ribbonCaption" Text="Account settings" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem Header="Home">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Margin="10,5">
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <Button Classes="ribbonCommand" Tag="new" Click="MailActionClicked" ToolTip.Tip="Compose using a connected Microsoft account">
+                    <StackPanel><TextBlock Text="✉" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="New Email" HorizontalAlignment="Center" /></StackPanel>
+                  </Button>
+                  <Button Classes="ribbonCommand" Tag="editDraft" Click="MailActionClicked" ToolTip.Tip="Edit the selected Microsoft draft">
+                    <StackPanel><TextBlock Text="✎" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Edit Draft" HorizontalAlignment="Center" /></StackPanel>
+                  </Button>
+                  <TextBlock Classes="ribbonCaption" Text="New" />
+                </StackPanel>
+              </Border>
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Classes="ribbonCommand" Tag="delete" Click="MailActionClicked" ToolTip.Tip="Move selected Microsoft mail to Deleted Items">
+                      <StackPanel><TextBlock Text="⌫" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Delete" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                    <Button Classes="ribbonCommand" Tag="archive" Click="MailActionClicked" ToolTip.Tip="Archive selected Microsoft mail">
+                      <StackPanel><TextBlock Text="▤" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Archive" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                  </StackPanel>
+                  <TextBlock Classes="ribbonCaption" Text="Delete" />
+                </StackPanel>
+              </Border>
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Classes="ribbonCommand" Tag="reply" Click="MailActionClicked" ToolTip.Tip="Reply to selected Microsoft mail">
+                      <StackPanel><TextBlock Text="↶" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Reply" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                    <Button Classes="ribbonCommand" Tag="replyAll" Click="MailActionClicked" ToolTip.Tip="Reply to all recipients">
+                      <StackPanel><TextBlock Text="⇇" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Reply All" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                    <Button Classes="ribbonCommand" Tag="forward" Click="MailActionClicked" ToolTip.Tip="Forward selected Microsoft mail">
+                      <StackPanel><TextBlock Text="↷" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Forward" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                  </StackPanel>
+                  <TextBlock Classes="ribbonCaption" Text="Respond" />
+                </StackPanel>
+              </Border>
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Classes="ribbonCommand" Tag="read" Click="MailActionClicked"><StackPanel><TextBlock Text="✓" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Read" HorizontalAlignment="Center" /></StackPanel></Button>
+                    <Button Classes="ribbonCommand" Tag="unread" Click="MailActionClicked"><StackPanel><TextBlock Text="●" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Unread" HorizontalAlignment="Center" /></StackPanel></Button>
+                    <Button Classes="ribbonCommand" Tag="flag" Click="MailActionClicked"><StackPanel><TextBlock Text="⚑" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Flag" HorizontalAlignment="Center" /></StackPanel></Button>
+                    <Button Classes="ribbonCommand" Tag="unflag" Click="MailActionClicked"><StackPanel><TextBlock Text="⚐" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Clear flag" HorizontalAlignment="Center" /></StackPanel></Button>
+                  </StackPanel>
+                  <TextBlock Classes="ribbonCaption" Text="Follow up" />
+                </StackPanel>
+              </Border>
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Name="ExportAttachmentButton" Classes="ribbonCommand" Click="ExportAttachmentClicked" IsEnabled="False">
+                      <StackPanel><TextBlock Text="♧" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Save attachment" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                    <Button Name="ExportMessageButton" Classes="ribbonCommand" Click="ExportMessageClicked" IsEnabled="False">
+                      <StackPanel><TextBlock Text="⇩" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Export EML" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                  </StackPanel>
+                  <TextBlock Classes="ribbonCaption" Text="Save" />
+                </StackPanel>
+              </Border>
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="4,0,12,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,17,0,9" Spacing="5">
+                    <TextBox Name="ArchiveSearchBox" Width="185" Watermark="Search selected folder" />
+                    <Button Name="ArchiveSearchButton" Content="Search" Click="SearchClicked" />
+                  </StackPanel>
+                  <TextBlock Classes="ribbonCaption" Text="Find" />
+                </StackPanel>
+              </Border>
+              <StackPanel>
+                <Button Name="PreviewJunkImportButton" Classes="ribbonCommand" Click="PreviewJunkImportClicked">
+                  <StackPanel><TextBlock Text="✣" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Junk rules" HorizontalAlignment="Center" /></StackPanel>
+                </Button>
+                <TextBlock Classes="ribbonCaption" Text="Junk" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem Header="Send / Receive">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Margin="10,5">
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Name="RefreshInboxButton" Classes="ribbonCommand" Click="RefreshInboxClicked" IsEnabled="False">
+                      <StackPanel><TextBlock Text="⟳" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Refresh folder" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                    <Button Classes="ribbonCommand" Tag="Send and receive all" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                      <StackPanel><TextBlock Text="⇄" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Send / Receive" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                  </StackPanel>
+                  <TextBlock Classes="ribbonCaption" Text="Send &amp; Receive" />
+                </StackPanel>
+              </Border>
+              <StackPanel>
+                <Button Classes="ribbonCommand" Tag="Work offline" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                  <StackPanel><TextBlock Text="◌" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Work Offline" HorizontalAlignment="Center" /></StackPanel>
+                </Button>
+                <TextBlock Classes="ribbonCaption" Text="Preferences" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem Header="Folder">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Margin="10,5">
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Name="ExportFolderButton" Classes="ribbonCommand" Click="ExportFolderClicked" IsEnabled="False">
+                      <StackPanel><TextBlock Text="▣" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Export folder" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                    <Button Name="CancelFolderExportButton" Classes="ribbonCommand" Click="CancelFolderExportClicked" IsEnabled="False">
+                      <StackPanel><TextBlock Text="⊗" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Cancel export" HorizontalAlignment="Center" /></StackPanel>
+                    </Button>
+                  </StackPanel>
+                  <TextBlock Classes="ribbonCaption" Text="PST export" />
+                </StackPanel>
+              </Border>
+              <StackPanel>
+                <Button Classes="ribbonCommand" Tag="New folder" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                  <StackPanel><TextBlock Text="⊞" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="New Folder" HorizontalAlignment="Center" /></StackPanel>
+                </Button>
+                <TextBlock Classes="ribbonCaption" Text="Organize" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem Header="View">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Margin="10,5">
+              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
+                <StackPanel>
+                  <Button Name="OptionsButton" Classes="ribbonCommand" Click="OptionsClicked">
+                    <StackPanel><TextBlock Text="◑" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Appearance" HorizontalAlignment="Center" /></StackPanel>
+                  </Button>
+                  <Button Classes="ribbonCommand" Click="ShortcutsClicked" ToolTip.Tip="Assign keyboard shortcuts for mail actions">
+                    <StackPanel><TextBlock Text="⌨" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Shortcuts" HorizontalAlignment="Center" /></StackPanel>
+                  </Button>
+                  <TextBlock Classes="ribbonCaption" Text="Current view" />
+                </StackPanel>
+              </Border>
+              <StackPanel>
+                <Button Classes="ribbonCommand" Tag="Reading pane options" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                  <StackPanel><TextBlock Text="▥" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Reading Pane" HorizontalAlignment="Center" /></StackPanel>
+                </Button>
+                <TextBlock Classes="ribbonCaption" Text="Layout" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem Header="Help">
+          <StackPanel Orientation="Horizontal" Margin="10,5">
+            <StackPanel>
+              <Button Classes="ribbonCommand" Tag="Help" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                <StackPanel><TextBlock Text="?" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Help" HorizontalAlignment="Center" /></StackPanel>
+              </Button>
+              <TextBlock Classes="ribbonCaption" Text="Support" />
+            </StackPanel>
+          </StackPanel>
+        </TabItem>
+      </TabControl>
     </Border>
     <Grid Name="PaneGrid" Grid.Row="2" ColumnDefinitions="2*,5,5*,5,4*" Margin="8">
       <Border Grid.Column="0" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8">
@@ -38,7 +234,7 @@
             <CheckBox Name="GroupByDateCheck" DockPanel.Dock="Right" Content="Group by date" IsChecked="True" />
             <TextBlock Text="Messages" FontWeight="Bold" />
           </DockPanel>
-          <DataGrid Name="MessageList" SelectionChanged="MessageSelected" Sorting="MessageListSorting"
+          <DataGrid Name="MessageList" SelectionMode="Extended" SelectionChanged="MessageSelected" Sorting="MessageListSorting"
                     LoadingRowGroup="MessageListLoadingRowGroup" AutoGenerateColumns="False"
                     IsReadOnly="True" CanUserSortColumns="True" CanUserReorderColumns="True"
                     CanUserResizeColumns="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
@@ -66,18 +262,42 @@
         </DockPanel>
       </Border>
       <GridSplitter Grid.Column="3" ResizeDirection="Columns" />
-      <Border Grid.Column="4" BorderBrush="#CBD5E1" BorderThickness="1" Padding="16">
-        <ScrollViewer>
-          <StackPanel Spacing="12">
+      <Border Name="ReaderPane" Grid.Column="4" BorderBrush="#CBD5E1" BorderThickness="1" Padding="16">
+        <Grid RowDefinitions="Auto,*">
+          <ScrollViewer Grid.Row="0" MaxHeight="250" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="8">
             <TextBlock Name="SubjectText" Text="Select a folder to begin" FontWeight="Bold" FontSize="20" TextWrapping="Wrap" />
             <TextBlock Name="SenderText" TextWrapping="Wrap" />
             <TextBlock Name="RecipientText" TextWrapping="Wrap" />
             <TextBlock Name="AttachmentText" TextWrapping="Wrap" />
             <Separator />
-            <Button Name="BodyViewButton" Content="View plain text" IsVisible="False" HorizontalAlignment="Left" Click="ToggleBodyViewClicked" />
-            <TextBlock Name="BodyText" Text="Select a message to read it." TextWrapping="Wrap" />
-          </StackPanel>
-        </ScrollViewer>
+            <TextBlock Name="HtmlStatusText" IsVisible="False" TextWrapping="Wrap" Foreground="#475569" />
+            <StackPanel Name="ReaderZoomControls" Orientation="Horizontal" Spacing="6" IsVisible="False">
+              <Button Content="−" Click="ZoomOutClicked" ToolTip.Tip="Zoom out" />
+              <Button Content="+" Click="ZoomInClicked" ToolTip.Tip="Zoom in" />
+              <Button Content="Fit" Click="ZoomFitClicked" ToolTip.Tip="Fit message to pane" />
+            </StackPanel>
+            <WrapPanel Orientation="Horizontal">
+              <Button Name="BodyViewButton" Content="View plain text" IsVisible="False" Click="ToggleBodyViewClicked" />
+              <Button Name="ReaderModeButton" Content="Use alternate reader" IsVisible="False" Click="ReaderModeClicked" />
+              <Button Name="ViewOriginalButton" Content="View original here (trusted mail)" IsVisible="False" Click="ToggleOriginalClicked" />
+              <Button Name="PopOutMessageButton" Content="Open in new window" IsVisible="False" Click="PopOutMessageClicked" />
+              <Button Name="InteractiveReaderButton" Content="Open interactive message" IsVisible="False" Click="OpenInteractiveReaderClicked" />
+              <Button Name="PrintablePdfButton" Content="Save printable PDF" IsVisible="False" Click="SavePrintablePdfClicked" />
+            </WrapPanel>
+            </StackPanel>
+          </ScrollViewer>
+          <Grid Grid.Row="1" Margin="0,10,0,0">
+            <ScrollViewer Name="ReaderScrollViewer" HorizontalScrollBarVisibility="Auto">
+              <StackPanel>
+                <TextBox Name="BodyText" Text="Select a message to read it." TextWrapping="Wrap" IsReadOnly="True" BorderThickness="0" Background="Transparent" />
+                <StackPanel Name="RichBodyPanel" IsVisible="False" Spacing="2" />
+                <StackPanel Name="HtmlPagesPanel" IsVisible="False" Spacing="0" HorizontalAlignment="Left" />
+              </StackPanel>
+            </ScrollViewer>
+            <NativeWebView Name="MainHtmlWebView" IsVisible="False" />
+          </Grid>
+        </Grid>
       </Border>
     </Grid>
     <Border Name="StatusBand" Grid.Row="3" Background="#EDF2F7" Padding="12,6">

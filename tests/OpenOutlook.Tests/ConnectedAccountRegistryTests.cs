@@ -70,4 +70,26 @@ public sealed class ConnectedAccountRegistryTests
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
+
+    [Fact]
+    public void OlderSavedMicrosoftAccountRemainsReadOnlyUntilNewConsent()
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"openoutlook-scopes-{Guid.NewGuid():N}");
+        try
+        {
+            var registry = new ConnectedAccountRegistry(root);
+            var old = new ConnectedAccount(OAuthProvider.MicrosoftConsumers, "graph-id", "owner@hotmail.test",
+                "public-client", DateTimeOffset.UtcNow);
+            registry.Upsert(old);
+            Assert.False(Assert.Single(registry.Load()).CanWriteMicrosoftMail);
+            registry.Upsert(old with { RequestedScopes = ["offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send"] });
+            var upgraded = Assert.Single(registry.Load());
+            Assert.True(upgraded.CanWriteMicrosoftMail);
+            Assert.True(upgraded.CanSendMicrosoftMail);
+            Assert.False(upgraded.CanManageMicrosoftContacts);
+            registry.Upsert(old with { RequestedScopes = MicrosoftAccountPermissions.PlannedPersonalScopes });
+            Assert.True(Assert.Single(registry.Load()).CanManageMicrosoftContacts);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
 }

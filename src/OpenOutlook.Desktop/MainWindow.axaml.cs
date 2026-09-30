@@ -3,9 +3,15 @@ using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.Input;
+using Avalonia.VisualTree;
+using System.Diagnostics;
+using System.Collections.ObjectModel;
 using OpenOutlook.Auth;
 using OpenOutlook.JunkCleaner;
 using OpenOutlook.Providers.Microsoft;
@@ -25,10 +31,14 @@ public sealed partial class MainWindow : Window
     private readonly HttpClient _graphHttp = GraphInboxReader.CreateSecureHttpClient();
     private readonly Dictionary<string, MicrosoftMailSession> _microsoftSessions = new(StringComparer.Ordinal);
     private CancellationTokenSource? _onlineCancellation;
+    private CancellationTokenSource? _folderRefreshCancellation;
     private CancellationTokenSource? _folderDiscoveryCancellation;
     private ConnectedAccount? _activeMicrosoftAccount;
     private MicrosoftFolderSelection? _activeMicrosoftFolder;
     private IReadOnlyList<GraphInboxMessage>? _currentGraphMessages;
+    private ObservableCollection<GraphMessageListRow>? _graphRows;
+    private GraphInboxMessage? _activeGraphMessage;
+    private IReadOnlyList<GraphAttachment>? _currentGraphAttachments;
     private long _folderVersion;
     private long _messageVersion;
     private IReadOnlyList<MailSummary>? _currentMessages;
@@ -39,37 +49,351 @@ public sealed partial class MainWindow : Window
     private MailMessage? _activeMessage;
     private string _bodyPlain = "";
     private bool _showRichBody = true;
+    private bool _showOriginalHtml;
     private IReadOnlyList<HtmlPreviewRun>? _richRuns;
+    private string? _bodyHtml;
+    private IReadOnlyList<HtmlImageSource> _htmlImageSources = [];
+    private int _failedMessageImages;
+    private readonly Dictionary<string, byte[]> _inlineImageBytes = new(StringComparer.Ordinal);
+    private readonly List<Bitmap> _htmlPageBitmaps = [];
+    private bool _embeddedHtmlActive;
+    private bool _preferSnapshotForMessage;
+    private TaskCompletionSource<bool>? _embeddedNavigation;
+    private const int EmbeddedHtmlMaximumCharacters = 8 * 1024 * 1024;
+    private IReadOnlyList<byte[]> _htmlPagePngs = [];
+    private double _htmlZoom = 1;
+    private CancellationTokenSource? _htmlRenderCancellation;
+    private CancellationTokenSource? _inlineImageLoadCancellation;
+    private Task? _imageLoadTask;
+    private readonly Dictionary<string, Bitmap> _inlineImages = new(StringComparer.Ordinal);
     private CancellationTokenSource? _searchCancellation;
+    private CancellationTokenSource? _folderExportCancellation;
     private readonly AppearanceSettingsStore _appearanceStore = new();
+    private readonly ShortcutSettingsStore _shortcutStore = new();
     private readonly ViewLayoutSettingsStore _viewLayoutStore = new();
+    private readonly AttachedPstSettingsStore _attachedPstStore = new();
+    private readonly DispatcherTimer _layoutSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(700) };
+    private bool _layoutReady;
+    private double _normalWindowWidth = 1380;
+    private double _normalWindowHeight = 850;
+    private PixelPoint? _normalWindowPosition;
+    private bool _lastWindowMaximized;
     private AppearanceSettings _appearance = new();
+    private ShortcutSettings _shortcuts = new();
+    private bool _mailActionBusy;
+    private Task _messageSelectionTask = Task.CompletedTask;
+    private readonly List<NativeWebDialog> _interactiveDialogs = [];
 
     public MainWindow()
     {
         InitializeComponent();
         _appearance = _appearanceStore.Load();
+        _shortcuts = _shortcutStore.Load();
         ApplyAppearance();
-        ApplyViewLayout(_viewLayoutStore.Load());
+        var layout = _viewLayoutStore.Load();
+        ApplyViewLayout(layout);
+        _layoutSaveTimer.Tick += (_, _) =>
+        {
+            _layoutSaveTimer.Stop();
+            PersistViewLayout();
+        };
+        SizeChanged += (_, _) => TrackWindowGeometry();
+        PositionChanged += (_, _) => TrackWindowGeometry();
+        PropertyChanged += (_, args) =>
+        {
+            if (args.Property == WindowStateProperty) TrackWindowGeometry();
+        };
+        foreach (var definition in PaneGrid.ColumnDefinitions)
+            definition.PropertyChanged += (_, args) =>
+            {
+                if (args.Property == ColumnDefinition.WidthProperty) ScheduleLayoutSave();
+            };
+        PaneGrid.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent,
+            (_, _) => ScheduleLayoutSave(), RoutingStrategies.Bubble, handledEventsToo: true);
+        ReaderPane.SizeChanged += (_, _) => FitHtmlPageImage();
+        MainHtmlWebView.NavigationStarted += (_, args) =>
+        {
+            if (SafeHtmlDocument.TryLink(args.Request?.AbsoluteUri, out var url))
+            {
+                args.Cancel = true;
+                OpenReaderLink(url);
+            }
+            else if (args.Request is { Scheme: not "about" }) args.Cancel = true;
+        };
+        MainHtmlWebView.NewWindowRequested += (_, args) =>
+        {
+            args.Handled = true;
+            if (SafeHtmlDocument.TryLink(args.Request?.AbsoluteUri, out var url)) OpenReaderLink(url);
+        };
+        MainHtmlWebView.NavigationCompleted += (_, _) =>
+        {
+            ApplyEmbeddedZoom();
+            _embeddedNavigation?.TrySetResult(true);
+        };
         GroupByDateCheck.IsCheckedChanged += GroupByDateChanged;
+        MessageList.DoubleTapped += MessageListDoubleTapped;
+        MessageList.AddHandler(InputElement.KeyDownEvent, MessageListShortcutKeyDown,
+            RoutingStrategies.Tunnel, handledEventsToo: true);
+        Closing += (_, _) =>
+        {
+            _layoutSaveTimer.Stop();
+            PersistViewLayout();
+        };
         Closed += (_, _) =>
         {
-            PersistViewLayout();
             _searchCancellation?.Cancel();
             _onlineCancellation?.Cancel();
+            _folderRefreshCancellation?.Cancel();
             _folderDiscoveryCancellation?.Cancel();
+            _folderExportCancellation?.Cancel();
             _tokenHttp.Dispose();
             _graphHttp.Dispose();
+            foreach (var dialog in _interactiveDialogs.ToArray()) dialog.Close();
+            ClearInlineImages();
             // Pending reader tasks hold this gate; close is cooperative until they finish.
             _ = CloseStoresAsync();
         };
         Opened += async (_, _) =>
         {
+            RestoreWindowPlacement(layout);
+            RefreshConnectedAccounts();
+            IReadOnlyList<string> savedArchives;
+            try { savedArchives = _attachedPstStore.Load(); }
+            catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+            {
+                savedArchives = [];
+                StatusText.Text = "Could not read saved PST attachments; check attached-psts.json in your OpenOutlook settings.";
+            }
+            foreach (var path in savedArchives)
+                await OpenArchiveAsync(path, remember: false);
             // Explicit command-line archives enable repeatable headless UI smoke tests.
             foreach (var path in Environment.GetCommandLineArgs().Skip(1).Where(File.Exists))
                 await OpenArchiveAsync(Path.GetFullPath(path));
-            RefreshConnectedAccounts();
+            var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path));
+            if (unavailable > 0)
+                StatusText.Text = $"{unavailable} saved PST archive{(unavailable == 1 ? "" : "s")} could not be opened; the paths remain saved for the next restart.";
         };
+    }
+
+    private void RibbonPlaceholderClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string command })
+            StatusText.Text = $"{command} is planned and not available yet.";
+    }
+
+    private async void MailActionClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string action }) return;
+        await ExecuteMailActionAsync(action);
+    }
+
+    private async Task ExecuteMailActionAsync(string action)
+    {
+        ConnectedAccount? account = _activeMicrosoftAccount;
+        if (account is null && action == "new")
+        {
+            try { account = _accountRegistry.Load().FirstOrDefault(a => a.Provider == OAuthProvider.MicrosoftConsumers); }
+            catch (Exception) { /* The account settings error appears below. */ }
+        }
+        if (account is null)
+        {
+            await ExplainMailActionAsync("Select a message in a connected Microsoft mailbox to use this action. PST archives are read-only.", null);
+            return;
+        }
+        if (!account.CanWriteMicrosoftMail || !account.CanSendMicrosoftMail)
+        {
+            await ExplainMailActionAsync("This saved Microsoft sign-in has read-only mail access. Sign in again to allow composing, replying, forwarding and organizing mail.", account);
+            return;
+        }
+        var writer = new GraphMailWriter(_graphHttp, account.AccountId);
+        Task<string> Token() => GetMicrosoftSession(account).GetAccessTokenAsync();
+        if (action == "new")
+        {
+            new ComposeWindow(account.DisplayAddress, writer, Token).Show(this);
+            return;
+        }
+        if (MessageList.SelectedItem is not GraphMessageListRow { Message: var selected })
+        {
+            StatusText.Text = "Select a Microsoft message first.";
+            return;
+        }
+        if (_mailActionBusy) return;
+        if (action == "editDraft")
+        {
+            if (!selected.IsDraft) { StatusText.Text = "Select a message in Drafts to edit it."; return; }
+            new ComposeWindow(account.DisplayAddress, writer, Token, selected.Id).Show(this);
+            return;
+        }
+        var actionFolder = _activeMicrosoftFolder;
+        var selectedForDelete = action == "delete"
+            ? MessageList.SelectedItems.OfType<GraphMessageListRow>()
+                .Select(row => row.Message).DistinctBy(message => message.Id).ToArray()
+            : [];
+        _mailActionBusy = true;
+        try
+        {
+            if (action is "reply" or "replyAll" or "forward")
+            {
+                await CreateResponseDraftAsync(account, selected.Id, action, this);
+                return;
+            }
+            if (action == "delete")
+            {
+                await DeleteSelectedMessagesAsync(writer, Token, selectedForDelete.Length > 0
+                    ? selectedForDelete : [selected], actionFolder);
+                return;
+            }
+            switch (action)
+            {
+                case "archive": await writer.MoveAsync(await Token(), selected.Id, "archive"); break;
+                case "read": await writer.SetReadAsync(await Token(), selected.Id, true); break;
+                case "unread": await writer.SetReadAsync(await Token(), selected.Id, false); break;
+                case "flag": await writer.SetFlagAsync(await Token(), selected.Id, true); break;
+                case "unflag": await writer.SetFlagAsync(await Token(), selected.Id, false); break;
+                default: return;
+            }
+            if (actionFolder is not null && _activeMicrosoftFolder == actionFolder)
+            {
+                ApplyCompletedMailAction(selected, action);
+                StatusText.Text = "Mail action completed. Updating this folder…";
+                await RefreshMicrosoftFolderAsync();
+            }
+            else StatusText.Text = "Mail action completed.";
+        }
+        catch (GraphMailException error) when (error.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+            error.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        { StatusText.Text = "Microsoft declined mail access. Use Account setup to sign in again, then retry."; }
+        catch (Exception error)
+        { StatusText.Text = error is GraphMailException or ArgumentException ? error.Message :
+            "Mail action failed. Check the connection and retry."; }
+        finally { _mailActionBusy = false; }
+    }
+
+    private async Task DeleteSelectedMessagesAsync(GraphMailWriter writer, Func<Task<string>> token,
+        IReadOnlyList<GraphInboxMessage> messages, MicrosoftFolderSelection? actionFolder)
+    {
+        StatusText.Text = $"Checking {messages.Count} selected message(s)…";
+        var result = await GraphMailBatchDeleter.DeleteAsync(writer, await token(), messages,
+            ConfirmPermanentDeleteAsync,
+            (done, total) => StatusText.Text = $"Deleting {done} of {total} messages…");
+        if (result.Canceled) { StatusText.Text = "Deletion canceled."; return; }
+        if (result.Completed.Count > 0 && actionFolder is not null && _activeMicrosoftFolder == actionFolder)
+        {
+            foreach (var message in result.Completed) ApplyCompletedMailAction(message, "delete");
+            await RefreshMicrosoftFolderAsync();
+        }
+        if (result.Failure is null)
+            StatusText.Text = result.Completed.Count == 1 ? "Message deleted." :
+                $"{result.Completed.Count} messages deleted.";
+        else
+            StatusText.Text = $"Deleted {result.Completed.Count} of {result.Requested} messages. The remaining messages were not changed: " +
+                (result.Failure is GraphMailException or ArgumentException ? result.Failure.Message : "check the connection and retry.");
+    }
+
+    private async Task CreateResponseDraftAsync(ConnectedAccount account, string messageId,
+        string action, Window owner)
+    {
+        StatusText.Text = "Creating a response draft in your Microsoft mailbox…";
+        var writer = new GraphMailWriter(_graphHttp, account.AccountId);
+        Task<string> Token() => GetMicrosoftSession(account).GetAccessTokenAsync();
+        var draftId = await writer.CreateResponseDraftAsync(await Token(), messageId, action);
+        new ComposeWindow(account.DisplayAddress, writer, Token, draftId).Show(owner);
+        StatusText.Text = "Draft created. Close the compose window to keep it in Drafts.";
+    }
+
+    private void ApplyCompletedMailAction(GraphInboxMessage selected, string action)
+    {
+        if (_graphRows is null) return;
+        var row = _graphRows.FirstOrDefault(item => item.Message.Id == selected.Id);
+        if (row is null) return;
+        if (action is "delete" or "archive")
+        {
+            if (ReferenceEquals(MessageList.SelectedItem, row))
+            {
+                MessageList.SelectedItem = null;
+                Interlocked.Increment(ref _messageVersion);
+                ClearReader();
+            }
+            _graphRows.Remove(row);
+        }
+        else
+        {
+            var updated = action switch
+            {
+                "read" => row.Message with { IsRead = true },
+                "unread" => row.Message with { IsRead = false },
+                "flag" => row.Message with { IsFlagged = true },
+                "unflag" => row.Message with { IsFlagged = false },
+                _ => row.Message
+            };
+            row.Update(updated);
+            if (_activeGraphMessage?.Id == updated.Id) _activeGraphMessage = updated;
+        }
+        _currentGraphMessages = _graphRows.Select(item => item.Message).ToArray();
+    }
+
+    private async void RespondFromMessageWindow(ConnectedAccount account, string messageId,
+        string action, Window owner)
+    {
+        if (_mailActionBusy) return;
+        try
+        {
+            account = _accountRegistry.Load().FirstOrDefault(saved =>
+                saved.Provider == account.Provider && saved.AccountId == account.AccountId) ?? account;
+        }
+        catch (Exception) { /* The response request below reports unavailable account settings. */ }
+        if (!account.CanWriteMicrosoftMail || !account.CanSendMicrosoftMail)
+        {
+            await ExplainMailActionAsync("This saved Microsoft sign-in has read-only mail access. Sign in again to reply or forward.", account);
+            return;
+        }
+        _mailActionBusy = true;
+        try { await CreateResponseDraftAsync(account, messageId, action, owner); }
+        catch (Exception error)
+        { StatusText.Text = error is GraphMailException or ArgumentException ? error.Message :
+            "Could not create the response draft. Check the connection and retry."; }
+        finally { _mailActionBusy = false; }
+    }
+
+    private async Task ExplainMailActionAsync(string explanation, ConnectedAccount? reconnect)
+    {
+        StatusText.Text = explanation;
+        var dialog = new Window { Title = "Mail action — OpenOutlook", Width = 470,
+            SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var setup = new Button { Content = reconnect is null ? "Account setup" : "Sign in again" };
+        var close = new Button { Content = "Close" };
+        setup.Click += (_, _) => dialog.Close(true);
+        close.Click += (_, _) => dialog.Close(false);
+        dialog.Content = new StackPanel { Margin = new Thickness(18), Spacing = 14, Children =
+        {
+            new TextBlock { Text = explanation, TextWrapping = TextWrapping.Wrap },
+            new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8,
+                Children = { setup, close } }
+        } };
+        if (await dialog.ShowDialog<bool>(this) != true) return;
+        await new AccountSetupWindow(reconnect).ShowDialog(this);
+        RefreshConnectedAccounts();
+        StatusText.Text = "Account settings updated. Select a Microsoft folder, then try the mail action again.";
+    }
+
+    private async Task<bool> ConfirmPermanentDeleteAsync(int count)
+    {
+        var dialog = new Window { Title = count == 1 ? "Permanently delete message?" : "Permanently delete messages?", Width = 440, Height = 180,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var delete = new Button { Content = "Delete permanently" };
+        var cancel = new Button { Content = "Cancel" };
+        delete.Click += (_, _) => dialog.Close(true);
+        cancel.Click += (_, _) => dialog.Close(false);
+        dialog.Content = new StackPanel { Margin = new Thickness(18), Spacing = 14, Children =
+        {
+            new TextBlock { Text = count == 1
+                ? "This message is already in Deleted Items. Permanently delete it?"
+                : $"{count} selected messages are already in Deleted Items. Permanently delete them?",
+                TextWrapping = TextWrapping.Wrap },
+            new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8,
+                Children = { delete, cancel } }
+        } };
+        return await dialog.ShowDialog<bool>(this);
     }
 
     private async void OpenPstClicked(object? sender, RoutedEventArgs e)
@@ -87,9 +411,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task OpenArchiveAsync(string path)
+    private async Task<bool> OpenArchiveAsync(string path, bool remember = true)
     {
-        if (_stores.ContainsKey(path)) return;
+        if (_stores.ContainsKey(path)) return true;
         StatusText.Text = $"Opening {Path.GetFileName(path)} read-only…";
         try
         {
@@ -102,12 +426,20 @@ public sealed partial class MainWindow : Window
             {
                 FolderTree.Items.Add(BuildArchiveNode(path, store));
                 StatusText.Text = $"Opened {store.DisplayName} read-only.";
+                if (remember)
+                {
+                    try { _attachedPstStore.Add(path); }
+                    catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+                    { StatusText.Text = $"Opened {store.DisplayName}, but could not save it for the next restart."; }
+                }
             }
             else store.Dispose();
+            return true;
         }
         catch (Exception ex)
         {
             StatusText.Text = $"Could not open {Path.GetFileName(path)}: {ex.Message}";
+            return false;
         }
     }
 
@@ -172,10 +504,13 @@ public sealed partial class MainWindow : Window
         Interlocked.Increment(ref _messageVersion);
         _searchCancellation?.Cancel();
         _onlineCancellation?.Cancel();
+        _folderRefreshCancellation?.Cancel();
         _activeMicrosoftAccount = null;
         _activeMicrosoftFolder = null;
         _currentGraphMessages = null;
+        _graphRows = null;
         RefreshInboxButton.IsEnabled = false;
+        ExportFolderButton.IsEnabled = false;
         if (FolderTree.SelectedItem is TreeViewItem { Tag: MicrosoftFolderSelection online })
         {
             _activePath = null;
@@ -200,6 +535,7 @@ public sealed partial class MainWindow : Window
             return;
         }
         if (!_stores.TryGetValue(selection.Path, out var store)) return;
+        ExportFolderButton.IsEnabled = _folderExportCancellation is null;
         _activePath = selection.Path;
         _activeFolder = selection.Folder;
         _currentMessages = null;
@@ -235,7 +571,15 @@ public sealed partial class MainWindow : Window
     private async void AccountSetupClicked(object? sender, RoutedEventArgs e)
     {
         await new AccountSetupWindow().ShowDialog(this);
+        _activeMicrosoftAccount = null;
+        _activeMicrosoftFolder = null;
+        _currentGraphMessages = null;
+        _graphRows = null;
+        Interlocked.Increment(ref _messageVersion);
+        MessageList.ItemsSource = null;
+        ClearReader();
         RefreshConnectedAccounts();
+        StatusText.Text = "Account settings updated. Select a Microsoft folder to continue.";
     }
 
     private void RefreshConnectedAccounts()
@@ -311,24 +655,23 @@ public sealed partial class MainWindow : Window
         return session;
     }
 
-    private async void RefreshInboxClicked(object? sender, RoutedEventArgs e)
+    private async void RefreshInboxClicked(object? sender, RoutedEventArgs e) =>
+        await RefreshMicrosoftFolderAsync();
+
+    private async Task RefreshMicrosoftFolderAsync()
     {
         if (_activeMicrosoftFolder is not { } folder) return;
-        _onlineCancellation?.Cancel();
-        _onlineCancellation = new CancellationTokenSource();
+        _folderRefreshCancellation?.Cancel();
+        _folderRefreshCancellation = new CancellationTokenSource();
         var version = Interlocked.Increment(ref _folderVersion);
-        Interlocked.Increment(ref _messageVersion);
-        _currentGraphMessages = null;
-        MessageList.ItemsSource = null;
-        ClearReader();
-        await LoadMicrosoftFolderAsync(folder, version, _onlineCancellation.Token);
+        await LoadMicrosoftFolderAsync(folder, version, _folderRefreshCancellation.Token);
     }
 
     private async Task LoadMicrosoftFolderAsync(MicrosoftFolderSelection selection, long version,
         CancellationToken cancellationToken)
     {
         var account = selection.Account;
-        StatusText.Text = $"Loading {selection.Name} read-only…";
+        StatusText.Text = $"Loading {selection.Name}…";
         try
         {
             var token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
@@ -338,9 +681,10 @@ public sealed partial class MainWindow : Window
                 : await reader.GetFolderAsync(token, selection.Id, cancellationToken);
             if (version != _folderVersion || cancellationToken.IsCancellationRequested) return;
             _currentGraphMessages = page.Messages;
-            ShowGraphMessages(page.Messages);
+            if (_graphRows is null) ShowGraphMessages(page.Messages);
+            else ReconcileGraphMessages(page.Messages);
             StatusText.Text = $"{page.Messages.Count} newest of {page.TotalCount:N0} {page.FolderName} items · " +
-                $"{page.UnreadCount:N0} unread · {account.DisplayAddress} · read-only";
+                $"{page.UnreadCount:N0} unread · {account.DisplayAddress}";
         }
         catch (OperationCanceledException) { }
         catch (GraphMailException error)
@@ -357,13 +701,44 @@ public sealed partial class MainWindow : Window
 
     private void ShowGraphMessages(IReadOnlyList<GraphInboxMessage> messages)
     {
-        var rows = messages.Select(message => new GraphMessageListRow(message)).ToArray();
-        var view = new DataGridCollectionView(rows);
+        _graphRows = new ObservableCollection<GraphMessageListRow>(
+            messages.Select(message => new GraphMessageListRow(message)));
+        var view = new DataGridCollectionView(_graphRows);
         if (GroupByDateCheck.IsChecked == true)
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(nameof(GraphMessageListRow.DateGroup)));
         _updatingMessageList = true;
         try { MessageList.ItemsSource = view; MessageList.SelectedItem = null; }
         finally { _updatingMessageList = false; }
+    }
+
+    private void ReconcileGraphMessages(IReadOnlyList<GraphInboxMessage> messages)
+    {
+        if (_graphRows is null) return;
+        var incoming = messages.Select(message => message.Id).ToHashSet(StringComparer.Ordinal);
+        for (var index = _graphRows.Count - 1; index >= 0; index--)
+        {
+            if (incoming.Contains(_graphRows[index].Message.Id)) continue;
+            if (ReferenceEquals(MessageList.SelectedItem, _graphRows[index]))
+            {
+                MessageList.SelectedItem = null;
+                Interlocked.Increment(ref _messageVersion);
+                ClearReader();
+            }
+            _graphRows.RemoveAt(index);
+        }
+        for (var index = 0; index < messages.Count; index++)
+        {
+            var current = _graphRows.FirstOrDefault(row => row.Message.Id == messages[index].Id);
+            if (current is null) _graphRows.Insert(index, new GraphMessageListRow(messages[index]));
+            else
+            {
+                current.Update(messages[index]);
+                var oldIndex = _graphRows.IndexOf(current);
+                if (oldIndex != index) _graphRows.Move(oldIndex, index);
+            }
+            if (_activeGraphMessage?.Id == messages[index].Id)
+                _activeGraphMessage = messages[index];
+        }
     }
 
     private async void PreviewJunkImportClicked(object? sender, RoutedEventArgs e)
@@ -503,11 +878,18 @@ public sealed partial class MainWindow : Window
         _folderCacheOrder.Enqueue(key);
     }
 
-    private async void MessageSelected(object? sender, SelectionChangedEventArgs e)
+    private void MessageSelected(object? sender, SelectionChangedEventArgs e)
     {
         if (_updatingMessageList) return;
         var version = Interlocked.Increment(ref _messageVersion);
+        _messageSelectionTask = LoadSelectedMessageAsync(version);
+    }
+
+    private async Task LoadSelectedMessageAsync(long version)
+    {
         _activeMessage = null;
+        _activeGraphMessage = null;
+        _currentGraphAttachments = null;
         ExportAttachmentButton.IsEnabled = false;
         ExportMessageButton.IsEnabled = false;
         if (MessageList.SelectedItem is GraphMessageListRow { Message: var graphMessage } &&
@@ -533,7 +915,7 @@ public sealed partial class MainWindow : Window
             if (version != _messageVersion) return;
             _activeMessage = message;
             ExportAttachmentButton.IsEnabled = message.Attachments.Count > 0;
-            ExportMessageButton.IsEnabled = message.Attachments.Count == 0;
+            ExportMessageButton.IsEnabled = true;
             SubjectText.Text = message.Summary.Subject;
             SenderText.Text = $"From: {message.Summary.From}";
             RecipientText.Text = $"To: {message.Summary.To}";
@@ -541,9 +923,30 @@ public sealed partial class MainWindow : Window
                 $"Attachments: {string.Join(", ", message.Attachments.Select(a => a.FileName))}";
             SetMessageBody(message.BodyHtml, message.BodyText);
             StatusText.Text = _richRuns is null ? "Message opened read-only." :
-                "Message opened in safe rich-text preview. Images are blocked.";
+                "Message opened in rich-text view; images are loading automatically.";
         }
         catch (Exception ex) { if (version == _messageVersion) StatusText.Text = $"Could not read message: {ex.Message}"; }
+    }
+
+    private async void MessageListDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        var row = e.Source is DataGridRow direct ? direct :
+            (e.Source as Visual)?.FindAncestorOfType<DataGridRow>();
+        if (row is null || !ReferenceEquals(row.DataContext, MessageList.SelectedItem)) return;
+        if (MessageList.SelectedItem is GraphMessageListRow { Message: { IsDraft: true } draft } &&
+            _activeMicrosoftAccount is { } account)
+        {
+            if (!account.CanWriteMicrosoftMail || !account.CanSendMicrosoftMail)
+            {
+                await ExplainMailActionAsync("Sign in again to edit this Microsoft draft.", account);
+                return;
+            }
+            Task<string> Token() => GetMicrosoftSession(account).GetAccessTokenAsync();
+            new ComposeWindow(account.DisplayAddress,
+                new GraphMailWriter(_graphHttp, account.AccountId), Token, draft.Id).Show(this);
+            return;
+        }
+        await OpenSelectedMessageWindowAsync();
     }
 
     private async Task OpenGraphMessageAsync(ConnectedAccount account, GraphInboxMessage message, long version)
@@ -555,17 +958,36 @@ public sealed partial class MainWindow : Window
             var token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
             var body = await new GraphInboxReader(_graphHttp, account.AccountId)
                 .GetMessageBodyAsync(token, message.Id, cancellationToken);
+            IReadOnlyList<GraphAttachment> attachments = [];
+            var attachmentError = false;
+            if (message.HasAttachments)
+            {
+                try
+                {
+                    attachments = await new GraphAttachmentReader(_graphHttp, account.AccountId)
+                        .ListAsync(token, message.Id, cancellationToken);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception) { attachmentError = true; }
+            }
             if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
+            _activeGraphMessage = message;
+            _currentGraphAttachments = attachments;
+            ExportAttachmentButton.IsEnabled = attachments.Any(CanSaveGraphAttachment);
             SubjectText.Text = message.Subject;
             SenderText.Text = $"From: {message.From}";
             RecipientText.Text = $"To: {message.To}";
-            AttachmentText.Text = message.HasAttachments ? "Attachments present (export is not yet available)." : "";
+            AttachmentText.Text = attachmentError ? "Could not load attachments. Select this message again to retry." :
+                attachments.Count == 0 ? "" :
+                $"Attachments: {string.Join(", ", attachments.Select(a => a.Name +
+                    (CanSaveGraphAttachment(a) ? "" : " (cannot save)")))}";
             SetMessageBody(string.Equals(body?.ContentType, "html", StringComparison.OrdinalIgnoreCase)
                     ? body?.Content : null,
                 string.Equals(body?.ContentType, "text", StringComparison.OrdinalIgnoreCase)
                     ? body?.Content : body is null ? message.Preview : "");
-            StatusText.Text = _richRuns is null ? "Microsoft message opened read-only." :
-                "Microsoft message opened in safe rich-text preview. Images are blocked.";
+            StatusText.Text = attachmentError ? "Message opened; attachments could not be loaded." :
+                _richRuns is null ? "Microsoft message opened read-only." :
+                "Microsoft message opened in rich-text view; images are loading automatically.";
         }
         catch (OperationCanceledException) { }
         catch (Exception)
@@ -578,16 +1000,10 @@ public sealed partial class MainWindow : Window
         var path = _activePath;
         var version = _messageVersion;
         if (message is null || path is null || !_stores.TryGetValue(path, out var store)) return;
-        if (message.Attachments.Count > 0 || message.Summary.HasAttachment ||
-            (string.IsNullOrEmpty(message.BodyText) && !string.IsNullOrEmpty(message.BodyHtml)))
-        {
-            StatusText.Text = "Text-only EML export cannot preserve this message's attachments or HTML-only body.";
-            return;
-        }
         // A directory picker avoids any provider-side creation or truncation of a target file.
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Choose folder for new text-only EML (attachments not supported)", AllowMultiple = false
+            Title = "Choose folder for a new EML file", AllowMultiple = false
         });
         if (version != _messageVersion || !ReferenceEquals(_activeMessage, message)) return;
         var directory = folders.FirstOrDefault()?.TryGetLocalPath();
@@ -604,15 +1020,83 @@ public sealed partial class MainWindow : Window
                 await PstMessageEmlExporter.ExportAsync(store, message, output);
             }
             finally { _readerGate.Release(); }
-            StatusText.Text = "Text-only EML saved to a new file; PST unchanged.";
+            StatusText.Text = "EML saved to a new file; PST unchanged.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidDataException or NotSupportedException or InvalidOperationException)
         { StatusText.Text = "EML export failed or target already exists; no existing file was overwritten."; }
-        finally { ExportMessageButton.IsEnabled = _activeMessage?.Attachments.Count == 0; }
+        finally { ExportMessageButton.IsEnabled = ReferenceEquals(_activeMessage, message); }
+    }
+
+    private async void ExportFolderClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_folderExportCancellation is not null ||
+            FolderTree.SelectedItem is not TreeViewItem { Tag: FolderSelection selection } ||
+            !_stores.TryGetValue(selection.Path, out var store)) return;
+        var version = _folderVersion;
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Choose a parent folder for the new EML export directory (includes subfolders)",
+            AllowMultiple = false
+        });
+        if (version != _folderVersion || !_stores.TryGetValue(selection.Path, out var current) ||
+            !ReferenceEquals(current, store)) return;
+        var parent = folders.FirstOrDefault()?.TryGetLocalPath();
+        if (parent is null) return;
+        var destination = Path.Combine(parent, PstFolderEmlExporter.SuggestedDirectoryName(selection.Folder));
+        if (Directory.Exists(destination) || File.Exists(destination))
+        {
+            StatusText.Text = "An export folder with this name already exists there. Choose another parent folder or move the earlier export.";
+            return;
+        }
+        using var cancellation = new CancellationTokenSource();
+        _folderExportCancellation = cancellation;
+        ExportFolderButton.IsEnabled = false;
+        CancelFolderExportButton.IsEnabled = true;
+        StatusText.Text = "Exporting PST folder and subfolders to EML…";
+        var progress = new Progress<PstFolderExportProgress>(value =>
+        {
+            if (ReferenceEquals(_folderExportCancellation, cancellation))
+                StatusText.Text = $"Exporting: {value.MessagesExported:N0} messages from {value.FoldersVisited:N0} folders…";
+        });
+        try
+        {
+            await _readerGate.WaitAsync(cancellation.Token);
+            try
+            {
+                if (!_stores.TryGetValue(selection.Path, out current) || !ReferenceEquals(current, store)) return;
+                var result = await Task.Run(() => PstFolderEmlExporter.ExportAsync(store, selection.Folder,
+                    destination, progress, cancellation.Token), cancellation.Token);
+                StatusText.Text = $"Exported {result.MessagesExported:N0} EML files from {result.FoldersExported:N0} folders to {Path.GetFileName(destination)}.";
+            }
+            finally { _readerGate.Release(); }
+        }
+        catch (OperationCanceledException) { StatusText.Text = "Folder export cancelled; no completed export folder was left."; }
+        catch (PstFolderExportException error)
+        { StatusText.Text = $"Folder export stopped: {error.Message} No completed export folder was left."; }
+        catch (Exception) { StatusText.Text = "Folder export failed. Check the folder and message support; no completed export folder was left."; }
+        finally
+        {
+            _folderExportCancellation = null;
+            CancelFolderExportButton.IsEnabled = false;
+            ExportFolderButton.IsEnabled = FolderTree.SelectedItem is TreeViewItem { Tag: FolderSelection };
+        }
+    }
+
+    private void CancelFolderExportClicked(object? sender, RoutedEventArgs e)
+    {
+        CancelFolderExportButton.IsEnabled = false;
+        _folderExportCancellation?.Cancel();
+        StatusText.Text = "Cancelling folder export…";
     }
 
     private async void ExportAttachmentClicked(object? sender, RoutedEventArgs e)
     {
+        if (_activeGraphMessage is { } graphMessage && _activeMicrosoftAccount is { } graphAccount &&
+            _currentGraphAttachments is { } graphAttachments)
+        {
+            await SaveGraphAttachmentAsync(graphAccount, graphMessage, graphAttachments);
+            return;
+        }
         var message = _activeMessage;
         var path = _activePath;
         var version = _messageVersion;
@@ -656,6 +1140,63 @@ public sealed partial class MainWindow : Window
         finally { ExportAttachmentButton.IsEnabled = _activeMessage?.Attachments.Count > 0; }
     }
 
+    private static bool CanSaveGraphAttachment(GraphAttachment attachment)
+    {
+        if (attachment.Kind != GraphAttachmentKind.File || attachment.SizeBytes < 0 ||
+            attachment.SizeBytes > GraphAttachmentReader.MaximumFileBytes) return false;
+        try { PstAttachmentExporter.ValidateSuggestedFileName(attachment.Name); return true; }
+        catch (ArgumentException) { return false; }
+    }
+
+    private async Task SaveGraphAttachmentAsync(ConnectedAccount account, GraphInboxMessage message,
+        IReadOnlyList<GraphAttachment> attachments)
+    {
+        var version = _messageVersion;
+        var candidates = attachments.Where(CanSaveGraphAttachment).ToArray();
+        if (candidates.Length == 0) return;
+        var attachment = candidates.Length == 1 ? candidates[0] : await ChooseGraphAttachmentAsync(candidates);
+        if (attachment is null || version != _messageVersion || !ReferenceEquals(_activeGraphMessage, message)) return;
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Choose where to save this attachment as a new file", AllowMultiple = false
+        });
+        if (version != _messageVersion || !ReferenceEquals(_activeGraphMessage, message)) return;
+        var directory = folders.FirstOrDefault()?.TryGetLocalPath();
+        if (directory is null) return;
+        ExportAttachmentButton.IsEnabled = false;
+        try
+        {
+            var cancellationToken = _onlineCancellation?.Token ?? CancellationToken.None;
+            var token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
+            if (version != _messageVersion || !ReferenceEquals(_activeGraphMessage, message)) return;
+            await GraphAttachmentExporter.ExportAsync(
+                new GraphAttachmentReader(_graphHttp, account.AccountId), token, message.Id, attachment,
+                Path.Combine(directory, attachment.Name), cancellationToken);
+            StatusText.Text = "Attachment saved to a new file.";
+        }
+        catch (OperationCanceledException) { StatusText.Text = "Attachment save cancelled."; }
+        catch (Exception) { StatusText.Text = "Could not save attachment. Check the connection or choose another folder; no existing file was overwritten."; }
+        finally
+        {
+            ExportAttachmentButton.IsEnabled = ReferenceEquals(_activeGraphMessage, message) &&
+                version == _messageVersion && attachments.Any(CanSaveGraphAttachment);
+        }
+    }
+
+    private async Task<GraphAttachment?> ChooseGraphAttachmentAsync(IReadOnlyList<GraphAttachment> attachments)
+    {
+        var chooser = new Window { Title = "Choose an attachment", Width = 450, Height = 300,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var list = new ListBox();
+        foreach (var item in attachments)
+            list.Items.Add(new ListBoxItem { Content = item.Name, Tag = item });
+        var button = new Button { Content = "Save selected", Margin = new Thickness(8) };
+        button.Click += (_, _) => chooser.Close((list.SelectedItem as ListBoxItem)?.Tag as GraphAttachment);
+        chooser.Content = new DockPanel { Children = { list, button } };
+        DockPanel.SetDock(button, Dock.Bottom);
+        return await chooser.ShowDialog<GraphAttachment?>(this);
+    }
+
     private async Task<MailAttachment?> ChooseAttachmentAsync(IReadOnlyList<MailAttachment> attachments)
     {
         var chooser = new Window { Title = "Choose an attachment", Width = 450, Height = 300,
@@ -663,7 +1204,7 @@ public sealed partial class MainWindow : Window
         var list = new ListBox();
         foreach (var item in attachments)
             list.Items.Add(new ListBoxItem { Content = item.FileName, Tag = item });
-        var button = new Button { Content = "Export selected", Margin = new Thickness(8) };
+        var button = new Button { Content = "Save selected", Margin = new Thickness(8) };
         button.Click += (_, _) => chooser.Close((list.SelectedItem as ListBoxItem)?.Tag as MailAttachment);
         chooser.Content = new DockPanel { Children = { list, button } };
         DockPanel.SetDock(button, Dock.Bottom);
@@ -677,7 +1218,7 @@ public sealed partial class MainWindow : Window
         if (path is null || !_stores.TryGetValue(path, out var store)) return;
         // The gate avoids disposing while a reader operation is in flight.
         try { await DetachAsync(path, store); }
-        catch (Exception ex) { StatusText.Text = $"Could not detach: {ex.Message}"; }
+        catch (Exception ex) { StatusText.Text = $"Could not detach; the PST is still attached: {ex.Message}"; }
     }
 
     private async Task DetachAsync(string path, PstStore store)
@@ -688,7 +1229,9 @@ public sealed partial class MainWindow : Window
         await _readerGate.WaitAsync();
         try
         {
-            if (!_stores.Remove(path)) return;
+            if (!_stores.ContainsKey(path)) return;
+            _attachedPstStore.Remove(path);
+            _stores.Remove(path);
             store.Dispose();
             foreach (var root in FolderTree.Items.OfType<TreeViewItem>().ToArray())
                 if (Equals(root.Tag, path)) FolderTree.Items.Remove(root);
@@ -757,6 +1300,30 @@ public sealed partial class MainWindow : Window
         PersistAppearance();
     }
 
+    private async void ShortcutsClicked(object? sender, RoutedEventArgs e)
+    {
+        var updated = await new ShortcutOptionsWindow(_shortcuts).ShowDialog<ShortcutSettings?>(this);
+        if (updated is null) return;
+        try
+        {
+            _shortcutStore.Save(updated);
+            _shortcuts = updated;
+            StatusText.Text = "Keyboard shortcuts saved.";
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { StatusText.Text = "Could not save keyboard shortcuts. Check access to the OpenOutlook settings folder."; }
+    }
+
+    private async void MessageListShortcutKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || _mailActionBusy) return;
+        var shortcut = _shortcuts.Bindings.FirstOrDefault(binding =>
+            binding.Key == e.Key && binding.Modifiers == e.KeyModifiers);
+        if (shortcut is null) return;
+        e.Handled = true;
+        await ExecuteMailActionAsync(shortcut.Action);
+    }
+
     private void ApplyAppearance()
     {
         if (Application.Current is { } app)
@@ -766,23 +1333,34 @@ public sealed partial class MainWindow : Window
         {
             "Green" => "#176339", "Purple" => "#5A3186", "Orange" => "#895013", _ => "#174879"
         };
-        TitleBand.Background = Brush.Parse(accent);
-        ToolbarBand.Background = StatusBand.Background = Brush.Parse(_appearance.DarkMode ? "#202833" : "#EDF2F7");
+        TitleBand.Background = Brush.Parse(_appearance.DarkMode ? "#252D38" : "#F4F5F7");
+        AccentMark.Background = Brush.Parse(accent);
+        AppTitleText.Foreground = Brush.Parse(_appearance.DarkMode ? "#F2F5F9" : "#1E293B");
+        AppSubtitleText.Foreground = Brush.Parse(_appearance.DarkMode ? "#B8C4D2" : "#64748B");
+        ToolbarBand.Background = Brush.Parse(_appearance.DarkMode ? "#202833" : "#F8F9FB");
+        StatusBand.Background = Brush.Parse(_appearance.DarkMode ? "#202833" : "#EDF2F7");
         var size = _appearance.TextSize;
         FontSize = size;
-        AppTitleText.FontSize = size + 7;
+        AppTitleText.FontSize = size + 5;
+        AppSubtitleText.FontSize = size - 1;
+        RibbonTabs.FontSize = size;
         FolderTree.FontSize = MessageList.FontSize = BodyText.FontSize = size;
         SubjectText.FontSize = size + 5;
         SenderText.FontSize = RecipientText.FontSize = AttachmentText.FontSize = size;
         BodyViewButton.FontSize = size;
         StatusText.FontSize = size - 1;
         OpenPstButton.FontSize = DetachButton.FontSize = OptionsButton.FontSize = size;
-        ArchiveSearchButton.FontSize = ExportAttachmentButton.FontSize = ExportMessageButton.FontSize = PreviewJunkImportButton.FontSize = AccountSetupButton.FontSize = RefreshInboxButton.FontSize = ArchiveSearchBox.FontSize = size;
+        ArchiveSearchButton.FontSize = ExportAttachmentButton.FontSize = ExportMessageButton.FontSize = ExportFolderButton.FontSize = CancelFolderExportButton.FontSize = PreviewJunkImportButton.FontSize = AccountSetupButton.FontSize = RefreshInboxButton.FontSize = ArchiveSearchBox.FontSize = size;
         if (_richRuns is not null) ShowMessageBody();
     }
 
     private void ApplyViewLayout(ViewLayoutSettings settings)
     {
+        Width = settings.WindowWidth;
+        Height = settings.WindowHeight;
+        _normalWindowWidth = settings.WindowWidth;
+        _normalWindowHeight = settings.WindowHeight;
+        _lastWindowMaximized = settings.WindowMaximized;
         PaneGrid.ColumnDefinitions[0].Width = new GridLength(settings.FolderPaneWeight, GridUnitType.Star);
         PaneGrid.ColumnDefinitions[2].Width = new GridLength(settings.MessagePaneWeight, GridUnitType.Star);
         PaneGrid.ColumnDefinitions[4].Width = new GridLength(settings.ReaderPaneWeight, GridUnitType.Star);
@@ -793,6 +1371,41 @@ public sealed partial class MainWindow : Window
             target.Width = new DataGridLength(column.Width,
                 column.IsStar ? DataGridLengthUnitType.Star : DataGridLengthUnitType.Pixel);
         }
+    }
+
+    private void RestoreWindowPlacement(ViewLayoutSettings settings)
+    {
+        if (settings.WindowX is { } x && settings.WindowY is { } y &&
+            Screens.All.Any(screen => screen.WorkingArea.Contains(new PixelPoint(x + 40, y + 20))))
+            Position = new PixelPoint(x, y);
+        _normalWindowPosition = Position;
+        if (settings.WindowMaximized) WindowState = WindowState.Maximized;
+        _layoutReady = true;
+    }
+
+    private void TrackWindowGeometry()
+    {
+        if (!_layoutReady) return;
+        if (WindowState == WindowState.Normal)
+        {
+            if (Bounds.Width >= MinWidth && Bounds.Height >= MinHeight)
+            {
+                _normalWindowWidth = Bounds.Width;
+                _normalWindowHeight = Bounds.Height;
+            }
+            _normalWindowPosition = Position;
+            _lastWindowMaximized = false;
+        }
+        else if (WindowState == WindowState.Maximized)
+            _lastWindowMaximized = true;
+        ScheduleLayoutSave();
+    }
+
+    private void ScheduleLayoutSave()
+    {
+        if (!_layoutReady) return;
+        _layoutSaveTimer.Stop();
+        _layoutSaveTimer.Start();
     }
 
     private void PersistViewLayout()
@@ -811,6 +1424,11 @@ public sealed partial class MainWindow : Window
         }).ToArray();
         var settings = new ViewLayoutSettings
         {
+            WindowWidth = _normalWindowWidth,
+            WindowHeight = _normalWindowHeight,
+            WindowX = _normalWindowPosition?.X,
+            WindowY = _normalWindowPosition?.Y,
+            WindowMaximized = _lastWindowMaximized,
             FolderPaneWeight = 11 * folder / total,
             MessagePaneWeight = 11 * messages / total,
             ReaderPaneWeight = 11 * reader / total,
@@ -830,6 +1448,14 @@ public sealed partial class MainWindow : Window
 
     private void SetMessageBody(string? html, string? plain)
     {
+        ClearInlineImages();
+        _bodyHtml = string.IsNullOrWhiteSpace(html) ? null : html;
+        _showOriginalHtml = false;
+        // Connected mail often contains large, image-heavy HTML that WebKitGTK may accept
+        // without painting. Start with the verified snapshot reader; interaction is opt-in.
+        _preferSnapshotForMessage = _activeGraphMessage is not null;
+        _htmlImageSources = [];
+        _failedMessageImages = 0;
         _richRuns = null;
         _bodyPlain = plain ?? "";
         _showRichBody = true;
@@ -838,6 +1464,7 @@ public sealed partial class MainWindow : Window
             try
             {
                 _richRuns = SafeHtmlPreview.Parse(html);
+                _htmlImageSources = SafeHtmlDocument.FindImages(html);
                 if (string.IsNullOrWhiteSpace(_bodyPlain))
                     _bodyPlain = string.Concat(_richRuns.Select(run => run.Text));
             }
@@ -849,47 +1476,595 @@ public sealed partial class MainWindow : Window
         }
         if (string.IsNullOrWhiteSpace(_bodyPlain) && _richRuns is null)
             _bodyPlain = "(No message body available.)";
+        ReaderScrollViewer.Offset = new Vector(0, 0);
         ShowMessageBody();
+        if (_bodyHtml is not null)
+        {
+            HtmlStatusText.Text = "Laying out HTML message…";
+            HtmlStatusText.IsVisible = true;
+            _ = RenderBrowserHtmlAsync(_messageVersion);
+            if (_htmlImageSources.Count > 0)
+                _imageLoadTask = LoadImagesAsync(_messageVersion);
+        }
     }
 
     private void ToggleBodyViewClicked(object? sender, RoutedEventArgs e)
     {
-        if (_richRuns is null) return;
+        if (_richRuns is null && _bodyHtml is null) return;
         _showRichBody = !_showRichBody;
         ShowMessageBody();
     }
 
+    private void ReaderModeClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_bodyHtml is null) return;
+        _preferSnapshotForMessage = !_preferSnapshotForMessage;
+        _embeddedHtmlActive = false;
+        MainHtmlWebView.IsVisible = false;
+        HtmlStatusText.Text = "Loading message in the alternate reader…";
+        HtmlStatusText.IsVisible = true;
+        ShowMessageBody();
+        _ = RenderBrowserHtmlAsync(_messageVersion);
+    }
+
+    private async void PopOutMessageClicked(object? sender, RoutedEventArgs e) =>
+        await OpenSelectedMessageWindowAsync();
+
+    private async Task OpenSelectedMessageWindowAsync()
+    {
+        var version = _messageVersion;
+        var selected = MessageList.SelectedItem;
+        try { await _messageSelectionTask; }
+        catch (Exception) { /* The selection handler reports the read failure. */ }
+        if (version != _messageVersion || !ReferenceEquals(selected, MessageList.SelectedItem)) return;
+        if (_activeMessage is null && _activeGraphMessage is null)
+        {
+            StatusText.Text = "Could not open this message. Select it again and retry.";
+            return;
+        }
+        var images = _inlineImageBytes.ToDictionary(pair => pair.Key, pair => pair.Value,
+            StringComparer.Ordinal);
+        var account = _activeMicrosoftAccount;
+        var graphMessage = _activeGraphMessage;
+        MessageWindow? window = null;
+        Action<string>? respond = account is not null && graphMessage is not null
+            ? action => RespondFromMessageWindow(account, graphMessage.Id, action, window!) : null;
+        window = new MessageWindow(SubjectText.Text ?? "Message", SenderText.Text ?? "",
+            RecipientText.Text ?? "", _bodyPlain, _bodyHtml, images, _showOriginalHtml, respond);
+        window.Show(this);
+        if (_imageLoadTask is { IsCompleted: false } imageLoadTask)
+            _ = UpdatePopOutImagesAsync(window, version, imageLoadTask);
+        StatusText.Text = "Message opened in a separate window.";
+    }
+
+    private async Task UpdatePopOutImagesAsync(MessageWindow window, long version, Task imageLoadTask)
+    {
+        try { await imageLoadTask; }
+        catch (Exception) { return; }
+        if (version == _messageVersion && window.IsVisible)
+            window.UpdateImages(_inlineImageBytes);
+    }
+
+    private async void OpenInteractiveReaderClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_bodyHtml is not { } html) return;
+        var version = _messageVersion;
+        if (_imageLoadTask is { } images)
+        {
+            try { await images; }
+            catch (Exception) { /* Open with the images available so far. */ }
+        }
+        if (version != _messageVersion) return;
+        try
+        {
+            var document = SafeHtmlDocument.BuildInteractive(html, _inlineImageBytes);
+            var dialog = new NativeWebDialog
+            {
+                Title = (SubjectText.Text ?? "Message") + " — OpenOutlook",
+                CanUserResize = true
+            };
+            dialog.NavigationStarted += (_, args) =>
+            {
+                var requested = args.Request?.AbsoluteUri;
+                if (!SafeHtmlDocument.TryLink(requested, out var url)) return;
+                args.Cancel = true;
+                OpenExternal(url);
+            };
+            dialog.NewWindowRequested += (_, args) =>
+            {
+                args.Handled = true;
+                if (SafeHtmlDocument.TryLink(args.Request?.AbsoluteUri, out var url)) OpenExternal(url);
+            };
+            dialog.Closing += (_, _) => _interactiveDialogs.Remove(dialog);
+            _interactiveDialogs.Add(dialog);
+            dialog.Show(this);
+            dialog.NavigateToString(document);
+            StatusText.Text = "Interactive message opened. You can select and copy formatted text.";
+        }
+        catch (Exception)
+        { StatusText.Text = "Interactive HTML is unavailable here; the standard reader remains available."; }
+
+        void OpenExternal(string url)
+        {
+            try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+            catch (Exception) { StatusText.Text = "Could not open this link in the system browser."; }
+        }
+    }
+
+    private async void SavePrintablePdfClicked(object? sender, RoutedEventArgs e)
+    {
+        var version = _messageVersion;
+        if (_imageLoadTask is { } images)
+        {
+            try { await images; }
+            catch (Exception) { /* Print the images that were available. */ }
+        }
+        if (version != _messageVersion) return;
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        { Title = "Choose a folder for a new printable PDF", AllowMultiple = false });
+        if (version != _messageVersion || folders.FirstOrDefault()?.TryGetLocalPath() is not { } folder) return;
+        PrintablePdfButton.IsEnabled = false;
+        try
+        {
+            var document = _bodyHtml is { } html ? SafeHtmlDocument.Build(html, _inlineImageBytes) :
+                "<html><body><pre style='white-space:pre-wrap'>" + System.Net.WebUtility.HtmlEncode(_bodyPlain) +
+                "</pre></body></html>";
+            var pdf = await BrowserHtmlRenderer.RenderPdfAsync(document);
+            if (version != _messageVersion) return;
+            var path = Path.Combine(folder, "message-" + Guid.NewGuid().ToString("N") + ".pdf");
+            var temporary = path + ".tmp";
+            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write,
+                Share = FileShare.None };
+            if (OperatingSystem.IsLinux()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            try
+            {
+                await using (var output = new FileStream(temporary, options))
+                {
+                    await output.WriteAsync(pdf);
+                    output.Flush(flushToDisk: true);
+                }
+                File.Move(temporary, path);
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            StatusText.Text = "Printable PDF saved. Open it in your PDF viewer to print.";
+        }
+        catch (Exception)
+        { StatusText.Text = "Could not create the printable PDF. Check the folder and browser installation."; }
+        finally { PrintablePdfButton.IsEnabled = true; }
+    }
+
+    private void ToggleOriginalClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_bodyHtml is null) return;
+        _showOriginalHtml = !_showOriginalHtml;
+        _showRichBody = true;
+        ReaderScrollViewer.Offset = new Vector(0, 0);
+        HtmlStatusText.Text = _showOriginalHtml
+            ? "Loading original message and external content…" : "Laying out HTML message…";
+        HtmlStatusText.IsVisible = true;
+        ShowMessageBody();
+        _ = RenderBrowserHtmlAsync(_messageVersion);
+    }
+
+    private async Task LoadImagesAsync(long version)
+    {
+        var loadLimit = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        _inlineImageLoadCancellation = loadLimit;
+        try
+        {
+            var images = _htmlImageSources.ToArray();
+            var loaded = 0;
+            var totalBytes = 0;
+            using var remoteClient = SafeRemoteImageLoader.CreateClient();
+            for (var offset = 0; offset < images.Length; offset += 4)
+            {
+                if (loadLimit.IsCancellationRequested || version != _messageVersion) break;
+                var batch = images.Skip(offset).Take(4).ToArray();
+                var results = await Task.WhenAll(batch.Select(async source =>
+                {
+                    try
+                    {
+                        return source.Key.StartsWith("cid:", StringComparison.Ordinal)
+                            ? await ReadInlineImageAsync(source.Value)
+                            : source.ContactsExternalSite
+                                ? await SafeRemoteImageLoader.FetchAsync(source.Value, remoteClient, loadLimit.Token)
+                                : SafeHtmlDocument.DecodeDataImage(source);
+                    }
+                    catch (Exception) { return null; }
+                }));
+                if (loadLimit.IsCancellationRequested || version != _messageVersion) return;
+                for (var index = 0; index < batch.Length; index++)
+                {
+                    var bytes = results[index];
+                    if (bytes is null) continue;
+                    try
+                    {
+                        SafeInlineImage.Validate(bytes);
+                        if (totalBytes + bytes.Length > 48 * 1024 * 1024) break;
+                        var bitmap = new Bitmap(new MemoryStream(bytes, writable: false));
+                        if (bitmap.PixelSize.Width * (long)bitmap.PixelSize.Height > SafeInlineImage.MaximumPixels)
+                        { bitmap.Dispose(); continue; }
+                        _inlineImages[batch[index].Key] = bitmap;
+                        _inlineImageBytes[batch[index].Key] = bytes;
+                        totalBytes += bytes.Length;
+                        loaded++;
+                    }
+                    catch (Exception) { /* Damaged image: leave its placeholder. */ }
+                }
+                if (totalBytes >= 48 * 1024 * 1024) break;
+            }
+            if (loadLimit.IsCancellationRequested || version != _messageVersion || !IsVisible) return;
+            _failedMessageImages = images.Length - loaded;
+            HtmlStatusText.Text = "Laying out HTML message with images…";
+            HtmlStatusText.IsVisible = true;
+            ShowMessageBody();
+            _ = RenderBrowserHtmlAsync(version);
+            StatusText.Text = loaded == images.Length ?
+                $"Showing {loaded} message image{(loaded == 1 ? "" : "s")}." :
+                $"Showing {loaded} of {images.Length} message images; some could not be loaded.";
+        }
+        finally
+        {
+            if (ReferenceEquals(_inlineImageLoadCancellation, loadLimit))
+                _inlineImageLoadCancellation = null;
+            loadLimit.Dispose();
+        }
+    }
+
+    private static string ImageKey(HtmlPreviewRun run) => run.ImageContentId is { } cid ? "cid:" + cid.ToLowerInvariant() :
+        "remote:" + run.RemoteImageUrl;
+
+    private async Task<byte[]?> ReadInlineImageAsync(string id)
+    {
+        static string Normalize(string value) => value.Trim().Trim('<', '>');
+        if (_activeMessage is { } pstMessage && _activePath is { } path && _stores.TryGetValue(path, out var store))
+        {
+            var attachment = pstMessage.Attachments.FirstOrDefault(a => a.Method == 1 &&
+                a.Size is >= 0 and <= SafeInlineImage.MaximumBytes &&
+                string.Equals(Normalize(a.ContentId), id, StringComparison.OrdinalIgnoreCase));
+            if (attachment is null) return null;
+            await _readerGate.WaitAsync();
+            try { return await Task.Run(() => store.ReadAttachmentData(pstMessage.Summary, attachment, SafeInlineImage.MaximumBytes)); }
+            finally { _readerGate.Release(); }
+        }
+        if (_activeGraphMessage is { } graphMessage && _activeMicrosoftAccount is { } account &&
+            _currentGraphAttachments is { } attachments)
+        {
+            var attachment = attachments.FirstOrDefault(a => a.IsInline && a.Kind == GraphAttachmentKind.File &&
+                a.SizeBytes is >= 0 and <= SafeInlineImage.MaximumBytes &&
+                string.Equals(Normalize(a.ContentId ?? ""), id, StringComparison.OrdinalIgnoreCase));
+            if (attachment is null) return null;
+            var cancellationToken = _onlineCancellation?.Token ?? CancellationToken.None;
+            var token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
+            using var output = new LimitedImageStream();
+            await new GraphAttachmentReader(_graphHttp, account.AccountId)
+                .CopyFileAsync(token, graphMessage.Id, attachment, output, cancellationToken);
+            return output.ToArray();
+        }
+        return null;
+    }
+
+    private sealed class LimitedImageStream : MemoryStream
+    {
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (Length + buffer.Length > SafeInlineImage.MaximumBytes)
+                throw new InvalidDataException("Embedded image exceeds the preview limit.");
+            return base.WriteAsync(buffer, cancellationToken);
+        }
+    }
+
+    private void ClearInlineImages()
+    {
+        _failedMessageImages = 0;
+        _embeddedHtmlActive = false;
+        _embeddedNavigation?.TrySetCanceled();
+        _embeddedNavigation = null;
+        MainHtmlWebView.IsVisible = false;
+        var imageCancellation = _inlineImageLoadCancellation;
+        _inlineImageLoadCancellation = null;
+        _imageLoadTask = null;
+        imageCancellation?.Cancel();
+        var renderCancellation = _htmlRenderCancellation;
+        _htmlRenderCancellation = null;
+        renderCancellation?.Cancel();
+        HtmlPagesPanel.Children.Clear();
+        HtmlPagesPanel.IsVisible = false;
+        foreach (var bitmap in _htmlPageBitmaps) bitmap.Dispose();
+        _htmlPageBitmaps.Clear();
+        _htmlPagePngs = [];
+        foreach (var image in _inlineImages.Values) image.Dispose();
+        _inlineImages.Clear();
+        _inlineImageBytes.Clear();
+    }
+
+    private async Task RenderBrowserHtmlAsync(long version)
+    {
+        if (_bodyHtml is not { } html) return;
+        var previousCancellation = _htmlRenderCancellation;
+        _htmlRenderCancellation = null;
+        previousCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        _htmlRenderCancellation = cancellation;
+        try
+        {
+            if (!_preferSnapshotForMessage)
+            {
+                var interactive = _showOriginalHtml ? html : SafeHtmlDocument.BuildInteractive(html, _inlineImageBytes);
+                if (await TryShowEmbeddedHtmlAsync(interactive, version, cancellation.Token)) return;
+            }
+            cancellation.Token.ThrowIfCancellationRequested();
+            var document = _showOriginalHtml ? html : SafeHtmlDocument.Build(html, _inlineImageBytes);
+            var width = (int)Math.Clamp(ReaderPane.Bounds.Width - 36, 400, 1200);
+            var rendered = await BrowserHtmlRenderer.RenderDocumentAsync(document, width, cancellation.Token,
+                trustedOriginal: _showOriginalHtml);
+            if (cancellation.IsCancellationRequested || version != _messageVersion) return;
+            var bitmaps = rendered.Pages.Select(png => new Bitmap(new MemoryStream(png, writable: false))).ToArray();
+            HtmlPagesPanel.Children.Clear();
+            foreach (var bitmap in _htmlPageBitmaps) bitmap.Dispose();
+            _htmlPageBitmaps.Clear();
+            _htmlPageBitmaps.AddRange(bitmaps);
+            _htmlPagePngs = rendered.Pages;
+            double top = 0;
+            foreach (var bitmap in bitmaps)
+            {
+                HtmlPagesPanel.Children.Add(new HtmlPageView(bitmap, top, rendered.Links,
+                    message => StatusText.Text = message));
+                top += bitmap.PixelSize.Height;
+            }
+            FitHtmlPageImage();
+            ShowImageFailureStatus();
+            ShowMessageBody();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (!cancellation.IsCancellationRequested && version == _messageVersion)
+            {
+                StatusText.Text = ex is NotSupportedException
+                    ? "Full HTML layout needs Chrome or Chromium; showing a basic preview."
+                    : "Full HTML layout is unavailable; showing a basic preview.";
+                HtmlStatusText.Text = StatusText.Text;
+                HtmlStatusText.IsVisible = true;
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_htmlRenderCancellation, cancellation))
+                _htmlRenderCancellation = null;
+            cancellation.Dispose();
+        }
+    }
+
+    private async Task<bool> TryShowEmbeddedHtmlAsync(string document, long version, CancellationToken cancellationToken)
+    {
+        if (version != _messageVersion) return false;
+        if (document.Length > EmbeddedHtmlMaximumCharacters)
+        {
+            _preferSnapshotForMessage = true;
+            StatusText.Text = "This message is too large for the interactive reader; showing the alternate view.";
+            return false;
+        }
+        var succeeded = false;
+        var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            _embeddedNavigation = completed;
+            _embeddedHtmlActive = true;
+            MainHtmlWebView.IsVisible = true;
+            MainHtmlWebView.NavigateToString(document);
+            var timeout = Task.Delay(TimeSpan.FromSeconds(6), cancellationToken);
+            if (await Task.WhenAny(completed.Task, timeout) != completed.Task ||
+                cancellationToken.IsCancellationRequested || version != _messageVersion) return false;
+            var probeTask = MainHtmlWebView.InvokeScript(
+                "document.body && (document.body.innerText.trim().length > 0 || document.images.length > 0)");
+            if (await Task.WhenAny(probeTask, Task.Delay(TimeSpan.FromSeconds(2), cancellationToken)) != probeTask)
+                return false;
+            var probe = await probeTask;
+            if (!string.Equals(probe?.Trim('"'), "true", StringComparison.OrdinalIgnoreCase)) return false;
+            ShowImageFailureStatus();
+            ShowMessageBody();
+            StatusText.Text = "Interactive HTML ready in the reading pane.";
+            succeeded = true;
+            return true;
+        }
+        catch (Exception)
+        { return false; }
+        finally
+        {
+            if (ReferenceEquals(_embeddedNavigation, completed))
+            {
+                _embeddedNavigation = null;
+                if (!succeeded && version == _messageVersion && !cancellationToken.IsCancellationRequested)
+                {
+                    _embeddedHtmlActive = false;
+                    MainHtmlWebView.IsVisible = false;
+                    _preferSnapshotForMessage = true;
+                    StatusText.Text = "Interactive reader could not display this message; showing the alternate view.";
+                }
+            }
+        }
+    }
+
+    private void ShowImageFailureStatus()
+    {
+        HtmlStatusText.IsVisible = _failedMessageImages > 0;
+        if (_failedMessageImages > 0)
+            HtmlStatusText.Text = _failedMessageImages == 1
+                ? "One message image could not be loaded. The rest of the message is available."
+                : $"{_failedMessageImages} message images could not be loaded. The rest of the message is available.";
+    }
+
+    private void OpenReaderLink(string url)
+    {
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception) { StatusText.Text = "Could not open this link in the system browser."; }
+    }
+
+    private void FitHtmlPageImage()
+    {
+        if (_htmlPageBitmaps.Count == 0) return;
+        var availableWidth = Math.Max(200, ReaderPane.Bounds.Width - 36);
+        foreach (var (bitmap, index) in _htmlPageBitmaps.Select((bitmap, index) => (bitmap, index)))
+        {
+            var scale = Math.Min(1, availableWidth / bitmap.PixelSize.Width) * _htmlZoom;
+            ((HtmlPageView)HtmlPagesPanel.Children[index]).SetScale(scale);
+        }
+    }
+
+    private void ZoomInClicked(object? sender, RoutedEventArgs e)
+    {
+        _htmlZoom = Math.Min(2.5, Math.Round(_htmlZoom * 1.25, 2));
+        FitHtmlPageImage();
+        ApplyEmbeddedZoom();
+    }
+
+    private void ZoomOutClicked(object? sender, RoutedEventArgs e)
+    {
+        _htmlZoom = Math.Max(0.5, Math.Round(_htmlZoom / 1.25, 2));
+        FitHtmlPageImage();
+        ApplyEmbeddedZoom();
+    }
+
+    private void ZoomFitClicked(object? sender, RoutedEventArgs e)
+    {
+        _htmlZoom = 1;
+        FitHtmlPageImage();
+        ApplyEmbeddedZoom();
+    }
+
+    private void ApplyEmbeddedZoom()
+    {
+        if (!_embeddedHtmlActive) return;
+        try
+        {
+            var percent = (int)Math.Round(_htmlZoom * 100);
+            MainHtmlWebView.InvokeScript($"document.documentElement.style.zoom = '{percent}%';");
+        }
+        catch (Exception) { /* The content remains readable if this engine cannot zoom. */ }
+    }
+
     private void ShowMessageBody()
     {
-        BodyText.Inlines?.Clear();
-        BodyViewButton.IsVisible = _richRuns is not null;
+        RichBodyPanel.Children.Clear();
+        BodyViewButton.IsVisible = _richRuns is not null || _bodyHtml is not null;
+        ReaderModeButton.IsVisible = _bodyHtml is not null;
+        ReaderModeButton.Content = _preferSnapshotForMessage ? "Use interactive reader" : "Use alternate reader";
+        ViewOriginalButton.IsVisible = _bodyHtml is not null;
+        ViewOriginalButton.Content = _showOriginalHtml ? "View safe layout" : "View original here (trusted mail)";
+        PopOutMessageButton.IsVisible = _richRuns is not null || !string.IsNullOrWhiteSpace(_bodyPlain);
+        InteractiveReaderButton.IsVisible = _bodyHtml is not null && !_embeddedHtmlActive;
+        PrintablePdfButton.IsVisible = PopOutMessageButton.IsVisible;
+        ReaderZoomControls.IsVisible = _bodyHtml is not null;
         BodyViewButton.Content = _showRichBody ? "View plain text" : "View rich text";
-        if (!_showRichBody || _richRuns is null)
+        if (!_showRichBody || (_richRuns is null && _htmlPageBitmaps.Count == 0 && !_embeddedHtmlActive))
         {
+            ReaderScrollViewer.IsVisible = true;
+            BodyText.IsVisible = true;
+            MainHtmlWebView.IsVisible = false;
+            RichBodyPanel.IsVisible = false;
+            HtmlPagesPanel.IsVisible = false;
             BodyText.Text = _bodyPlain;
             return;
         }
+        BodyText.IsVisible = false;
+        if (_embeddedHtmlActive)
+        {
+            ReaderScrollViewer.IsVisible = false;
+            MainHtmlWebView.IsVisible = true;
+            HtmlPagesPanel.IsVisible = false;
+            RichBodyPanel.IsVisible = false;
+            return;
+        }
+        MainHtmlWebView.IsVisible = false;
+        ReaderScrollViewer.IsVisible = true;
+        if (_htmlPageBitmaps.Count > 0)
+        {
+            HtmlPagesPanel.IsVisible = true;
+            RichBodyPanel.IsVisible = false;
+            BodyText.Text = "";
+            return;
+        }
+        HtmlPagesPanel.IsVisible = false;
+        RichBodyPanel.IsVisible = true;
         BodyText.Text = "";
+        if (_richRuns is null) return;
+        TextBlock? line = null;
+        var pendingBreaks = 0;
         foreach (var segment in _richRuns)
         {
-            var run = new Run(segment.Text);
-            if (segment.Bold) run.FontWeight = FontWeight.Bold;
-            if (segment.Italic) run.FontStyle = FontStyle.Italic;
-            if (segment.Underline) run.TextDecorations = TextDecorations.Underline;
-            if (segment.Scale != 1) run.FontSize = _appearance.TextSize * segment.Scale;
-            BodyText.Inlines?.Add(run);
+            if (RichBodyPanel.Children.Count >= 1200)
+            {
+                RichBodyPanel.Children.Add(new TextBlock { Text = "[Preview shortened]" });
+                return;
+            }
+            if ((segment.ImageContentId is not null || segment.RemoteImageUrl is not null) &&
+                _inlineImages.TryGetValue(ImageKey(segment), out var bitmap))
+            {
+                RichBodyPanel.Children.Add(new Image
+                {
+                    Source = bitmap, Width = Math.Min(bitmap.PixelSize.Width, 480),
+                    Height = Math.Min(bitmap.PixelSize.Height, 360), Stretch = Stretch.Uniform,
+                    Margin = new Thickness(0, 6, 0, 6), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+                });
+                line = null;
+                pendingBreaks = 1;
+                continue;
+            }
+            var parts = segment.Text.Split('\n');
+            for (var i = 0; i < parts.Length; i++)
+            {
+                if (i > 0) pendingBreaks++;
+                if (parts[i].Length == 0) continue;
+                if (line is null || pendingBreaks > 0)
+                {
+                    if (RichBodyPanel.Children.Count >= 1200) return;
+                    line = NewLine(pendingBreaks >= 2 ? 9 : pendingBreaks == 1 ? 3 : 0);
+                }
+                pendingBreaks = 0;
+                var run = new Run(parts[i]);
+                if (segment.Bold) run.FontWeight = FontWeight.Bold;
+                if (segment.Italic) run.FontStyle = FontStyle.Italic;
+                if (segment.Underline) run.TextDecorations = TextDecorations.Underline;
+                if (segment.Scale != 1) run.FontSize = _appearance.TextSize * segment.Scale;
+                line.Inlines?.Add(run);
+            }
+        }
+
+        TextBlock NewLine(int topMargin = 0)
+        {
+            var block = new TextBlock { TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, topMargin, 0, 0) };
+            RichBodyPanel.Children.Add(block);
+            return block;
         }
     }
 
     private void ClearReader()
     {
+        ClearInlineImages();
+        _bodyHtml = null;
+        _showOriginalHtml = false;
+        _htmlImageSources = [];
         _activeMessage = null;
+        _activeGraphMessage = null;
+        _currentGraphAttachments = null;
         ExportAttachmentButton.IsEnabled = false;
         ExportMessageButton.IsEnabled = false;
         _richRuns = null;
         _bodyPlain = "";
         BodyViewButton.IsVisible = false;
-        BodyText.Inlines?.Clear();
+        ReaderModeButton.IsVisible = false;
+        HtmlStatusText.IsVisible = false;
+        ViewOriginalButton.IsVisible = false;
+        PopOutMessageButton.IsVisible = false;
+        InteractiveReaderButton.IsVisible = false;
+        PrintablePdfButton.IsVisible = false;
+        ReaderZoomControls.IsVisible = false;
+        RichBodyPanel.Children.Clear();
+        RichBodyPanel.IsVisible = false;
+        ReaderScrollViewer.IsVisible = true;
+        BodyText.IsVisible = true;
         SubjectText.Text = "Select a message";
         SenderText.Text = RecipientText.Text = AttachmentText.Text = BodyText.Text = "";
     }

@@ -27,6 +27,7 @@ backups/
 **/bin/
 **/obj/
 **/publish/
+**/.avalonia-build-tasks/
 .vs/
 .idea/
 .vscode/
@@ -38,6 +39,16 @@ headless-*.png
 headless-*.log
 headless-run.log
 TestResults/
+
+# Screen captures. This repository is public and a capture of the running app can
+# show real message content from live accounts or private PST archives, so images
+# are ignored by default. Curate deliberately: inspect the image, then either
+# `git add -f <file>` or move it under docs/assets/ to publish it.
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+!docs/assets/**
 
 # OS-generated files
 .DS_Store

@@ -5,6 +5,11 @@ namespace OpenOutlook.Desktop;
 /// <summary>Local window layout only; never stores archive paths or message content.</summary>
 public sealed record ViewLayoutSettings
 {
+    public double WindowWidth { get; init; } = 1380;
+    public double WindowHeight { get; init; } = 850;
+    public int? WindowX { get; init; }
+    public int? WindowY { get; init; }
+    public bool WindowMaximized { get; init; }
     public double FolderPaneWeight { get; init; } = 2;
     public double MessagePaneWeight { get; init; } = 5;
     public double ReaderPaneWeight { get; init; } = 4;
@@ -68,6 +73,15 @@ public sealed class ViewLayoutSettingsStore
                                (column.IsStar ? column.Width is >= 0.2 and <= 10 : column.Width is >= 30 and <= 1000));
         return new ViewLayoutSettings
         {
+            WindowWidth = double.IsFinite(settings.WindowWidth) && settings.WindowWidth is >= 850 and <= 7680
+                ? settings.WindowWidth : 1380,
+            WindowHeight = double.IsFinite(settings.WindowHeight) && settings.WindowHeight is >= 560 and <= 4320
+                ? settings.WindowHeight : 850,
+            WindowX = settings.WindowX is >= -50000 and <= 50000 && settings.WindowY is >= -50000 and <= 50000
+                ? settings.WindowX : null,
+            WindowY = settings.WindowX is >= -50000 and <= 50000 && settings.WindowY is >= -50000 and <= 50000
+                ? settings.WindowY : null,
+            WindowMaximized = settings.WindowMaximized,
             FolderPaneWeight = weightsValid ? settings.FolderPaneWeight : 2,
             MessagePaneWeight = weightsValid ? settings.MessagePaneWeight : 5,
             ReaderPaneWeight = weightsValid ? settings.ReaderPaneWeight : 4,

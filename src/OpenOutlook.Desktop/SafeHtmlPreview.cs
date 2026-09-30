@@ -4,11 +4,11 @@ using System.Text;
 namespace OpenOutlook.Desktop;
 
 public sealed record HtmlPreviewRun(string Text, bool Bold = false, bool Italic = false,
-    bool Underline = false, double Scale = 1);
+    bool Underline = false, double Scale = 1, string? ImageContentId = null, string? RemoteImageUrl = null);
 
 /// <summary>
-/// Converts a bounded subset of email HTML to inert text runs. No markup, URI, CSS,
-/// image or script is handed to a browser or an Avalonia HTML control.
+/// Converts bounded email HTML to inert text and image markers. No markup, URI or CSS
+/// is handed to a browser or an Avalonia HTML control. Images need a separate, explicit load.
 /// </summary>
 public static class SafeHtmlPreview
 {
@@ -71,7 +71,7 @@ public static class SafeHtmlPreview
             }
             if (closing)
             {
-                if (tag is "p" or "div" or "section" or "article" or "blockquote" or "li" or "tr" || tag.StartsWith('h') && tag.Length == 2)
+                if (tag is "p" or "div" or "section" or "article" or "blockquote" or "li" or "tr" or "table" || tag.StartsWith('h') && tag.Length == 2)
                     AddBreak(tag is "p" or "blockquote" || tag.StartsWith('h') ? 2 : 1);
                 if (!stack.Any(frame => frame.Tag == tag)) continue;
                 while (stack.Count > 0)
@@ -86,9 +86,10 @@ public static class SafeHtmlPreview
             {
                 case "br": AddBreak(1); break;
                 case "hr": AddBreak(2); break;
-                case "img": AddText("[Image blocked]", style); break;
+                case "img": AddImage(raw, style); break;
                 case "p": case "section": case "article": case "blockquote": AddBreak(2); break;
                 case "div": case "tr": AddBreak(1); break;
+                case "table": AddBreak(2); break;
                 case "li": AddBreak(1); AddText("• ", style); break;
                 case "td": case "th": AddText("    ", style); break;
                 default:
@@ -145,11 +146,71 @@ public static class SafeHtmlPreview
             outputLength += value.Length;
             var run = new HtmlPreviewRun(value, current.Bold, current.Italic, current.Underline, current.Scale);
             if (runs.Count > 0 && runs[^1] is { } previous &&
+                previous.ImageContentId is null && previous.RemoteImageUrl is null &&
                 previous.Bold == run.Bold && previous.Italic == run.Italic &&
                 previous.Underline == run.Underline && previous.Scale == run.Scale)
                 runs[^1] = previous with { Text = previous.Text + run.Text };
             else runs.Add(run);
         }
+
+        void AddImage(string rawTag, Style current)
+        {
+            if (runs.Count >= MaxRuns) return;
+            var source = ReadAttribute(rawTag, "src");
+            if (source is not null && source.StartsWith("cid:", StringComparison.OrdinalIgnoreCase))
+            {
+                var cid = source[4..].Trim().Trim('<', '>');
+                if (cid.Length is > 0 and <= 255 && cid.All(ch => ch is >= '!' and <= '~' && ch is not ('<' or '>' or '\\' or '"' or '\'')))
+                {
+                    runs.Add(new HtmlPreviewRun("[Inline image hidden]", ImageContentId: cid));
+                    outputLength += 21;
+                    return;
+                }
+            }
+            if (source is not null && SafeRemoteImageLoader.TryAcceptUrl(source, out var remote))
+            {
+                runs.Add(new HtmlPreviewRun("[Image]", RemoteImageUrl: remote.AbsoluteUri));
+                outputLength += 21;
+                return;
+            }
+            AddText("[Image blocked]", current);
+        }
+    }
+
+    private static string? ReadAttribute(string tag, string name)
+    {
+        var index = 0;
+        while (index < tag.Length)
+        {
+            while (index < tag.Length && !char.IsLetter(tag[index])) index++;
+            var start = index;
+            while (index < tag.Length && (char.IsLetterOrDigit(tag[index]) || tag[index] is '-' or '_')) index++;
+            if (start == index) break;
+            var key = tag[start..index];
+            while (index < tag.Length && char.IsWhiteSpace(tag[index])) index++;
+            if (index >= tag.Length || tag[index] != '=') continue;
+            index++;
+            while (index < tag.Length && char.IsWhiteSpace(tag[index])) index++;
+            if (index >= tag.Length) break;
+            string value;
+            if (tag[index] is '\'' or '"')
+            {
+                var quote = tag[index++];
+                start = index;
+                while (index < tag.Length && tag[index] != quote) index++;
+                value = tag[start..index];
+                if (index < tag.Length) index++;
+            }
+            else
+            {
+                start = index;
+                while (index < tag.Length && !char.IsWhiteSpace(tag[index])) index++;
+                value = tag[start..index];
+            }
+            if (key.Equals(name, StringComparison.OrdinalIgnoreCase))
+                return WebUtility.HtmlDecode(value);
+        }
+        return null;
     }
 
     private static int FindTagEnd(string html, int start)

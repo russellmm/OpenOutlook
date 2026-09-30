@@ -4,7 +4,21 @@ namespace OpenOutlook.Auth;
 
 /// <summary>Public client IDs and verified account labels only. Refresh tokens belong in ISecretStore.</summary>
 public sealed record ConnectedAccount(OAuthProvider Provider, string AccountId, string DisplayAddress,
-    string ClientId, DateTimeOffset ConnectedAt);
+    string ClientId, DateTimeOffset ConnectedAt, string[]? RequestedScopes = null)
+{
+    public bool CanWriteMicrosoftMail => Provider == OAuthProvider.MicrosoftConsumers &&
+        RequestedScopes?.Contains("Mail.ReadWrite", StringComparer.OrdinalIgnoreCase) == true;
+    public bool CanSendMicrosoftMail => CanWriteMicrosoftMail &&
+        RequestedScopes?.Contains("Mail.Send", StringComparer.OrdinalIgnoreCase) == true;
+    public bool CanManageMicrosoftContacts => Provider == OAuthProvider.MicrosoftConsumers &&
+        RequestedScopes?.Contains("Contacts.ReadWrite", StringComparer.OrdinalIgnoreCase) == true;
+}
+
+public static class MicrosoftAccountPermissions
+{
+    public static readonly string[] PlannedPersonalScopes =
+        ["offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send", "Contacts.ReadWrite"];
+}
 
 /// <summary>Small interim local registry for the desktop onboarding milestone.</summary>
 public sealed class ConnectedAccountRegistry
@@ -93,7 +107,9 @@ public sealed class ConnectedAccountRegistry
                 account.DisplayAddress != account.DisplayAddress.Trim() || account.DisplayAddress.Any(char.IsControl) ||
                 string.IsNullOrWhiteSpace(account.ClientId) || account.ClientId.Length > 1024 ||
                 account.ClientId != account.ClientId.Trim() || account.ClientId.Any(char.IsControl) ||
-                account.ConnectedAt == default)
+                account.ConnectedAt == default || account.RequestedScopes is { Length: > 16 } ||
+                account.RequestedScopes?.Any(scope => string.IsNullOrWhiteSpace(scope) || scope.Length > 128 ||
+                    scope.Any(char.IsControl)) == true)
                 throw new InvalidDataException("Account registry contains an invalid account.");
         }
     }

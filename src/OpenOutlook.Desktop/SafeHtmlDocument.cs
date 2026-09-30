@@ -80,6 +80,11 @@ public static partial class SafeHtmlDocument
             }
             else element.RemoveAttribute("src");
 
+            // Rewrite the author's own CSS first. The approved data URI is appended afterwards: if it
+            // passed through ReplaceCssUrls as well, its "data:" prefix would be keyed a second time,
+            // never match the loaded-image table, and every background= attribute would render as none.
+            if (element.HasAttribute("style"))
+                element.SetAttribute("style", ReplaceCssUrls(element.GetAttribute("style") ?? "", images));
             if (element.HasAttribute("background"))
             {
                 var source = DataUri(element.GetAttribute("background"), images);
@@ -88,8 +93,6 @@ public static partial class SafeHtmlDocument
                     element.SetAttribute("style", (element.GetAttribute("style") ?? "") +
                         ";background-image:url('" + source + "')");
             }
-            if (element.HasAttribute("style"))
-                element.SetAttribute("style", ReplaceCssUrls(element.GetAttribute("style") ?? "", images));
             if (element.LocalName == "style")
                 element.TextContent = ReplaceCssUrls(element.TextContent, images);
         }

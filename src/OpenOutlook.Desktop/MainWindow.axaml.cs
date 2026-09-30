@@ -1655,6 +1655,10 @@ public sealed partial class MainWindow : Window
             var images = _htmlImageSources.ToArray();
             var loaded = 0;
             var totalBytes = 0;
+            var memoryLimited = 0;
+            // Reserve declared pixels up front: Validate() trusts the size a file declares, and the
+            // encoded-byte cap below cannot see a small file that decodes to a huge bitmap.
+            var pixelBudget = new DecodedPixelBudget(SafeInlineImage.MaximumMessagePixels);
             using var remoteClient = SafeRemoteImageLoader.CreateClient();
             for (var offset = 0; offset < images.Length; offset += 4)
             {
@@ -1679,7 +1683,9 @@ public sealed partial class MainWindow : Window
                     if (bytes is null) continue;
                     try
                     {
-                        SafeInlineImage.Validate(bytes);
+                        var declared = SafeInlineImage.Validate(bytes);
+                        if (!pixelBudget.TryReserve(declared.Width * (long)declared.Height))
+                        { memoryLimited++; continue; }
                         if (totalBytes + bytes.Length > 48 * 1024 * 1024) break;
                         var bitmap = new Bitmap(new MemoryStream(bytes, writable: false));
                         if (bitmap.PixelSize.Width * (long)bitmap.PixelSize.Height > SafeInlineImage.MaximumPixels)
@@ -1701,7 +1707,9 @@ public sealed partial class MainWindow : Window
             _ = RenderBrowserHtmlAsync(version);
             StatusText.Text = loaded == images.Length ?
                 $"Showing {loaded} message image{(loaded == 1 ? "" : "s")}." :
-                $"Showing {loaded} of {images.Length} message images; some could not be loaded.";
+                memoryLimited > 0 ?
+                    $"Showing {loaded} of {images.Length} message images; the largest were skipped to limit memory." :
+                    $"Showing {loaded} of {images.Length} message images; some could not be loaded.";
         }
         finally
         {

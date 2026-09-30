@@ -111,6 +111,42 @@ public sealed class SafeHtmlDocumentTests
     }
 
     [Fact]
+    public void KeepsTableBackgroundImageFromCidReference()
+    {
+        // Outlook builds many headers with <table background="cid:...">. The resolved data URI must
+        // survive; an earlier ordering rewrote it a second time and left every one as `none`.
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=");
+        var html = "<table background=\"cid:banner\"><tr><td>Header</td></tr></table>";
+        Assert.Contains("cid:banner", SafeHtmlDocument.FindImages(html).Select(source => source.Key));
+
+        var safe = SafeHtmlDocument.Build(html, new Dictionary<string, byte[]> { ["cid:banner"] = png });
+        var document = new HtmlParser().ParseDocument(safe);
+        // AngleSharp re-serialises CSS (spacing, quoting), so assert meaning rather than exact text.
+        var style = Assert.Single(document.QuerySelectorAll("table")).GetAttribute("style")!;
+        var compact = style.Replace(" ", "");
+        Assert.Contains("background-image:url(", compact);
+        Assert.Contains("data:image/png;base64,", compact);
+        Assert.DoesNotContain("background-image:none", compact);
+        Assert.Null(document.QuerySelector("table")!.GetAttribute("background"));
+    }
+
+    [Fact]
+    public void KeepsAuthorCssAndBackgroundTogetherOnTheSameElement()
+    {
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=");
+        var html = "<table><tr><td style=\"background-color:#343463;color:#fff\" background=\"cid:banner\">Cell</td></tr></table>";
+        var safe = SafeHtmlDocument.Build(html, new Dictionary<string, byte[]> { ["cid:banner"] = png });
+        var document = new HtmlParser().ParseDocument(safe);
+        var style = Assert.Single(document.QuerySelectorAll("td")).GetAttribute("style")!;
+        Assert.Contains("background-color", style);
+        Assert.Contains("color", style);
+        Assert.Contains("data:image/png;base64,", style.Replace(" ", ""));
+        Assert.DoesNotContain("background-image:none", style.Replace(" ", ""));
+    }
+
+    [Fact]
     public void Failed_remote_image_has_visible_fallback_without_request_url()
     {
         var interactive = SafeHtmlDocument.BuildInteractive(

@@ -8,6 +8,16 @@ public static class SafeInlineImage
     public const int MaximumBytes = 8 * 1024 * 1024;
     public const int MaximumPixels = 16 * 1024 * 1024;
 
+    /// <summary>
+    /// Aggregate decoded pixels allowed for every image in one message. Validate() only reads the
+    /// dimensions a file declares, and all other caps here count encoded bytes, so without this an
+    /// attacker can pass every check with many small files that each declare a large bitmap: 64
+    /// sources at the per-image limit would decode to roughly 4 GB of RGBA. The ceiling is set well
+    /// above any real message (64 inline photos at 1200x800 fit) so legitimate mail always renders
+    /// completely; images past it keep their placeholder instead of exhausting memory.
+    /// </summary>
+    public const long MaximumMessagePixels = 64L * 1024 * 1024;
+
     public static (int Width, int Height) Validate(ReadOnlySpan<byte> bytes)
     {
         if (bytes.Length is 0 or > MaximumBytes)
@@ -57,5 +67,39 @@ public static class SafeInlineImage
             offset += length;
         }
         throw new InvalidDataException("Embedded JPEG dimensions are invalid.");
+    }
+}
+
+/// <summary>
+/// Thread-safe running total of decoded pixels for a single message's images. Callers reserve the
+/// declared size before decoding, so oversized bitmaps are refused instead of allocated and measured.
+/// </summary>
+public sealed class DecodedPixelBudget
+{
+    private long _remaining;
+    private long _used;
+
+    public DecodedPixelBudget(long totalPixels)
+    {
+        if (totalPixels <= 0) throw new ArgumentOutOfRangeException(nameof(totalPixels));
+        _remaining = totalPixels;
+    }
+
+    public long Used => Interlocked.Read(ref _used);
+
+    /// <summary>Reserves <paramref name="pixels"/> and returns false when the budget is exhausted.</summary>
+    public bool TryReserve(long pixels)
+    {
+        if (pixels <= 0) return false;
+        while (true)
+        {
+            var observed = Interlocked.Read(ref _remaining);
+            if (observed < pixels) return false;
+            if (Interlocked.CompareExchange(ref _remaining, observed - pixels, observed) == observed)
+            {
+                Interlocked.Add(ref _used, pixels);
+                return true;
+            }
+        }
     }
 }

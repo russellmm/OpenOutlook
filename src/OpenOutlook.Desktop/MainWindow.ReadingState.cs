@@ -1,0 +1,122 @@
+using System;
+using System.Collections.Generic;
+using Avalonia.Threading;
+using OpenOutlook.Providers.Microsoft;
+
+namespace OpenOutlook.Desktop;
+
+/// <summary>
+/// Reading Pane read-tracking, driven by the Options dialog values (File > Options > Mail >
+/// Outlook panes > Reading Pane): "Mark items as read when viewed in the Reading Pane" starts a
+/// timer of N seconds on every selected message and marks it read when the timer elapses;
+/// "Mark item as read when selection changes" marks the previous item read the moment another one
+/// is selected. Because PST archives are opened read-only, the new state is remembered in
+/// read-state.json (see ReadStateStore) and re-applied whenever the lists are rebuilt; mailbox
+/// messages carry their real flags on top of the same overlay.
+/// </summary>
+public partial class MainWindow
+{
+    private readonly ReadStateStore _readStateStore = new();
+    private Dictionary<string, bool> _readOverrides = new(StringComparer.Ordinal);
+    private bool _readOverridesLoaded;
+    private DispatcherTimer? _markReadTimer;
+    private string? _readingKey;
+    private Action<bool>? _readingApply;
+
+    public static string PstMessageKey(string archivePath, uint nid) =>
+        "pst:" + archivePath + "|" + nid.ToString("X8");
+
+    public static string GraphMessageKey(string accountId, string messageId) =>
+        "msg:" + accountId + "/" + messageId;
+
+    private void InitializeReadingState() => _options = _optionsStore.Load();
+
+    private bool? OverrideFor(string key)
+    {
+        if (!_readOverridesLoaded)
+        {
+            _readOverrides = _readStateStore.Load();
+            _readOverridesLoaded = true;
+        }
+        return _readOverrides.TryGetValue(key, out var forced) ? forced : null;
+    }
+
+    /// <summary>Applies the stored read state to freshly fetched mailbox messages so a local
+    /// mark-read survives the next server refresh until real flag writes land.</summary>
+    private GraphInboxMessage WithLocalReadState(GraphInboxMessage message) =>
+        _activeMicrosoftAccount is { } account &&
+        OverrideFor(GraphMessageKey(account.AccountId, message.Id)) is { } forced && forced != message.IsRead
+            ? message with { IsRead = forced }
+            : message;
+
+    /// <summary>Called on every message selection (and on list rebuilds): closes out the previously
+    /// tracked item and starts the mark-as-read timer for the newly selected one.</summary>
+    private void TrackReadingPaneItem()
+    {
+        var previousKey = _readingKey;
+        var previousApply = _readingApply;
+        _readingKey = null;
+        _readingApply = null;
+        _markReadTimer?.Stop();
+
+        if (previousKey is not null && previousApply is not null && _options.ReadPaneMarkOnSelectionChange)
+            MarkItemRead(previousKey, previousApply);
+
+        string? key = null;
+        Action<bool>? apply = null;
+        bool alreadyRead = false;
+        if (MessageList.SelectedItem is MessageListRow pstRow && _activePath is { } archivePath)
+        {
+            key = PstMessageKey(archivePath, pstRow.Summary.Nid);
+            alreadyRead = pstRow.IsRead;
+            apply = read => pstRow.SetRead(read);
+        }
+        else if (MessageList.SelectedItem is GraphMessageListRow graphRow && _activeMicrosoftAccount is { } account)
+        {
+            key = GraphMessageKey(account.AccountId, graphRow.Message.Id);
+            alreadyRead = graphRow.Message.IsRead;
+            apply = read => graphRow.Update(graphRow.Message with { IsRead = read });
+        }
+        if (key is null || apply is null) return;
+
+        _readingKey = key;
+        _readingApply = apply;
+        if (alreadyRead || !_options.ReadPaneMarkOnView) return;
+
+        var seconds = Math.Clamp(_options.ReadPaneWaitSeconds, 0, 300);
+        if (seconds == 0) { MarkItemRead(key, apply); return; }
+        _markReadTimer ??= CreateMarkReadTimer();
+        _markReadTimer.Interval = TimeSpan.FromSeconds(seconds);
+        _markReadTimer.Start();
+    }
+
+    private DispatcherTimer CreateMarkReadTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (_readingKey is { } key && _readingApply is { } apply) MarkItemRead(key, apply);
+        };
+        return timer;
+    }
+
+    private void MarkItemRead(string key, Action<bool> apply)
+    {
+        _readingApply = null;
+        _readingKey = null;
+        if (OverrideFor(key) == true) return;
+        try { apply(true); }
+        catch (Exception exception) when (exception is ObjectDisposedException or InvalidOperationException)
+        { /* The row's store closed underneath us; the persisted override below still stands. */ }
+        _readOverrides[key] = true;
+        PersistReadState();
+    }
+
+    private void PersistReadState()
+    {
+        try { _readStateStore.Save(_readOverrides); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        { AppLog.Error("read-state", exception, "could not persist read state"); }
+    }
+}

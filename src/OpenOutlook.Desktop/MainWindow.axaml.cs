@@ -94,6 +94,7 @@ public sealed partial class MainWindow : Window
         var layout = _viewLayoutStore.Load();
         ApplyViewLayout(layout);
         InitializeFolderOrder();
+        InitializeReadingState();
         _layoutSaveTimer.Tick += (_, _) =>
         {
             _layoutSaveTimer.Stop();
@@ -338,6 +339,13 @@ public sealed partial class MainWindow : Window
             };
             row.Update(updated);
             if (_activeGraphMessage?.Id == updated.Id) _activeGraphMessage = updated;
+            // Keep the local read overlay in step with an explicit mark-read/unread so a later
+            // refresh cannot resurrect a stale auto-marked state.
+            if (action is "read" or "unread" && _activeMicrosoftAccount is { } accountForState)
+            {
+                _readOverrides[GraphMessageKey(accountForState.AccountId, updated.Id)] = action == "read";
+                PersistReadState();
+            }
         }
         _currentGraphMessages = _graphRows.Select(item => item.Message).ToArray();
     }
@@ -728,13 +736,14 @@ public sealed partial class MainWindow : Window
     private void ShowGraphMessages(IReadOnlyList<GraphInboxMessage> messages)
     {
         _graphRows = new ObservableCollection<GraphMessageListRow>(
-            messages.Select(message => new GraphMessageListRow(message)));
+            messages.Select(message => new GraphMessageListRow(WithLocalReadState(message))));
         var view = new DataGridCollectionView(_graphRows);
         if (GroupByDateCheck.IsChecked == true)
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(nameof(GraphMessageListRow.DateGroup)));
         _updatingMessageList = true;
         try { MessageList.ItemsSource = view; RefreshItemCount(); MessageList.SelectedItem = null; }
         finally { _updatingMessageList = false; }
+        TrackReadingPaneItem(); // leaving the previous folder's open item closes it out for read-tracking
     }
 
     private void ReconcileGraphMessages(IReadOnlyList<GraphInboxMessage> messages)
@@ -755,10 +764,10 @@ public sealed partial class MainWindow : Window
         for (var index = 0; index < messages.Count; index++)
         {
             var current = _graphRows.FirstOrDefault(row => row.Message.Id == messages[index].Id);
-            if (current is null) _graphRows.Insert(index, new GraphMessageListRow(messages[index]));
+            if (current is null) _graphRows.Insert(index, new GraphMessageListRow(WithLocalReadState(messages[index])));
             else
             {
-                current.Update(messages[index]);
+                current.Update(WithLocalReadState(messages[index]));
                 var oldIndex = _graphRows.IndexOf(current);
                 if (oldIndex != index) _graphRows.Move(oldIndex, index);
             }
@@ -851,6 +860,10 @@ public sealed partial class MainWindow : Window
     private void ShowMessages(IReadOnlyList<MailSummary> messages)
     {
         _currentMessages = messages;
+        if (_activePath is { } archivePath)
+            foreach (var message in messages)
+                if (OverrideFor(PstMessageKey(archivePath, message.Nid)) is { } forced)
+                    message.IsRead = forced;
         var rows = messages.Select(message => new MessageListRow(message)).ToArray();
         var view = new DataGridCollectionView(rows);
         if (GroupByDateCheck.IsChecked == true)
@@ -862,6 +875,7 @@ public sealed partial class MainWindow : Window
             MessageList.SelectedItem = null;
         }
         finally { _updatingMessageList = false; }
+        TrackReadingPaneItem(); // leaving the previous folder's open item closes it out for read-tracking
     }
 
     private void GroupByDateChanged(object? sender, RoutedEventArgs e)
@@ -908,6 +922,7 @@ public sealed partial class MainWindow : Window
     {
         if (_updatingMessageList) return;
         var version = Interlocked.Increment(ref _messageVersion);
+        TrackReadingPaneItem();
         _messageSelectionTask = LoadSelectedMessageAsync(version);
     }
 

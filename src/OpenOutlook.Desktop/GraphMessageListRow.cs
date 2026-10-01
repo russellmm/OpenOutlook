@@ -13,7 +13,7 @@ public sealed class GraphMessageListRow(GraphInboxMessage message) : INotifyProp
         Message = message;
         foreach (var name in new[] { nameof(HasAttachment), nameof(FromSort), nameof(FromDisplay),
             nameof(Subject), nameof(ReceivedSort), nameof(ReceivedDisplay), nameof(DateGroup),
-            nameof(SizeBytes), nameof(SizeDisplay) })
+            nameof(SizeBytes), nameof(SizeDisplay), nameof(IsUnread), nameof(TextWeight) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
     public bool HasAttachment => Message.HasAttachments;

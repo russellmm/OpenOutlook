@@ -1575,10 +1575,17 @@ public sealed partial class MainWindow : Window
             };
             dialog.NavigationStarted += (_, args) =>
             {
-                var requested = args.Request?.AbsoluteUri;
-                if (!SafeHtmlDocument.TryLink(requested, out var url)) return;
-                args.Cancel = true;
-                OpenExternal(url);
+                // Fail closed. An unclassifiable target used to fall through without cancelling, so a
+                // link the classifier could not vet would navigate inside this window -- one opened for
+                // trusted mail content, with the subject in its title bar. Only the document's own
+                // about: load is allowed; everything else is either handed to the system browser or
+                // blocked outright. This mirrors the reader web view's guard above.
+                if (SafeHtmlDocument.TryLink(args.Request?.AbsoluteUri, out var url))
+                {
+                    args.Cancel = true;
+                    OpenExternal(url);
+                }
+                else if (args.Request is { Scheme: not "about" }) args.Cancel = true;
             };
             dialog.NewWindowRequested += (_, args) =>
             {

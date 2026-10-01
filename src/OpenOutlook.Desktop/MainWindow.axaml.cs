@@ -93,6 +93,7 @@ public sealed partial class MainWindow : Window
         ApplyAppearance();
         var layout = _viewLayoutStore.Load();
         ApplyViewLayout(layout);
+        InitializeFolderOrder();
         _layoutSaveTimer.Tick += (_, _) =>
         {
             _layoutSaveTimer.Stop();
@@ -434,6 +435,7 @@ public sealed partial class MainWindow : Window
             if (_stores.TryAdd(path, store))
             {
                 FolderTree.Items.Add(BuildArchiveNode(path, store));
+                ApplyFolderOrder(FolderTree);
                 StatusText.Text = $"Opened {store.DisplayName} read-only.";
                 if (remember)
                 {
@@ -463,15 +465,17 @@ public sealed partial class MainWindow : Window
         finally { _readerGate.Release(); }
     }
 
-    private static TreeViewItem BuildArchiveNode(string path, PstStore store)
+    private TreeViewItem BuildArchiveNode(string path, PstStore store)
     {
         var roots = PstFolderPresentation.VisibleRoots(store.Root);
         var countVisited = new HashSet<uint>();
         var unread = roots.Sum(folder => CountUnread(folder, countVisited));
         var root = new TreeViewItem { Header = FolderHeader(store.DisplayName, unread), Tag = path, IsExpanded = true };
+        EnableFolderReordering(root);
         var visited = new HashSet<uint>();
         foreach (var folder in roots)
             AddChildren(root, folder, path, visited);
+        ApplyFolderOrder(root);
         return root;
     }
 
@@ -499,12 +503,14 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    private static void AddChildren(ItemsControl parent, MailFolder folder, string path, HashSet<uint> visited)
+    private void AddChildren(ItemsControl parent, MailFolder folder, string path, HashSet<uint> visited)
     {
         if (!visited.Add(folder.Nid)) return;
         var item = new TreeViewItem { Header = FolderHeader(folder.Name, folder.UnreadCount), Tag = new FolderSelection(path, folder), IsExpanded = folder.ParentNid == 0 };
+        EnableFolderReordering(item);
         parent.Items.Add(item);
         foreach (var child in folder.Children) AddChildren(item, child, path, visited);
+        ApplyFolderOrder(item);
     }
 
     private async void FolderSelected(object? sender, SelectionChangedEventArgs e)
@@ -607,10 +613,14 @@ public sealed partial class MainWindow : Window
             foreach (var account in _accountRegistry.Load().Where(account => account.Provider == OAuthProvider.MicrosoftConsumers))
             {
                 var root = new TreeViewItem { Header = account.DisplayAddress, Tag = account, IsExpanded = true };
-                root.Items.Add(new TreeViewItem { Header = "Inbox", Tag = new MicrosoftFolderSelection(account, "inbox", "Inbox") });
+                EnableFolderReordering(root);
+                var inbox = new TreeViewItem { Header = "Inbox", Tag = new MicrosoftFolderSelection(account, "inbox", "Inbox") };
+                EnableFolderReordering(inbox);
+                root.Items.Add(inbox);
                 FolderTree.Items.Add(root);
                 _ = LoadAccountFoldersAsync(account, root, _folderDiscoveryCancellation.Token);
             }
+            ApplyFolderOrder(FolderTree);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
         { StatusText.Text = "Saved account settings could not be read."; }
@@ -634,10 +644,12 @@ public sealed partial class MainWindow : Window
                         inbox.Header = FolderHeader(folder.DisplayName, folder.UnreadCount);
                         foreach (var child in folder.Children)
                             inbox.Items.Add(BuildMicrosoftFolderNode(account, child));
+                        ApplyFolderOrder(inbox);
                     }
                 }
                 else root.Items.Add(BuildMicrosoftFolderNode(account, folder));
             }
+            ApplyFolderOrder(root);
         }
         catch (OperationCanceledException) { }
         catch (Exception)
@@ -648,15 +660,17 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private static TreeViewItem BuildMicrosoftFolderNode(ConnectedAccount account, GraphMailboxFolder folder)
+    private TreeViewItem BuildMicrosoftFolderNode(ConnectedAccount account, GraphMailboxFolder folder)
     {
         var item = new TreeViewItem
         {
             Header = FolderHeader(folder.DisplayName, folder.UnreadCount),
             Tag = new MicrosoftFolderSelection(account, folder.Id, folder.DisplayName)
         };
+        EnableFolderReordering(item);
         foreach (var child in folder.Children)
             item.Items.Add(BuildMicrosoftFolderNode(account, child));
+        ApplyFolderOrder(item);
         return item;
     }
 

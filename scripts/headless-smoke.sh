@@ -188,6 +188,13 @@ for step in ${OO_SMOKE_CLICKS:-}; do
             DISPLAY="$display" xdotool key "${step#key:}"
             sleep 1
             ;;
+        # rclick:x,y:secs right-clicks -- opens context menus.
+        rclick:*)
+            coords="${step#rclick:}"; wait_s="${coords##*:}"; coords="${coords%%:*}"
+            [[ "$wait_s" == "$coords" ]] && wait_s=2
+            DISPLAY="$display" xdotool mousemove "${coords%,*}" "${coords#*,}" click 3
+            sleep "$wait_s"
+            ;;
         *)
             coords="${step%%:*}"; wait_s="${step##*:}"; [[ "$wait_s" == "$step" ]] && wait_s=5
             DISPLAY="$display" xdotool mousemove "${coords%,*}" "${coords#*,}" click 1

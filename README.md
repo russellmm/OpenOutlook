@@ -26,7 +26,7 @@ dotnet test OpenOutlook.sln --no-restore
 dotnet run --project src/OpenOutlook.Desktop/OpenOutlook.Desktop.csproj
 ```
 
-`scripts/dev-check.sh` is the faster pre-commit path: it builds and then runs the same offline suite (360 tests at the time of writing, all passing). `scripts/headless-smoke.sh` launches the real app on a private Xvfb display with a scratch HOME that is deleted afterwards; see [BUILD_STATUS.md](BUILD_STATUS.md) for what it can and cannot prove.
+`scripts/dev-check.sh` is the faster pre-commit path: it builds and then runs the same offline suite (370 tests at the time of writing, all passing). `scripts/headless-smoke.sh` launches the real app on a private Xvfb display with a scratch HOME that is deleted afterwards; see [BUILD_STATUS.md](BUILD_STATUS.md) for what it can and cannot prove.
 
 To build a self-contained Linux x64 executable:
 

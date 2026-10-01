@@ -1,13 +1,16 @@
-# Session handoff (2026-09-30, later in the day)
+# Session handoff (2026-09-30, later in the day; updated 2026-10-01)
 
-Binary: publish/OpenOutlook.Desktop sha256 af35f629ddeaac2a5c204a0955974718b4ab7be6703c7e5e358787490afa662a,
-built 22:30 local. 360/360 tests pass (scripts/dev-check.sh). HEAD is pushed to
+Binary: publish/OpenOutlook.Desktop sha256 120985913114c4c1b07bcaf73f1233ab124d91a4dbf2a39609cb310835559385,
+built 2026-10-01 09:51 local. 370/370 tests pass (scripts/dev-check.sh). HEAD is pushed to
 github.com/russellmm/OpenOutlook main.
 
 Shipped since the last note: archived (PST) HTML mail defaults to the snapshot reader like connected
 mail; unhandled UI exceptions are now contained (see below); all eight file/folder picker call sites
 report failures in the status bar instead of looking like a cancel; BUILD_STATUS/README corrected,
-including the stale "PST HTML still tries WebKit first" claim.
+including the stale "PST HTML still tries WebKit first" claim; the File tab is a full Backstage view;
+and folder-pane rows can be reordered (right-click Move Up/Down/Top, or drag onto a sibling) with the
+arrangement persisted in folder-order.json across restarts — verified headless for roots and subfolders;
+drag itself needs one real-hardware check since synthesized XDND gestures never complete under Xvfb.
 
 ## The crash-containment finding worth keeping
 

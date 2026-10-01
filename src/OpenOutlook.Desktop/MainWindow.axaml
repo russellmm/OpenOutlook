@@ -8,10 +8,10 @@
   clicked — the layout is meant to be the real one now, with functionality arriving into it.
 -->
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="OpenOutlook.Desktop.MainWindow" Title="OpenOutlook" Width="1380" Height="850" MinWidth="900" MinHeight="560" Background="{DynamicResource OlChrome}" FontFamily="Inter, Segoe UI">
-  <DockPanel LastChildFill="True">
+  <Grid RowDefinitions="Auto,*">
 
     <!-- Title strip: quick commands left, search centred, account right -->
-    <Border DockPanel.Dock="Top" Name="TitleBand" Background="{DynamicResource OlChrome}" Height="40" Padding="8,0,10,0">
+    <Border Grid.Row="0" Name="TitleBand" Background="{DynamicResource OlChrome}" Height="40" Padding="8,0,10,0">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
           <ContentControl Template="{StaticResource OlIconAppMark}" Width="22" Height="22" Margin="2,0,8,0" />
@@ -33,6 +33,10 @@
         </Border>
       </Grid>
     </Border>
+
+    <!-- Row 1: the mail UI, with the Backstage overlay drawn over it when File is active -->
+    <Grid Grid.Row="1">
+    <DockPanel LastChildFill="True">
 
     <!-- Status bar -->
     <Border DockPanel.Dock="Bottom" Name="StatusBand" Background="{DynamicResource OlChrome}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,1,0,0" Height="26">
@@ -69,50 +73,10 @@
       <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="0,0,8,4">
         <!-- Ribbon -->
         <Border Name="ToolbarBand" Grid.Row="0" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,0,0,0">
-          <TabControl Name="RibbonTabs" Classes="olTabs" SelectedIndex="1" Padding="0">
-            <TabItem Header="File">
-              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                <StackPanel Orientation="Horizontal" Margin="8,4">
-                  <Border Classes="olGroup">
-                    <DockPanel LastChildFill="True">
-                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Outlook Data Files" />
+          <TabControl Name="RibbonTabs" Classes="olTabs" SelectedIndex="1" Padding="0" SelectionChanged="RibbonTabsSelectionChanged">
+            <TabItem Header="File" />
 
-                      <StackPanel Orientation="Horizontal">
-                        <Button Name="OpenPstButton" Classes="olLarge" Click="OpenPstClicked" ToolTip.Tip="Attach a PST archive read-only">
-                          <StackPanel><ContentControl Template="{StaticResource OlIconOpenArchive}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Open PST" /></StackPanel>
-                        </Button>
-                        <Button Name="DetachButton" Classes="olLarge" Click="DetachClicked" ToolTip.Tip="Remove a PST from the sidebar without deleting it">
-                          <StackPanel><ContentControl Template="{StaticResource OlIconDetach}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Detach PST" /></StackPanel>
-                        </Button>
-                      </StackPanel>
-                      
-                                        </DockPanel>
-                  </Border>
-                  <Border Classes="olGroup">
-                    <DockPanel LastChildFill="True">
-                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Account settings" />
-
-                      <Button Name="AccountSetupButton" Classes="olLarge" Click="AccountSetupClicked">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconPeople}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Accounts" /></StackPanel>
-                      </Button>
-                      
-                                        </DockPanel>
-                  </Border>
-                  <Border Classes="olGroup">
-                    <DockPanel LastChildFill="True">
-                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Settings" />
-
-                      <Button Name="OptionsButton" Classes="olLarge" Click="OptionsClicked">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconAppearance}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Options" /></StackPanel>
-                      </Button>
-                      
-                                        </DockPanel>
-                  </Border>
-                </StackPanel>
-              </ScrollViewer>
-            </TabItem>
-
-            <TabItem Header="Home">
+<TabItem Header="Home">
               <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                 <StackPanel Orientation="Horizontal" Margin="8,4">
 
@@ -562,5 +526,308 @@
         </Border>
       </Grid>
     </Grid>
-  </DockPanel>
+    </DockPanel>
+
+    <!--
+      Backstage (File menu), matching classic Outlook: everything below the title bar is replaced by a grey
+      nav column and a content pane. Items with no implementation behind them are present but report
+      themselves as planned; "Save as Adobe PDF" is disabled exactly as in the reference.
+    -->
+    <Border Name="BackstageHost" IsVisible="False" Background="{DynamicResource OlBackstagePane}" KeyDown="BackstageKeyDown">
+      <Grid ColumnDefinitions="205,*">
+        <Border Grid.Column="0" Background="{DynamicResource OlBackstageNav}">
+          <DockPanel LastChildFill="True">
+            <Button DockPanel.Dock="Top" Name="BackstageBackButton" Classes="olBsBack" Click="CloseBackstageClicked" ToolTip.Tip="Return to mail (Esc)">
+              <ContentControl Template="{StaticResource OlIconBackArrow}" Width="26" Height="26" />
+            </Button>
+            <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10">
+              <Border Height="1" Background="{DynamicResource OlStrongBorder}" Margin="14,6,14,8" />
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavOfficeAccount" Tag="officeaccount" Click="BackstageNavClicked">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconPeopleR}" Width="17" Height="17" Tag="{Binding #NavOfficeAccount.Foreground}" />
+                  <TextBlock Text="Office Account" VerticalAlignment="Center" />
+                </StackPanel>
+              </RadioButton>
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavFeedback" Tag="feedback" Click="BackstageNavClicked">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconFeedbackR}" Width="17" Height="17" Tag="{Binding #NavFeedback.Foreground}" />
+                  <TextBlock Text="Feedback" VerticalAlignment="Center" />
+                </StackPanel>
+              </RadioButton>
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavOptions" Tag="options" Click="BackstageNavClicked">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconGearR}" Width="17" Height="17" Tag="{Binding #NavOptions.Foreground}" />
+                  <TextBlock Text="Options" VerticalAlignment="Center" />
+                </StackPanel>
+              </RadioButton>
+              <Button Classes="olBsItem" Name="BackstageExitButton" Click="BackstageExitClicked">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconExitR}" Width="17" Height="17" Tag="{Binding #BackstageExitButton.Foreground}" />
+                  <TextBlock Text="Exit" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+            <StackPanel Margin="0,4,0,0">
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavInfo" Tag="info" IsChecked="True" Click="BackstageNavClicked">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconHomeR}" Width="17" Height="17" Tag="{Binding #NavInfo.Foreground}" />
+                  <TextBlock Text="Info" VerticalAlignment="Center" />
+                </StackPanel>
+              </RadioButton>
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavOpenExport" Tag="openexport" Click="BackstageNavClicked">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconOpenExportR}" Width="17" Height="17" Tag="{Binding #NavOpenExport.Foreground}" />
+                  <TextBlock Text="Open &amp; Export" VerticalAlignment="Center" />
+                </StackPanel>
+              </RadioButton>
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavSaveAs" Tag="saveas" Click="BackstageNavClicked">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconSaveAsR}" Width="17" Height="17" Tag="{Binding #NavSaveAs.Foreground}" />
+                  <TextBlock Text="Save As" VerticalAlignment="Center" />
+                </StackPanel>
+              </RadioButton>
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavPdf" IsEnabled="False" ToolTip.Tip="PDF export uses the printable-PDF command in the reading pane">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconPdfR}" Width="17" Height="17" Tag="{Binding #NavPdf.Foreground}" />
+                  <TextBlock Text="Save as Adobe PDF" VerticalAlignment="Center" />
+                </StackPanel>
+              </RadioButton>
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavAttachments" Tag="attachments" Click="BackstageNavClicked" IsEnabled="{Binding #ExportAttachmentButton.IsEnabled}">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconPaperclipR}" Width="17" Height="17" Tag="{Binding #NavAttachments.Foreground}" />
+                  <TextBlock Text="Save Attachments" VerticalAlignment="Center" />
+                </StackPanel>
+              </RadioButton>
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavPrint" Tag="print" Click="BackstageNavClicked">
+                <StackPanel Orientation="Horizontal" Spacing="13">
+                  <ContentControl Template="{StaticResource OlIconPrintR}" Width="17" Height="17" Tag="{Binding #NavPrint.Foreground}" />
+                  <TextBlock Text="Print" VerticalAlignment="Center" />
+                </StackPanel>
+              </RadioButton>
+            </StackPanel>
+          </DockPanel>
+        </Border>
+
+        <ScrollViewer Grid.Column="1" Padding="42,26,40,30" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel>
+
+            <!-- Info / Account Information -->
+            <StackPanel Name="PageInfo">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0">
+                  <TextBlock Classes="olBsHeading" Text="Account Information" />
+                  <ComboBox Name="BackstageAccounts" Classes="olBsAccount" SelectionChanged="BackstageAccountSelected">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate>
+                        <Grid ColumnDefinitions="Auto,*" Margin="2,4">
+                          <ContentControl Template="{StaticResource OlIconAppMark}" Width="30" Height="30" VerticalAlignment="Center" />
+                          <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Address}" FontSize="13.5" Foreground="{DynamicResource OlText}" />
+                            <TextBlock Text="{Binding Kind}" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" />
+                          </StackPanel>
+                        </Grid>
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <Button Name="BsAddAccountButton" Classes="olBsAction" Click="BsAddAccountClicked" HorizontalAlignment="Left" Margin="0,12,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                      <Path Width="13" Height="13" Stretch="Uniform" Fill="#217346" Data="M8,0 L11,0 L11,8 L19,8 L19,11 L11,11 L11,19 L8,19 L8,11 L0,11 L0,8 L8,8 Z" />
+                      <TextBlock Text="Add Account" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Margin="36,34,0,0" Spacing="7">
+                  <Border Width="142" Height="142" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1" Padding="9">
+                    <Border BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1">
+                      <ContentControl Template="{StaticResource OlIconPersonSilhouette}" Width="104" Height="104" HorizontalAlignment="Center" VerticalAlignment="Bottom" />
+                    </Border>
+                  </Border>
+                  <Button Classes="olLink" Click="RibbonPlaceholderClicked" Tag="Profile picture" HorizontalAlignment="Center">
+                    <TextBlock Text="Change" Foreground="{DynamicResource OlAccent}" TextDecorations="Underline" FontSize="13.5" />
+                  </Button>
+                </StackPanel>
+              </Grid>
+
+              <Grid ColumnDefinitions="Auto,*" Margin="0,30,0,0">
+                <Button Classes="olBsCard" Click="BsAccountSettingsClicked">
+                  <StackPanel Spacing="7">
+                    <ContentControl Template="{StaticResource OlIconAccountGear}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <TextBlock Text="Account&#10;Settings" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <StackPanel Grid.Column="1" Margin="27,0,0,0">
+                  <TextBlock Classes="olBsCardTitle" Text="Account Settings" />
+                  <TextBlock Classes="olBsBody" Text="Change settings for this account or set up more connections." />
+                  <StackPanel Margin="0,10,0,0" Spacing="8">
+                    <TextBlock Classes="olBsBody" Text="Access this account on the web." />
+                    <StackPanel Orientation="Horizontal" Spacing="9" Margin="16,0,0,0">
+                      <Border Width="4" Height="4" Background="{DynamicResource OlText}" VerticalAlignment="Center" />
+                      <Button Classes="olLink" Click="BsWebLinkClicked">
+                        <TextBlock Name="BsWebLinkUrl" Text="https://outlook.live.com/owa/" Foreground="{DynamicResource OlAccent}" TextDecorations="Underline" FontSize="13.5" />
+                      </Button>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="9" Margin="0,4,0,0">
+                      <Border Width="4" Height="4" Background="{DynamicResource OlText}" VerticalAlignment="Center" />
+                      <Button Classes="olLink" Click="BsGetAppClicked">
+                        <TextBlock Text="Get the Outlook app for iOS or Android." Foreground="{DynamicResource OlAccent}" TextDecorations="Underline" FontSize="13.5" />
+                      </Button>
+                    </StackPanel>
+                  </StackPanel>
+                </StackPanel>
+              </Grid>
+
+              <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
+                <Button Classes="olBsCard" Click="RibbonPlaceholderClicked" Tag="Automatic Replies">
+                  <StackPanel Spacing="7">
+                    <ContentControl Template="{StaticResource OlIconAutoReplies}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <TextBlock Text="Automatic&#10;Replies" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <StackPanel Grid.Column="1" Margin="27,0,0,0">
+                  <TextBlock Classes="olBsCardTitle" Text="Automatic Replies" />
+                  <TextBlock Classes="olBsBody" Text="Use automatic replies to notify others that you are on vacation, or not available to respond to email messages." />
+                </StackPanel>
+              </Grid>
+
+              <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
+                <Button Classes="olBsCard" Click="BsOpenDataFilesClicked">
+                  <StackPanel Spacing="7">
+                    <ContentControl Template="{StaticResource OlIconMailboxTools}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <TextBlock Text="Tools" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <StackPanel Grid.Column="1" Margin="27,0,0,0">
+                  <TextBlock Classes="olBsCardTitle" Text="Mailbox Settings" />
+                  <TextBlock Classes="olBsBody" Text="Manage the size of your mailbox by emptying Deleted Items and archiving." />
+                  <StackPanel Margin="0,12,0,0" MaxWidth="560" HorizontalAlignment="Left">
+                    <Border Name="BsUsageBar" Height="17" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1">
+                      <Grid Name="BsUsageGrid" ColumnDefinitions="9*,91*">
+                        <Border Grid.Column="0" Background="#3DA0DB" />
+                      </Grid>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="9" Margin="0,8,0,0">
+                      <Border Width="4" Height="4" Background="{DynamicResource OlText}" VerticalAlignment="Center" />
+                      <TextBlock Name="BsUsageText" Classes="olBsBody" Text="" />
+                    </StackPanel>
+                    <StackPanel Name="BsUsageFiles" Margin="16,6,0,0" Spacing="3" />
+                  </StackPanel>
+                </StackPanel>
+              </Grid>
+
+              <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
+                <Button Classes="olBsCard" Click="RibbonPlaceholderClicked" Tag="Rules and Alerts">
+                  <StackPanel Spacing="7">
+                    <ContentControl Template="{StaticResource OlIconRulesBell}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <TextBlock Text="Manage Rules&#10;&amp; Alerts" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <StackPanel Grid.Column="1" Margin="27,0,0,0">
+                  <TextBlock Classes="olBsCardTitle" Text="Rules and Alerts" />
+                  <TextBlock Classes="olBsBody" Text="Use Rules and Alerts to help organize your incoming email messages, and receive updates when items are added, changed, or removed." />
+                </StackPanel>
+              </Grid>
+
+              <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
+                <Button Classes="olBsCard" Click="RibbonPlaceholderClicked" Tag="Web Add-ins">
+                  <StackPanel Spacing="7">
+                    <ContentControl Template="{StaticResource OlIconGlobeGear}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <TextBlock Text="Manage Add-&#10;ins" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <StackPanel Grid.Column="1" Margin="27,0,0,0">
+                  <TextBlock Classes="olBsCardTitle" Text="Manage Add-ins" />
+                  <TextBlock Classes="olBsBody" Text="Manage and acquire Web Add-ins for Outlook." />
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+
+            <!-- Open & Export -->
+            <StackPanel Name="PageOpenExport" IsVisible="False">
+              <TextBlock Classes="olBsHeading" Text="Open and Export" />
+              <StackPanel Spacing="10" MaxWidth="430" HorizontalAlignment="Left">
+                <Button Classes="olBsAction" Click="BsOpenPstClicked">
+                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconOpenExportR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Open Outlook Data File (.pst)" VerticalAlignment="Center" /></StackPanel>
+                </Button>
+                <Button Classes="olBsAction" Click="BsDetachClicked">
+                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconCloseDataR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Close an Outlook Data File (detach; nothing is deleted)" VerticalAlignment="Center" /></StackPanel>
+                </Button>
+                <Button Classes="olBsAction" Click="BsExportFolderClicked">
+                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconExport}" Width="18" Height="18" /><TextBlock Text="Export all messages in the selected folder (.eml each)" VerticalAlignment="Center" /></StackPanel>
+                </Button>
+                <Button Classes="olBsAction" Click="RibbonPlaceholderClicked" Tag="Import">
+                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconImportR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Import from another mail application — planned" VerticalAlignment="Center" /></StackPanel>
+                </Button>
+              </StackPanel>
+              <TextBlock Classes="olBsBody" Margin="0,24,0,0" Foreground="{DynamicResource OlTextSecondary}" Text="OpenOutlook opens PST archives read-only: no command here writes to an archive." />
+            </StackPanel>
+
+            <!-- Save As -->
+            <StackPanel Name="PageSaveAs" IsVisible="False">
+              <TextBlock Classes="olBsHeading" Text="Save As" />
+              <TextBlock Classes="olBsBody" Margin="0,0,0,16" Text="Save the message that is open in the reading pane as an .eml file, readable by other mail programs. The archive itself is never modified." />
+              <Button Name="BsSaveAsAction" Classes="olBsAction" Click="BsSaveAsClicked" HorizontalAlignment="Left" IsEnabled="{Binding #ExportMessageButton.IsEnabled}">
+                <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconSaveAsR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Save As (.eml)" VerticalAlignment="Center" /></StackPanel>
+              </Button>
+              <TextBlock Classes="olBsBody" Margin="0,14,0,0" Foreground="{DynamicResource OlTextSecondary}" IsVisible="{Binding !IsEnabled, ElementName=BsSaveAsAction}" Text="Select a message from an Outlook Data File first." />
+            </StackPanel>
+
+            <!-- Save Attachments -->
+            <StackPanel Name="PageAttachments" IsVisible="False">
+              <TextBlock Classes="olBsHeading" Text="Save Attachments" />
+              <TextBlock Classes="olBsBody" Margin="0,0,0,16" Text="Save the files attached to the message that is open in the reading pane. Nothing on the message or archive is changed." />
+              <Button Name="BsAttachmentsAction" Classes="olBsAction" Click="BsSaveAttachmentsClicked" HorizontalAlignment="Left" IsEnabled="{Binding #ExportAttachmentButton.IsEnabled}">
+                <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconPaperclipR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Save Attachments" VerticalAlignment="Center" /></StackPanel>
+              </Button>
+            </StackPanel>
+
+            <!-- Print -->
+            <StackPanel Name="PagePrint" IsVisible="False">
+              <TextBlock Classes="olBsHeading" Text="Print" />
+              <TextBlock Classes="olBsBody" Margin="0,0,0,16" Text="Printing goes through a printable PDF of the message that is open: choose a folder, and OpenOutlook writes the file for you to print from your PDF viewer. Direct printing is planned." />
+              <Button Name="BsPrintAction" Classes="olBsAction" Click="BsPrintClicked" HorizontalAlignment="Left" IsEnabled="{Binding #PopOutMessageButton.IsVisible}">
+                <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconPrintR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Print (create a printable PDF)" VerticalAlignment="Center" /></StackPanel>
+              </Button>
+            </StackPanel>
+
+            <!-- Office Account -->
+            <StackPanel Name="PageOfficeAccount" IsVisible="False">
+              <TextBlock Classes="olBsHeading" Text="Office Account" />
+              <TextBlock Classes="olBsCardTitle" Text="About OpenOutlook" />
+              <TextBlock Classes="olBsBody" Margin="0,2,0,10" Text="OpenOutlook is an independent mail client for Linux: it reads Outlook PST archives and connects to Microsoft personal accounts over OAuth. It is not part of Microsoft Office, so there is no Office licence or update ring to show here." />
+              <TextBlock Name="BsVersionText" Classes="olBsBody" Foreground="{DynamicResource OlTextSecondary}" Margin="0,0,0,14" Text="" />
+              <Button Classes="olLink" Click="BsProjectHomeClicked">
+                <TextBlock Text="https://github.com/russellmm/OpenOutlook" Foreground="{DynamicResource OlAccent}" TextDecorations="Underline" FontSize="13.5" />
+              </Button>
+            </StackPanel>
+
+            <!-- Feedback -->
+            <StackPanel Name="PageFeedback" IsVisible="False">
+              <TextBlock Classes="olBsHeading" Text="Feedback" />
+              <TextBlock Classes="olBsBody" Margin="0,0,0,14" Text="OpenOutlook is developed in the open. Problems with HTML rendering, PST reading or account sync are the ones that move it forward fastest — every report includes what the app logged at the time." />
+              <Button Classes="olBsAction" Click="BsFeedbackClicked" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconFeedback}" Width="18" Height="18" /><TextBlock Text="Report an issue on GitHub" VerticalAlignment="Center" /></StackPanel>
+              </Button>
+            </StackPanel>
+
+            <!-- Options -->
+            <StackPanel Name="PageOptions" IsVisible="False">
+              <TextBlock Classes="olBsHeading" Text="Options" />
+              <TextBlock Classes="olBsBody" Margin="0,0,0,16" Text="The full Options pages are being rebuilt to match classic Outlook. The settings that exist today live here." />
+              <StackPanel Spacing="10" MaxWidth="430" HorizontalAlignment="Left">
+                <Button Classes="olBsAction" Click="BsAppearanceClicked">
+                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconAppearance}" Width="18" Height="18" /><TextBlock Text="General — theme, accent colour, text size" VerticalAlignment="Center" /></StackPanel>
+                </Button>
+                <Button Classes="olBsAction" Click="BsShortcutsClicked">
+                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconKeyboard}" Width="18" Height="18" /><TextBlock Text="Mail — keyboard shortcuts" VerticalAlignment="Center" /></StackPanel>
+                </Button>
+              </StackPanel>
+            </StackPanel>
+
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+
+  </Grid>
+</Grid>
 </Window>

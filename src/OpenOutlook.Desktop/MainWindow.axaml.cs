@@ -577,7 +577,10 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { if (version == _folderVersion) StatusText.Text = $"Could not read folder: {ex.Message}"; }
     }
 
-    private async void AccountSetupClicked(object? sender, RoutedEventArgs e)
+    private async void AccountSetupClicked(object? sender, RoutedEventArgs e) => await ShowAccountSetupAsync();
+
+    /// <summary>Shared by the ribbon button and the Backstage Info page so both refresh their own state after.</summary>
+    private async Task ShowAccountSetupAsync()
     {
         await new AccountSetupWindow().ShowDialog(this);
         _activeMicrosoftAccount = null;
@@ -1423,10 +1426,10 @@ public sealed partial class MainWindow : Window
         RecipientText.FontSize = AttachmentText.FontSize = Math.Max(10, size - 1);
         BodyViewButton.FontSize = size;
         StatusText.FontSize = Math.Max(10, size - 1);
-        OpenPstButton.FontSize = DetachButton.FontSize = OptionsButton.FontSize = size;
+        // The backstage keeps its own fixed type sizes, as classic Outlook's does.
         ArchiveSearchButton.FontSize = ExportAttachmentButton.FontSize = ExportMessageButton.FontSize =
             ExportFolderButton.FontSize = CancelFolderExportButton.FontSize = PreviewJunkImportButton.FontSize =
-            AccountSetupButton.FontSize = RefreshInboxButton.FontSize = ArchiveSearchBox.FontSize =
+            RefreshInboxButton.FontSize = ArchiveSearchBox.FontSize =
             Math.Max(10, size - 1);        if (_richRuns is not null) ShowMessageBody();
     }
 

@@ -277,4 +277,181 @@
       <Setter Property="Background" Value="{DynamicResource OlSelected}" />
     </Style>
 
+    <!--
+      Backstage (File menu). The nav column items are flat full-width rows; the selected one gets the
+      black outline box and accent text that classic Outlook draws, disabled ones fade to #C9C9C9.
+    -->
+    <Style Selector="RadioButton.olBsItem">
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="Height" Value="50" />
+      <Setter Property="Margin" Value="2,1" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="bsBox" Background="Transparent" BorderBrush="Transparent" BorderThickness="2">
+            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Margin="18,0,10,0" VerticalAlignment="Center" HorizontalAlignment="Left"
+                              Foreground="{TemplateBinding Foreground}" RecognizesAccessKey="True" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="RadioButton.olBsItem:pointerover /template/ Border#bsBox">
+      <Setter Property="Background" Value="#0F000000" />
+    </Style>
+    <Style Selector="RadioButton.olBsItem:checked /template/ Border#bsBox">
+      <Setter Property="BorderBrush" Value="{DynamicResource OlText}" />
+    </Style>
+    <Style Selector="RadioButton.olBsItem:checked">
+      <Setter Property="Foreground" Value="{DynamicResource OlAccent}" />
+    </Style>
+    <Style Selector="RadioButton.olBsItem:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource OlBsDisabled}" />
+    </Style>
+
+    <!-- The Exit row reads like a nav item but is never selected, so it is a plain button -->
+    <Style Selector="Button.olBsItem">
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="Height" Value="50" />
+      <Setter Property="Margin" Value="2,1" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="bsBox" Background="Transparent" BorderBrush="Transparent" BorderThickness="2">
+            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Margin="18,0,10,0" VerticalAlignment="Center" HorizontalAlignment="Left"
+                              Foreground="{TemplateBinding Foreground}" RecognizesAccessKey="True" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.olBsItem:pointerover /template/ Border#bsBox">
+      <Setter Property="Background" Value="#0F000000" />
+    </Style>
+
+    <!-- Back arrow at the head of the nav column -->
+    <Style Selector="Button.olBsBack">
+      <Setter Property="Width" Value="38" />
+      <Setter Property="Height" Value="38" />
+      <Setter Property="Margin" Value="10,12,0,8" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="19" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="bg" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}">
+            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.olBsBack:pointerover /template/ Border#bg">
+      <Setter Property="Background" Value="#1A000000" />
+    </Style>
+
+    <!-- Backstage typography -->
+    <Style Selector="TextBlock.olBsHeading">
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="Margin" Value="0,0,0,18" />
+    </Style>
+    <Style Selector="TextBlock.olBsCardTitle">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style Selector="TextBlock.olBsBody">
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="MaxWidth" Value="760" />
+      <!-- Avalonia centres a stretched element once MaxWidth clamps it; classic Outlook left-aligns. -->
+      <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <!-- Square white card button, as used down the left of each Account Information section -->
+    <Style Selector="Button.olBsCard">
+      <Setter Property="Width" Value="118" />
+      <Setter Property="Height" Value="118" />
+      <Setter Property="Background" Value="{DynamicResource OlCard}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlStrongBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="Padding" Value="6" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="bg" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.olBsCard:pointerover /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+
+    <!-- Ordinary bordered action button ("Add Account", "Open Outlook Data File") -->
+    <Style Selector="Button.olBsAction">
+      <Setter Property="Background" Value="{DynamicResource OlCard}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlStrongBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="bg" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.olBsAction:pointerover /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+    <Style Selector="Button.olBsAction:pressed /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlPressed}" />
+    </Style>
+    <Style Selector="Button.olBsAction:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+
+    <!-- Hyperlink-styled button; the underline lives in its content -->
+    <Style Selector="Button.olLink">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <ContentPresenter Content="{TemplateBinding Content}" Margin="{TemplateBinding Padding}" />
+        </ControlTemplate>
+      </Setter>
+    </Style>
+
+    <!-- Account picker on the Info page. No MaxWidth: Avalonia centres a clamped stretched element,
+         and Left alignment shrinks it to content — plain stretch matches the reference's full-width box. -->
+    <Style Selector="ComboBox.olBsAccount">
+      <Setter Property="Height" Value="54" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="Background" Value="{DynamicResource OlCard}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlStrongBorder}" />
+      <Setter Property="CornerRadius" Value="2" />
+    </Style>
+
 </Styles>

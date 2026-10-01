@@ -41,8 +41,11 @@ buttons y~495 and y~527.
 
 ## Open items, in priority order
 
-1. UI fidelity pass (in progress): ribbon groups/labels, folder tree and reading-pane header now follow
-   screenshots/Outlook.jpg. Still to check against a populated classic Outlook: message row height and
+1. UI fidelity pass (in progress): ribbon groups/labels, folder tree and reading-pane header follow
+   screenshots/Outlook.jpg, and the File menu is now a real Backstage (see the 2026-09-30 BUILD_STATUS
+   entry; logic in MainWindow.Backstage.cs). Next step of this pass: the Options submenu pages inside the
+   backstage — classic Outlook shows General/Appearance/Mail categories on the right pane instead of the
+   two dialog buttons there today. Then checks against a populated classic Outlook: message row height and
    column spacing, date-group band look, dark mode, high-DPI. Small icons (Meeting/More/Create New) are
    crude and worth redrawing. Publish before showing the user. CEF (or Chromium) with off-screen rendering remains
    the strategic reading-pane fix: it removes the Wayland child-window constraint and would restore

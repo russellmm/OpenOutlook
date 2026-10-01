@@ -24,7 +24,7 @@ internal static class SafePick
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             AppLog.Error("picker", ex, "folder picker failed");
-            report?.Invoke("Could not open the folder chooser. " + ex.Message);
+            report?.Invoke(Describe("folder chooser", ex));
             return [];
         }
     }
@@ -39,8 +39,17 @@ internal static class SafePick
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             AppLog.Error("picker", ex, "file picker failed");
-            report?.Invoke("Could not open the file chooser. " + ex.Message);
+            report?.Invoke(Describe("file chooser", ex));
             return [];
         }
+    }
+
+    /// <summary>One status-bar-sized sentence: portal errors can carry long multi-line text.</summary>
+    private static string Describe(string what, Exception ex)
+    {
+        var detail = ex.Message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (detail.Length > 160) detail = detail[..160].TrimEnd() + "…";
+        return $"Could not open the {what}. {(detail.Length == 0 ? "" : detail + " ")}" +
+            "The dialog may be provided by a desktop service that is unavailable; nothing was changed.";
     }
 }

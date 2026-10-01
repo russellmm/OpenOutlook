@@ -16,18 +16,31 @@ namespace OpenOutlook.Desktop;
 /// </summary>
 public static class CrashNotice
 {
+    private static Window? _current;
+
+    /// <summary>
+    /// Show the notice, or refresh it if one is already open. A failing operation that repeats -- a
+    /// folder that throws every time it is selected -- would otherwise stack a new window per click.
+    /// </summary>
     public static void Show(Exception exception)
     {
         var details = Describe(exception);
 
+        if (_current is { IsVisible: true } existing)
+        {
+            if (existing.Tag is TextBlock previous) previous.Text = DetailsText(details, _repeat++);
+            existing.Activate();
+            return;
+        }
+
         var text = new TextBlock
         {
-            Text = "OpenOutlook hit an unexpected error and kept running. " +
-                   "Your message list and any draft you were writing are still here.\n\n" + details,
+            Text = DetailsText(details, 0),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Avalonia.Thickness(16),
             MaxWidth = 640,
         };
+        _repeat = 1;
 
         var copy = new Button { Content = "Copy details", Margin = new Avalonia.Thickness(0, 0, 8, 0) };
         var close = new Button { Content = "Close" };
@@ -52,6 +65,7 @@ public static class CrashNotice
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
             Background = Brushes.White,
+            Tag = text,
         };
 
         copy.Click += async (_, _) =>
@@ -66,9 +80,24 @@ public static class CrashNotice
             catch (Exception) { copy.Content = "Copy failed - see the log"; }
         };
         close.Click += (_, _) => window.Close();
+        window.Closed += (_, _) => { if (ReferenceEquals(_current, window)) _current = null; };
 
+        _current = window;
         window.Show();
     }
+
+    private static int _repeat;
+
+    private static string DetailsText(string details, int repeat) =>
+        "OpenOutlook hit an unexpected error and kept running. " +
+        "Your message list and any draft you were writing are still here." +
+        (repeat > 0 ? $"\n\nThis is the {Ordinal(repeat + 1)} error in this window." : "") +
+        "\n\n" + details;
+
+    private static string Ordinal(int count) => count switch
+    {
+        2 => "second", 3 => "third", 4 => "fourth", 5 => "fifth", _ => $"{count}th",
+    };
 
     /// <summary>Text for the notice and the clipboard: type, message and a bounded stack trace.</summary>
     public static string Describe(Exception exception)

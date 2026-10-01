@@ -403,7 +403,7 @@ public sealed partial class MainWindow : Window
             Title = "Open a PST archive read-only",
             AllowMultiple = true,
             FileTypeFilter = [new FilePickerFileType("Outlook PST") { Patterns = ["*.pst"] }]
-        });
+        }, failure => StatusText.Text = failure);
         foreach (var file in chosen)
         {
             var path = file.TryGetLocalPath();
@@ -748,7 +748,7 @@ public sealed partial class MainWindow : Window
             Title = "Preview legacy OutlookJunkCleaner config (no import or cleaning)",
             AllowMultiple = false,
             FileTypeFilter = [new FilePickerFileType("JSON configuration") { Patterns = ["*.json"] }]
-        });
+        }, failure => StatusText.Text = failure);
         var path = files.FirstOrDefault()?.TryGetLocalPath();
         if (path is null) return;
         try
@@ -1004,7 +1004,7 @@ public sealed partial class MainWindow : Window
         var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
         {
             Title = "Choose folder for a new EML file", AllowMultiple = false
-        });
+        }, failure => StatusText.Text = failure);
         if (version != _messageVersion || !ReferenceEquals(_activeMessage, message)) return;
         var directory = folders.FirstOrDefault()?.TryGetLocalPath();
         if (directory is null) return;
@@ -1037,7 +1037,7 @@ public sealed partial class MainWindow : Window
         {
             Title = "Choose a parent folder for the new EML export directory (includes subfolders)",
             AllowMultiple = false
-        });
+        }, failure => StatusText.Text = failure);
         if (version != _folderVersion || !_stores.TryGetValue(selection.Path, out var current) ||
             !ReferenceEquals(current, store)) return;
         var parent = folders.FirstOrDefault()?.TryGetLocalPath();
@@ -1117,7 +1117,7 @@ public sealed partial class MainWindow : Window
         {
             Title = "Select where to export this attachment as a new file",
             AllowMultiple = false
-        });
+        }, failure => StatusText.Text = failure);
         if (version != _messageVersion || !ReferenceEquals(_activeMessage, message)) return;
         var directory = folders.FirstOrDefault()?.TryGetLocalPath();
         if (directory is null) return;
@@ -1159,7 +1159,7 @@ public sealed partial class MainWindow : Window
         var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
         {
             Title = "Choose where to save this attachment as a new file", AllowMultiple = false
-        });
+        }, failure => StatusText.Text = failure);
         if (version != _messageVersion || !ReferenceEquals(_activeGraphMessage, message)) return;
         var directory = folders.FirstOrDefault()?.TryGetLocalPath();
         if (directory is null) return;
@@ -1623,7 +1623,8 @@ public sealed partial class MainWindow : Window
         }
         if (version != _messageVersion) return;
         var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
-        { Title = "Choose a folder for a new printable PDF", AllowMultiple = false });
+        { Title = "Choose a folder for a new printable PDF", AllowMultiple = false },
+        failure => StatusText.Text = failure);
         if (version != _messageVersion || folders.FirstOrDefault()?.TryGetLocalPath() is not { } folder) return;
         PrintablePdfButton.IsEnabled = false;
         try

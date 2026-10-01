@@ -13,6 +13,8 @@
 # OO_SMOKE_LIVE    1 = copy the account registry into the scratch HOME, so the run
 #                  signs in for real. The refresh token comes from the keyring over
 #                  the session bus, which is inherited; nothing is written back.
+# OO_SMOKE_CRASH_GUARD  1 = throw an unhandled exception after startup and require that the app
+#                  survives it with an "Unexpected error" window and a log entry
 # OO_SMOKE_HOME    HOME to run under (default: a fresh scratch directory)
 # OO_SMOKE_SIZE    window size WxH forced after launch (default: the 1440x900 screen)
 # OO_SMOKE_OUT     output directory (default: .local/smoke/<timestamp>)
@@ -99,7 +101,14 @@ fi
 
 # shellcheck disable=SC2206
 archives=(${OO_SMOKE_PST:-})
-env -u DISPLAY HOME="$run_home" DISPLAY="$display" setsid nohup "$binary" "${archives[@]}" \
+# OO_SMOKE_CRASH_GUARD=1 makes the app throw from an async void continuation after startup, so the
+# unhandled-exception hook can be verified from outside instead of assumed. Checked below.
+crash_env=()
+if [[ "${OO_SMOKE_CRASH_GUARD:-0}" == "1" ]]; then
+    crash_env=(OPENOUTLOOK_TEST_THROW_UNHANDLED=1)
+    echo "crash-guard mode: the app will throw an unhandled exception ~1.5s after startup"
+fi
+env -u DISPLAY HOME="$run_home" DISPLAY="$display" "${crash_env[@]}" setsid nohup "$binary" "${archives[@]}" \
     >"$outdir/app.log" 2>&1 </dev/null &
 app_pid=$!
 
@@ -188,6 +197,26 @@ for step in ${OO_SMOKE_CLICKS:-}; do
     index=$((index + 1))
     capture "click$index" || exit 1
 done
+
+# Crash-guard verification: the escape must be reported and survived. This is the only way to know the
+# hook works in the shipped binary rather than only in a synthetic probe.
+if [[ "${OO_SMOKE_CRASH_GUARD:-0}" == "1" ]]; then
+    sleep 4
+    guard_fail=""
+    kill -0 "$app_pid" 2>/dev/null || guard_fail="process died after the unhandled exception"
+    notice=$(DISPLAY="$display" xdotool search --name ".*Unexpected error.*" 2>/dev/null | head -1)
+    [[ -z "$notice" ]] && guard_fail="${guard_fail:-no 'Unexpected error' window appeared}"
+    grep -q "test escape from an async void continuation" "$run_home/.local/share/OpenOutlook/logs/openoutlook.log" 2>/dev/null \
+        || guard_fail="${guard_fail:-the escape was not written to the application log}"
+    if [[ -z "$guard_fail" ]]; then
+        DISPLAY="$display" scrot "$outdir/crash-guard.png" 2>/dev/null
+        echo "CRASH GUARD PASSED: survived the escape, notice window $notice, logged"
+    else
+        echo "FAIL: crash guard: $guard_fail"
+        tail -20 "$outdir/app.log"
+        exit 1
+    fi
+fi
 
 if grep -qiE "Unhandled exception|Fatal error|Aborted" "$outdir/app.log"; then
     echo "FAIL: fatal error in app log"; tail -20 "$outdir/app.log"; exit 1

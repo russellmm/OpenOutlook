@@ -184,7 +184,7 @@ public sealed class ComposeWindow : Window
         try
         {
             var selected = await SafePick.FilesAsync(this, new FilePickerOpenOptions
-            { Title = "Attach files", AllowMultiple = true });
+            { Title = "Attach files", AllowMultiple = true }, failure => _status.Text = failure);
             foreach (var item in selected)
             {
                 var path = item.TryGetLocalPath();

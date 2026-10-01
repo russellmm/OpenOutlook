@@ -65,11 +65,14 @@ correspondence on disk.
 - **`Ctrl+A` covers the visible tile**, not tiles scrolled out of view on very long messages.
 - **Links win over text.** Link buttons handle their own clicks first, so words inside a link cannot
   be selected by pressing on them; drag across surrounding blocks instead.
-- **Clipboard write is unverified on real hardware.** Under Xvfb, Avalonia's clipboard reports success
-  but serves nothing -- even an immediate `GetTextAsync` read-back returns null -- while WebKitGTK's
-  copy in the same environment reaches other clients. Selection demonstrably works (3,268 characters
-  chosen in reading order on a live message); the handoff to the clipboard needs one confirmation on
-  the owner's desktop. If it fails there, the fix belongs in the clipboard layer, not in selection.
+- **Block-level selection is as good as it gets without Chrome's font metrics**, and `Ctrl+A` covers
+  the visible tile rather than the whole message on very long mail.
+
+Clipboard copy was confirmed working by the owner on real hardware. Note for future harness work:
+under Xvfb, Avalonia's clipboard reports success but serves nothing -- even an immediate
+`GetTextAsync` read-back returns null -- while WebKitGTK's copy in the same environment reaches other
+clients normally. **Xvfb is not a valid test surface for the Avalonia clipboard**, exactly as it is
+not a valid test surface for the embedded web view.
 
 ## Future work: embed Chromium with off-screen rendering (CEF)
 

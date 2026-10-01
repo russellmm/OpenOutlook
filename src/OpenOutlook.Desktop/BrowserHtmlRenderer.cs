@@ -7,7 +7,19 @@ namespace OpenOutlook.Desktop;
 public static class BrowserHtmlRenderer
 {
     public sealed record LinkArea(string Url, double X, double Y, double Width, double Height);
-    public sealed record RenderedDocument(IReadOnlyList<byte[]> Pages, IReadOnlyList<LinkArea> Links);
+
+    /// <summary>
+    /// One selectable block of text and the rectangle Chrome laid it out in. The snapshot reader is a
+    /// bitmap, so nothing in it can be highlighted; these rectangles let the reading pane place an
+    /// invisible selectable control over each block and recover selection without embedding a browser
+    /// (which cannot composite into an Avalonia window under Wayland). Granularity is deliberately the
+    /// element -- paragraph, list item, table cell -- because mapping substrings of one text node to
+    /// the several line boxes it may span needs font metrics we do not share with Chrome.
+    /// </summary>
+    public sealed record TextArea(string Text, double X, double Y, double Width, double Height);
+
+    public sealed record RenderedDocument(IReadOnlyList<byte[]> Pages, IReadOnlyList<LinkArea> Links,
+        IReadOnlyList<TextArea> Text);
     public const int MaximumScreenshotBytes = 32 * 1024 * 1024;
     private const int MaximumHeight = 60_000;
     private const int TileHeight = 3_000;
@@ -132,6 +144,27 @@ public static class BrowserHtmlRenderer
             double.IsFinite(link.Height) && link.X >= 0 && link.Y >= 0 && link.Width > 0 && link.Height > 0 &&
             link.X < width && link.Y < height && link.Width <= width && link.Height <= height)
             .Take(1000).Select(link => new LinkArea(link.Url, link.X, link.Y, link.Width, link.Height)).ToArray();
+        // Text geometry for the selectable overlay. Runs over every element and keeps those holding
+        // direct text, unioning the client rectangles of that element's own text nodes so nested
+        // markup (a bold word inside a paragraph) becomes its own block rather than being counted
+        // twice. Hidden elements return no rectangles and drop out. This reads layout only; it does
+        // not enable scripting in the document, which stays off for untrusted mail.
+        var textJson = await page.EvaluateFunctionAsync<string>(
+            "() => JSON.stringify((()=>{const out=[];if(!document.body)return out;" +
+            "const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_ELEMENT);let e;" +
+            "while((e=walker.nextNode())&&out.length<4000){let text='';let x=Infinity,y=Infinity," +
+            "right=-Infinity,bottom=-Infinity,found=false;" +
+            "for(const n of Array.from(e.childNodes)){if(n.nodeType!==3)continue;const t=n.nodeValue;" +
+            "if(!t||!t.trim())continue;const range=document.createRange();range.selectNodeContents(n);" +
+            "for(const rect of Array.from(range.getClientRects())){if(rect.width<1||rect.height<1)continue;" +
+            "found=true;if(rect.left<x)x=rect.left;if(rect.top<y)y=rect.top;" +
+            "if(rect.right>right)right=rect.right;if(rect.bottom>bottom)bottom=rect.bottom;}" +
+            "text+=' '+t.replace(/\\s+/g,' ');}" +
+            "if(!found)continue;out.push({Text:text.trim(),X:x+window.scrollX,Y:y+window.scrollY," +
+            "Width:right-x,Height:bottom-y});}" +
+            "return out;})())")
+            .ConfigureAwait(false);
+        var textAreas = ReadTextAreas(textJson, width, height);
         var pages = new List<byte[]>();
         var totalBytes = 0L;
         for (var y = 0; y < height; y += TileHeight)
@@ -152,7 +185,7 @@ public static class BrowserHtmlRenderer
             pages.Add(png);
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return new RenderedDocument(pages, links);
+        return new RenderedDocument(pages, links, textAreas);
     }
 
     private sealed class BrowserLink
@@ -162,6 +195,51 @@ public static class BrowserHtmlRenderer
         public double Y { get; set; }
         public double Width { get; set; }
         public double Height { get; set; }
+    }
+
+    private sealed class BrowserTextBlock
+    {
+        public string Text { get; set; } = "";
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Width { get; set; }
+        public double Height { get; set; }
+    }
+
+    /// <summary>Maximum characters of message text the selectable overlay will carry.</summary>
+    public const int MaximumOverlayTextCharacters = 400_000;
+
+    /// <summary>
+    /// Validates the geometry Chrome reported before anything is placed on screen. Rectangles come
+    /// from a rendered untrusted document, so sizes are bounded and non-finite or off-page entries
+    /// are dropped rather than trusted; text is capped so a pathological message cannot balloon the
+    /// reading pane's memory.
+    /// </summary>
+    public static IReadOnlyList<TextArea> ReadTextAreas(string json, int pageWidth, int pageHeight)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "null") return [];
+        BrowserTextBlock[] blocks;
+        try { blocks = System.Text.Json.JsonSerializer.Deserialize<BrowserTextBlock[]>(json) ?? []; }
+        catch (System.Text.Json.JsonException) { return []; }
+
+        var result = new List<TextArea>();
+        var totalCharacters = 0;
+        foreach (var block in blocks)
+        {
+            var text = block.Text?.Trim() ?? "";
+            if (text.Length == 0 || text.Length > 20_000) continue;
+            if (!double.IsFinite(block.X) || !double.IsFinite(block.Y) ||
+                !double.IsFinite(block.Width) || !double.IsFinite(block.Height)) continue;
+            if (block.X < 0 || block.Y < 0 || block.Width < 1 || block.Height < 2) continue;
+            if (block.X >= pageWidth || block.Y >= pageHeight) continue;
+            if (block.Width > pageWidth || block.Height > pageHeight) continue;
+            totalCharacters += text.Length;
+            if (totalCharacters > MaximumOverlayTextCharacters) break;
+            result.Add(new TextArea(text, block.X, block.Y,
+                Math.Min(block.Width, pageWidth - block.X), Math.Min(block.Height, pageHeight - block.Y)));
+            if (result.Count >= 4000) break;
+        }
+        return result;
     }
 
     public static (int Width, int Height) ValidateScreenshot(ReadOnlySpan<byte> png)

@@ -1827,7 +1827,7 @@ public sealed partial class MainWindow : Window
             foreach (var bitmap in bitmaps)
             {
                 HtmlPagesPanel.Children.Add(new HtmlPageView(bitmap, top, rendered.Links,
-                    message => StatusText.Text = message));
+                    message => StatusText.Text = message, rendered.Text));
                 top += bitmap.PixelSize.Height;
             }
             FitHtmlPageImage();
@@ -1962,6 +1962,29 @@ public sealed partial class MainWindow : Window
         catch (Exception) { /* The content remains readable if this engine cannot zoom. */ }
     }
 
+
+    /// <summary>
+    /// Opens the sanitised message document in the system browser. The reading pane cannot offer text
+    /// selection on every display server -- an embedded web view does not composite into an Avalonia
+    /// window under Wayland -- while a browser has a real HTML engine and gives selection, copying,
+    /// find-in-page and printing for free. The document is the same one the snapshot reader renders,
+    /// so scripts stay disabled and remote images stay blocked; only the renderer changes.
+    /// </summary>
+    private void OpenInBrowserClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_bodyHtml is not { } html) return;
+        try
+        {
+            var path = BrowserDocumentWriter.Write(SafeHtmlDocument.Build(html, _inlineImageBytes));
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            StatusText.Text = "Opened this message in your browser, where text can be selected and copied.";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Could not open the message in a browser: {ex.Message}";
+        }
+    }
+
     private void ShowMessageBody()
     {
         RichBodyPanel.Children.Clear();
@@ -1973,6 +1996,7 @@ public sealed partial class MainWindow : Window
         PopOutMessageButton.IsVisible = _richRuns is not null || !string.IsNullOrWhiteSpace(_bodyPlain);
         InteractiveReaderButton.IsVisible = _bodyHtml is not null && !_embeddedHtmlActive;
         PrintablePdfButton.IsVisible = PopOutMessageButton.IsVisible;
+        OpenInBrowserButton.IsVisible = _bodyHtml is not null;
         ReaderZoomControls.IsVisible = _bodyHtml is not null;
         BodyViewButton.Content = _showRichBody ? "View plain text" : "View rich text";
         if (!_showRichBody || (_richRuns is null && _htmlPageBitmaps.Count == 0 && !_embeddedHtmlActive))
@@ -2073,6 +2097,7 @@ public sealed partial class MainWindow : Window
         _bodyPlain = "";
         BodyViewButton.IsVisible = false;
         ReaderModeButton.IsVisible = false;
+        OpenInBrowserButton.IsVisible = false;
         HtmlStatusText.IsVisible = false;
         ViewOriginalButton.IsVisible = false;
         PopOutMessageButton.IsVisible = false;

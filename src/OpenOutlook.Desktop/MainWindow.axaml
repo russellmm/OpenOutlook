@@ -284,6 +284,9 @@
               <Button Name="PopOutMessageButton" Content="Open in new window" IsVisible="False" Click="PopOutMessageClicked" />
               <Button Name="InteractiveReaderButton" Content="Open interactive message" IsVisible="False" Click="OpenInteractiveReaderClicked" />
               <Button Name="PrintablePdfButton" Content="Save printable PDF" IsVisible="False" Click="SavePrintablePdfClicked" />
+              <Button Name="OpenInBrowserButton" Content="Open in browser" IsVisible="False"
+                      ToolTip.Tip="Opens this message in your system browser, where text can be selected, searched and copied"
+                      Click="OpenInBrowserClicked" />
             </WrapPanel>
             </StackPanel>
           </ScrollViewer>

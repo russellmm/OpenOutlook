@@ -145,7 +145,7 @@ public sealed class MessageWindow : Window
             {
                 _bitmaps.Add(bitmap);
                 _pages.Children.Add(new HtmlPageView(bitmap, top, rendered.Links,
-                    message => _status.Text = message));
+                    message => _status.Text = message, rendered.Text));
                 top += bitmap.PixelSize.Height;
             }
             FitPages();

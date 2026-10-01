@@ -1463,7 +1463,12 @@ public sealed partial class MainWindow : Window
         // is WebKitGTK's accelerated path on this compositor; WEBKIT_DISABLE_DMABUF_RENDERER=1 and
         // WEBKIT_DISABLE_COMPOSITING_MODE=1 are the usual levers. Note that a headless Xvfb run
         // renders interactive mode fine, so it does NOT reproduce this and proves nothing either way.
-        _preferSnapshotForMessage = _activeGraphMessage is not null;
+        // Every HTML message starts on the snapshot reader, archived mail included. The embedded web
+        // view cannot composite into an Avalonia window under Wayland -- it loads the document and its
+        // scripts run, but nothing is painted -- so preferring it for PST archives meant archive
+        // messages looked empty while their content probe reported success. Connected mail already
+        // defaulted here; leaving the other branch on the broken path was an oversight, not a choice.
+        _preferSnapshotForMessage = true;
         _htmlImageSources = [];
         _failedMessageImages = 0;
         _richRuns = null;

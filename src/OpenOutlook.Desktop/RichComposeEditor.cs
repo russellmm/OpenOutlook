@@ -1,6 +1,5 @@
 using System.Globalization;
 using Avalonia.Controls;
-using Ganss.Xss;
 
 namespace OpenOutlook.Desktop;
 
@@ -15,7 +14,7 @@ internal static class RichComposeEditor
         try
         {
             if (html.Length > MaxLength) throw new ArgumentException("Message body is too large to edit.");
-            var initial = new HtmlSanitizer().Sanitize(html);
+            var initial = ComposeHtml.Sanitize(html);
             var dialog = new NativeWebDialog { Title = "Visual editor — OpenOutlook", CanUserResize = true };
             var screen = owner.Screens.ScreenFromWindow(owner) ?? owner.Screens.Primary;
             var scale = screen is { Scaling: > 0 } ? screen.Scaling : 1;
@@ -83,7 +82,7 @@ internal static class RichComposeEditor
                     var edited = await dialog.InvokeScript("window.openoutlookReadHtml()");
                     if (edited is null || edited.Length > MaxLength)
                         throw new ArgumentException("The formatted body is too large or invalid.");
-                    apply(new HtmlSanitizer().Sanitize(edited));
+                    apply(ComposeHtml.Sanitize(edited));
                     dialog.Close();
                 }
                 catch (Exception)

@@ -1,7 +1,7 @@
 # Session handoff (2026-09-30, later in the day; updated 2026-10-01)
 
-Binary: publish/OpenOutlook.Desktop sha256 120985913114c4c1b07bcaf73f1233ab124d91a4dbf2a39609cb310835559385,
-built 2026-10-01 09:51 local. 370/370 tests pass (scripts/dev-check.sh). HEAD is pushed to
+Binary: publish/OpenOutlook.Desktop sha256 fe7a6c30722149935011839f7748f06903024f27142eb213075722aa30603961,
+built 2026-10-01 11:22 local. 377/377 tests pass (scripts/dev-check.sh). HEAD is pushed to
 github.com/russellmm/OpenOutlook main.
 
 Shipped since the last note: archived (PST) HTML mail defaults to the snapshot reader like connected
@@ -11,6 +11,10 @@ including the stale "PST HTML still tries WebKit first" claim; the File tab is a
 and folder-pane rows can be reordered (right-click Move Up/Down/Top, or drag onto a sibling) with the
 arrangement persisted in folder-order.json across restarts — verified headless for roots and subfolders;
 drag itself needs one real-hardware check since synthesized XDND gestures never complete under Xvfb.
+And File > Options is now the classic dialog: Mail page rebuilt section-by-section from screenshots with
+the Editor Options (Proofing) and Reading Pane sub-dialogs, everything persisted to options.json and proven
+across a restart; the twelve unbuilt categories are named placeholders, and stored settings are consumed by
+features as they land rather than all being wired at once. Theme accent is now classic Outlook blue (#0F6CBD).
 
 ## The crash-containment finding worth keeping
 

@@ -454,4 +454,106 @@
       <Setter Property="CornerRadius" Value="2" />
     </Style>
 
+
+    <!-- ===== Outlook Options dialog family (measured from the Options reference crops) ===== -->
+
+    <!-- Category rail item: unlike the backstage nav, the selected row keeps black text and only
+         gets the rounded outline box. -->
+    <Style Selector="RadioButton.olOptItem">
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="Height" Value="34" />
+      <Setter Property="Margin" Value="8,1" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="optBox" Background="Transparent" BorderBrush="Transparent" BorderThickness="1.6" CornerRadius="3">
+            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Margin="14,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Left"
+                              Foreground="{TemplateBinding Foreground}" RecognizesAccessKey="True" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="RadioButton.olOptItem:pointerover /template/ Border#optBox">
+      <Setter Property="Background" Value="#0A000000" />
+    </Style>
+    <Style Selector="RadioButton.olOptItem:checked /template/ Border#optBox">
+      <Setter Property="BorderBrush" Value="{DynamicResource OlText}" />
+    </Style>
+
+    <Style Selector="TextBlock.olOptSection">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="Margin" Value="0,22,0,0" />
+    </Style>
+
+    <Style Selector="Border.olOptRule">
+      <Setter Property="Height" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource OlCardBorder}" />
+      <Setter Property="Margin" Value="0,6,0,12" />
+    </Style>
+
+    <Style Selector="TextBlock.olOptBody">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- Small push button in the classic dialog look -->
+    <Style Selector="Button.olOptButton">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="Padding" Value="12,5" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="optBtn" Background="{DynamicResource OlCard}" BorderBrush="#ADADAD" BorderThickness="1" CornerRadius="2">
+            <ContentPresenter Content="{TemplateBinding Content}" Margin="{TemplateBinding Padding}"
+                              RecognizesAccessKey="True" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.olOptButton:pointerover /template/ Border#optBtn">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+    <Style Selector="Button.olOptButton:pressed /template/ Border#optBtn">
+      <Setter Property="Background" Value="{DynamicResource OlPressed}" />
+    </Style>
+    <Style Selector="Button.olOptButton:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource OlBsDisabled}" />
+    </Style>
+
+    <!-- Dialog OK/Cancel pair; the default button carries the darker outline -->
+    <Style Selector="Button.olOptDialog">
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="Width" Value="96" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="dlgBtn" Background="{DynamicResource OlCard}" BorderBrush="#767676" BorderThickness="1.4" CornerRadius="2">
+            <ContentPresenter Content="{TemplateBinding Content}" RecognizesAccessKey="True" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.olOptDialog:pointerover /template/ Border#dlgBtn">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+
+    <!-- Options content text sits a touch larger than the mail UI -->
+    <Style Selector="#OptionsHost CheckBox, #EditorOptionsHost CheckBox, #ReadingPaneHost CheckBox">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+    </Style>
+    <Style Selector="#OptionsHost ComboBox, #EditorOptionsHost ComboBox">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="FontSize" Value="13.5" />
+    </Style>
+
 </Styles>

@@ -620,4 +620,131 @@
     </Canvas>
   </ControlTemplate>
 
+
+  <!-- Options page family: line icons with occasional semantic colour, matching the
+       Outlook Options reference crops. -->
+  <ControlTemplate x:Key="OlIconOptMail">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M4,9 L28,9 L28,24 L4,24 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Fill="Transparent" Data="M4,9 L16,18 L28,9" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptCompose">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M7,4 L19,4 L24,9 L24,28 L7,28 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.4" Fill="Transparent" Data="M19,4 L19,9 L24,9" />
+      <Path Stroke="#0F6CBD" StrokeThickness="2" Data="M11,23 L20,14" />
+      <Path Fill="#0F6CBD" Data="M9.5,27 L10.6,22.8 L13.2,25.4 Z" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptSpell">
+    <Canvas Width="32" Height="32">
+      <TextBlock Canvas.Left="3" Canvas.Top="0" Text="abc" FontSize="14" Foreground="{DynamicResource OlIcon}" />
+      <Path Stroke="#217346" StrokeThickness="2" Fill="Transparent" Data="M5,25 L12,29 L27,15" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptSignature">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M4,22 C8,12 11,28 15,19 C18,16 21,20 27,17" />
+      <Path Stroke="#0F6CBD" StrokeThickness="2" Data="M20,4 L27,11" />
+      <Path Fill="#0F6CBD" Data="M18.5,8 L20.6,3.6 L23.4,6.4 Z" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptStationery">
+    <Canvas Width="32" Height="32">
+      <TextBlock Canvas.Left="2" Canvas.Top="1" Text="A" FontSize="24" Foreground="{DynamicResource OlIcon}" />
+      <TextBlock Canvas.Left="20" Canvas.Top="0" Text="a" FontSize="15" Foreground="#0F6CBD" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptPanes">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M4,8 L28,8 L28,25 L4,25 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.3" Data="M13,8 L13,25" />
+      <Rectangle Canvas.Left="13" Canvas.Top="8" Width="15" Height="17" Fill="#0F6CBD" Opacity="0.22" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptArrival">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M3,10 L21,10 L21,24 L3,24 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.4" Fill="Transparent" Data="M3,10 L12,17 L21,10" />
+      <Path Stroke="#C29008" StrokeThickness="1.6" Fill="#FFF2CC" Data="M25,6 C23.4,6 22.4,7.4 22.4,9.2 L21.4,12.6 L28.6,12.6 L27.6,9.2 C27.6,7.4 26.6,6 25,6 Z" />
+      <Ellipse Canvas.Left="24.1" Canvas.Top="13.4" Width="2" Height="2" Fill="#C29008" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptCleanup">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M4,8 L24,8 L24,22 L4,22 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.4" Fill="Transparent" Data="M4,8 L14,15 L24,8" />
+      <Path Stroke="#A4262C" StrokeThickness="2.2" Data="M19,19 L28,28" />
+      <Path Stroke="#A4262C" StrokeThickness="2.2" Data="M28,19 L19,28" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptReplies">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M6,4 L17,4 L22,9 L22,20" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.4" Fill="Transparent" Data="M17,4 L17,9 L22,9" />
+      <Ellipse Canvas.Left="16" Canvas.Top="15" Width="13" Height="13" Stroke="#0F6CBD" StrokeThickness="1.6" />
+      <Path Stroke="#0F6CBD" StrokeThickness="1.4" Data="M22.5,18 L22.5,25 M19,21.5 L26,21.5" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptSave">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M5,5 L22,5 L27,10 L27,27 L5,27 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.3" Fill="Transparent" Data="M9,5 L9,12 L20,12 L20,5" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.3" Fill="Transparent" Data="M9,17 L23,17 L23,27 L9,27 Z" />
+      <Path Stroke="#0F6CBD" StrokeThickness="2" Data="M18,24 L26,16" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptSend">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M4,15 L28,5 L20,27 L14,19 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.3" Fill="Transparent" Data="M28,5 L14,19" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptMailTips">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="Transparent" Data="M4,9 L24,9 L24,23 L4,23 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.4" Fill="Transparent" Data="M4,9 L14,16 L24,9" />
+      <Ellipse Canvas.Left="20" Canvas.Top="18" Width="11" Height="11" Stroke="#C4314B" StrokeThickness="1.6" Fill="White" />
+      <TextBlock Canvas.Left="24.1" Canvas.Top="17.4" Text="i" FontSize="10" FontWeight="SemiBold" Foreground="#C4314B" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptTracking">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Data="M12,8 L27,8 M12,16 L27,16 M12,24 L27,24" />
+      <Path Stroke="#217346" StrokeThickness="1.8" Fill="Transparent" Data="M3,7 L5,9 L9,4" />
+      <Path Stroke="#217346" StrokeThickness="1.8" Fill="Transparent" Data="M3,15 L5,17 L9,12" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Data="M3,24 L9,24" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptFormat">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Data="M11,8 L27,8 M11,16 L27,16 M11,24 L27,24" />
+      <Rectangle Canvas.Left="4" Canvas.Top="6.5" Width="3" Height="3" Fill="{DynamicResource OlIcon}" />
+      <Rectangle Canvas.Left="4" Canvas.Top="14.5" Width="3" Height="3" Fill="{DynamicResource OlIcon}" />
+      <Rectangle Canvas.Left="4" Canvas.Top="22.5" Width="3" Height="3" Fill="{DynamicResource OlIcon}" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOptOther">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Data="M4,7 L20,7 M4,13 L18,13 M4,19 L14,19" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Fill="Transparent" Data="M15,20 L29,20 L29,29 L15,29 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.3" Fill="Transparent" Data="M15,20 L22,25 L29,20" />
+    </Canvas>
+  </ControlTemplate>
+
 </ResourceDictionary>

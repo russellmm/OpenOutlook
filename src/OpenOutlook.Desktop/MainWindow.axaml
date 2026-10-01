@@ -554,7 +554,7 @@
                   <TextBlock Text="Feedback" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
-              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavOptions" Tag="options" Click="BackstageNavClicked">
+              <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavOptions" Click="OptionsNavClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
                   <ContentControl Template="{StaticResource OlIconGearR}" Width="17" Height="17" Tag="{Binding #NavOptions.Foreground}" />
                   <TextBlock Text="Options" VerticalAlignment="Center" />
@@ -809,24 +809,479 @@
               </Button>
             </StackPanel>
 
-            <!-- Options -->
-            <StackPanel Name="PageOptions" IsVisible="False">
-              <TextBlock Classes="olBsHeading" Text="Options" />
-              <TextBlock Classes="olBsBody" Margin="0,0,0,16" Text="The full Options pages are being rebuilt to match classic Outlook. The settings that exist today live here." />
-              <StackPanel Spacing="10" MaxWidth="430" HorizontalAlignment="Left">
-                <Button Classes="olBsAction" Click="BsAppearanceClicked">
-                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconAppearance}" Width="18" Height="18" /><TextBlock Text="General — theme, accent colour, text size" VerticalAlignment="Center" /></StackPanel>
-                </Button>
-                <Button Classes="olBsAction" Click="BsShortcutsClicked">
-                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconKeyboard}" Width="18" Height="18" /><TextBlock Text="Mail — keyboard shortcuts" VerticalAlignment="Center" /></StackPanel>
-                </Button>
-              </StackPanel>
-            </StackPanel>
 
           </StackPanel>
         </ScrollViewer>
       </Grid>
     </Border>
+
+    <!-- ==================== Outlook Options dialog (classic File > Options) ==================== -->
+    <Border Name="OptionsHost" IsVisible="False" Background="White" KeyDown="OptionsKeyDown">
+      <Grid RowDefinitions="Auto,*">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="16,9,10,7">
+          <TextBlock Text="Outlook Options" FontSize="14.5" Foreground="{DynamicResource OlText}" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="olBsBack" Width="32" Height="32" Click="RibbonPlaceholderClicked" ToolTip.Tip="Help">
+            <TextBlock Text="?" FontSize="14" Foreground="{DynamicResource OlTextSecondary}" />
+          </Button>
+          <Button Grid.Column="2" Classes="olBsBack" Width="32" Height="32" Click="OptionsCancelClicked" ToolTip.Tip="Close">
+            <Path Stroke="{DynamicResource OlText}" StrokeThickness="1.4" Data="M0,0 L10,10 M10,0 L0,10" />
+          </Button>
+        </Grid>
+        <Grid Grid.Row="1" ColumnDefinitions="205,*">
+          <Border Background="{DynamicResource OlBackstagePane}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,0,1,0">
+            <StackPanel Margin="0,10,0,14">
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Name="OptCatGeneral" Tag="general" Click="OptionsCategoryClicked" Content="General" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Name="OptCatMail" Tag="mail" Click="OptionsCategoryClicked" Content="Mail" />
+              <Border Height="1" Background="{DynamicResource OlHairline}" Margin="12,7" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="calendar" Click="OptionsCategoryClicked" Content="Calendar" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="groups" Click="OptionsCategoryClicked" Content="Groups" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="people" Click="OptionsCategoryClicked" Content="People" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="tasks" Click="OptionsCategoryClicked" Content="Tasks" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="search" Click="OptionsCategoryClicked" Content="Search" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="language" Click="OptionsCategoryClicked" Content="Language" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="accessibility" Click="OptionsCategoryClicked" Content="Accessibility" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="advanced" Click="OptionsCategoryClicked" Content="Advanced" />
+              <Border Height="1" Background="{DynamicResource OlHairline}" Margin="12,7" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="ribbon" Click="OptionsCategoryClicked" Content="Customize Ribbon" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="qat" Click="OptionsCategoryClicked" Content="Quick Access Toolbar" />
+              <Border Height="1" Background="{DynamicResource OlHairline}" Margin="12,7" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="addins" Click="OptionsCategoryClicked" Content="Add-ins" />
+              <RadioButton Classes="olOptItem" GroupName="OptionsCat" Tag="trust" Click="OptionsCategoryClicked" Content="Trust Center" />
+            </StackPanel>
+          </Border>
+          <Grid Grid.Column="1" RowDefinitions="*,Auto">
+            <ScrollViewer Name="OptionsScroll">
+              <StackPanel>
+
+                <!-- General: our real settings live here until the classic categories are rebuilt -->
+                <StackPanel Name="PageGeneral" IsVisible="False" Margin="36,20,48,24" MaxWidth="760" HorizontalAlignment="Left">
+                  <TextBlock Classes="olBsHeading" Text="General" />
+                  <TextBlock Classes="olOptBody" Foreground="{DynamicResource OlTextSecondary}" Margin="0,10,0,18"
+                             Text="The classic General page (theme, notifications, message handling) is being rebuilt. The OpenOutlook settings that exist today live here." />
+                  <StackPanel Spacing="10">
+                    <Button Classes="olBsAction" Click="OptionsClicked">
+                      <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconAppearance}" Width="18" Height="18" /><TextBlock Text="Appearance - theme, accent colour, text size" VerticalAlignment="Center" /></StackPanel>
+                    </Button>
+                    <Button Classes="olBsAction" Click="ShortcutsClicked">
+                      <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconKeyboard}" Width="18" Height="18" /><TextBlock Text="Mail - keyboard shortcuts" VerticalAlignment="Center" /></StackPanel>
+                    </Button>
+                  </StackPanel>
+                </StackPanel>
+
+                <!-- Mail: full recreation of the classic page -->
+                <StackPanel Name="PageMail" IsVisible="False" Margin="36,14,48,26">
+                  <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,6">
+                    <ContentControl Template="{StaticResource OlIconOptMail}" Width="34" Height="34" />
+                    <TextBlock Grid.Column="1" Classes="olOptBody" FontSize="15.5" Text="Change the settings for messages you create and receive." Margin="14,0,0,0" VerticalAlignment="Center" />
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Compose messages" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,16">
+                    <ContentControl Template="{StaticResource OlIconOptCompose}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="7" Margin="6,0,0,0">
+                      <TextBlock Classes="olOptBody" Text="Change the editing settings for messages." />
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock Classes="olOptBody" Text="Compose messages in this format:" VerticalAlignment="Center" />
+                        <ComboBox Name="OptComposeFormat" Width="130">
+                          <ComboBoxItem>Rich Text</ComboBoxItem>
+                          <ComboBoxItem>HTML</ComboBoxItem>
+                          <ComboBoxItem>Plain Text</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                    </StackPanel>
+                    <Button Grid.Column="2" Classes="olOptButton" Content="Editor Options..." Click="OpenEditorOptionsClicked" VerticalAlignment="Top" Margin="16,0,0,0" />
+                  </Grid>
+                  <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,16">
+                    <ContentControl Template="{StaticResource OlIconOptSpell}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
+                      <CheckBox Name="OptCheckSpelling" Content="_Always check spelling before sending" />
+                      <CheckBox Name="OptIgnoreOriginal" Content="_Ignore original message text in reply or forward" />
+                    </StackPanel>
+                    <Button Grid.Column="2" Classes="olOptButton" Content="Spelling and Autocorrect..." Tag="Spelling and Autocorrect" Click="OptionsPlaceholderClicked" VerticalAlignment="Top" Margin="16,0,0,0" />
+                  </Grid>
+                  <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,16">
+                    <ContentControl Template="{StaticResource OlIconOptSignature}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <TextBlock Grid.Column="1" Classes="olOptBody" Text="Create or modify signatures for messages." Margin="6,4,0,0" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="olOptButton" Content="Signatures..." Tag="Signatures" Click="OptionsPlaceholderClicked" Margin="16,0,0,0" />
+                  </Grid>
+                  <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptStationery}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <TextBlock Grid.Column="1" Classes="olOptBody" Text="Use stationery to change default fonts and styles, colors, and backgrounds." Margin="6,4,0,0" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="olOptButton" Content="Stationery and Fonts..." Tag="Stationery and Fonts" Click="OptionsPlaceholderClicked" Margin="16,0,0,0" />
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Outlook panes" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptPanes}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <TextBlock Grid.Column="1" Classes="olOptBody" Text="Customize how items are marked as read when using the Reading Pane." Margin="6,4,0,0" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="olOptButton" Content="Reading Pane..." Click="OpenReadingPaneClicked" Margin="16,0,0,0" />
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Message arrival" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptArrival}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
+                      <TextBlock Classes="olOptBody" Text="When new messages arrive:" />
+                      <CheckBox Name="OptPlaySound" Content="_Play a sound" Margin="26,0,0,0" />
+                      <CheckBox Name="OptChangePointer" Content="_Briefly change the mouse pointer" Margin="26,0,0,0" />
+                      <CheckBox Name="OptTaskbarIcon" Content="Sho_w an envelope icon in the taskbar" Margin="26,0,0,0" />
+                      <CheckBox Name="OptDesktopAlert" Content="Display a _Desktop Alert" Margin="26,0,0,0" />
+                      <CheckBox Content="Enable preview for _Rights Protected messages (May impact performance)" IsEnabled="False" Margin="52,0,0,0" />
+                    </StackPanel>
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Conversation Clean Up" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptCleanup}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock Classes="olOptBody" Text="Cleaned-up items will go to this folder:" VerticalAlignment="Center" />
+                        <TextBox Name="OptCleanupFolder" Width="230" Watermark="" />
+                        <Button Classes="olOptButton" Content="_Browse..." Tag="Choosing the Clean Up folder" Click="OptionsPlaceholderClicked" />
+                      </StackPanel>
+                      <TextBlock Classes="olOptBody" Text="Messages moved by Clean Up will go to their account's Deleted Items." Margin="0,2,0,0" />
+                      <CheckBox Name="OptCleanupRecreate" Content="_When cleaning sub-folders, recreate the folder hierarchy in the destination folder" Margin="26,0,0,0" />
+                      <CheckBox Name="OptCleanupUnread" Content="Don't move _unread messages" Margin="26,0,0,0" />
+                      <CheckBox Name="OptCleanupCategorized" Content="Don't move c_ategorized messages" Margin="26,0,0,0" />
+                      <CheckBox Name="OptCleanupFlagged" Content="Don't move _flagged messages" Margin="26,0,0,0" />
+                      <CheckBox Name="OptCleanupSigned" Content="Don't move _digitally-signed messages" Margin="26,0,0,0" />
+                      <CheckBox Name="OptCleanupReply" Content="_When a reply modifies a message, don't move the original" Margin="26,0,0,0" />
+                    </StackPanel>
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Replies and forwards" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptReplies}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
+                      <StackPanel Orientation="Horizontal" Spacing="7">
+                        <CheckBox Name="OptSuggestedReplies" Content="Show suggested replies" />
+                        <Canvas Width="15" Height="15" VerticalAlignment="Center">
+                          <Ellipse Width="14" Height="14" Canvas.Left="0.5" Stroke="{DynamicResource OlAccent}" StrokeThickness="1.2" />
+                          <TextBlock Text="i" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource OlAccent}" Canvas.Left="6" Canvas.Top="0.5" />
+                        </Canvas>
+                      </StackPanel>
+                      <CheckBox Name="OptRepliesNewWindow" Content="_Open replies and forwards in a new window" Margin="26,0,0,0" />
+                      <CheckBox Name="OptCloseOriginal" Content="_Close original message window when replying or forwarding" Margin="26,0,0,0" />
+                      <StackPanel Orientation="Horizontal" Spacing="9" Margin="26,0,0,0">
+                        <TextBlock Classes="olOptBody" Text="Preface comments with:" VerticalAlignment="Center" />
+                        <TextBox Name="OptPrefaceComments" Width="300" IsEnabled="False" />
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="9" Margin="26,4,0,0">
+                        <TextBlock Classes="olOptBody" Text="When replying to a message:" VerticalAlignment="Center" Width="185" />
+                        <ComboBox Name="OptReplyCombo" MinWidth="330">
+                          <ComboBoxItem>Include original message text</ComboBoxItem>
+                          <ComboBoxItem>Include text without formatting</ComboBoxItem>
+                          <ComboBoxItem>Don't include original message</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="9" Margin="26,0,0,0">
+                        <TextBlock Classes="olOptBody" Text="When forwarding a message:" VerticalAlignment="Center" Width="185" />
+                        <ComboBox Name="OptForwardCombo" MinWidth="330">
+                          <ComboBoxItem>Include original message text</ComboBoxItem>
+                          <ComboBoxItem>Include text without formatting</ComboBoxItem>
+                          <ComboBoxItem>Don't include original message</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="9" Margin="26,4,0,0">
+                        <TextBlock Classes="olOptBody" Text="Preface each line in a plain-text message with:" Foreground="{DynamicResource OlBsDisabled}" VerticalAlignment="Center" />
+                        <TextBox Width="230" IsEnabled="False" Text="&gt;" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Save messages" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptSave}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <CheckBox Name="OptAutoSave" Content="_Automatically save items that have not been sent after this many minutes:" Checked="OptAutoSaveToggled" Unchecked="OptAutoSaveToggled" />
+                        <NumericUpDown Name="OptAutoSaveMinutes" Minimum="1" Maximum="99" Width="104" />
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="9" Margin="26,0,0,0">
+                        <TextBlock Classes="olOptBody" Text="Save to this folder:" VerticalAlignment="Center" />
+                        <ComboBox Name="OptUnsentFolder" Width="120">
+                          <ComboBoxItem>Drafts</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                      <CheckBox Name="OptReplySameFolder" Content="_When replying to a message that is not in the Inbox, save the reply in the same folder" Margin="26,0,0,0" />
+                      <CheckBox Name="OptSaveForwarded" Content="Sa_ve forwarded messages" Margin="26,0,0,0" />
+                      <CheckBox Name="OptSaveSentCopies" Content="Save copies of messages in the Se_nt Items folder" Margin="26,0,0,0" />
+                      <CheckBox Name="OptUnicode" Content="_Use Unicode format" Margin="26,0,0,0" />
+                    </StackPanel>
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Send messages" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptSend}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock Classes="olOptBody" Text="Default Importance level:" VerticalAlignment="Center" />
+                        <ComboBox Name="OptImportance" Width="120">
+                          <ComboBoxItem>Normal</ComboBoxItem>
+                          <ComboBoxItem>High</ComboBoxItem>
+                          <ComboBoxItem>Low</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock Classes="olOptBody" Text="Default Sensitivity level:" VerticalAlignment="Center" />
+                        <ComboBox Name="OptSensitivity" Width="150">
+                          <ComboBoxItem>Normal</ComboBoxItem>
+                          <ComboBoxItem>Personal</ComboBoxItem>
+                          <ComboBoxItem>Private</ComboBoxItem>
+                          <ComboBoxItem>Confidential</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
+                        <CheckBox Name="OptMarkExpired" Content="_Mark messages as expired after this many days:" Checked="OptExpireToggled" Unchecked="OptExpireToggled" />
+                        <NumericUpDown Name="OptExpireDays" Minimum="0" Maximum="3650" Width="104" IsEnabled="False" />
+                      </StackPanel>
+                      <CheckBox Name="OptDefaultAccount" Content="_Always use the default account when composing new messages" Margin="26,0,0,0" />
+                      <CheckBox Name="OptCommas" Content="_Commas can be used to separate multiple message recipients" Margin="26,0,0,0" />
+                      <CheckBox Name="OptNameCheck" Content="_Automatic name checking" Margin="26,0,0,0" />
+                      <CheckBox Name="OptDeleteMeetings" Content="_Delete meeting requests and notifications from Inbox after responding" Margin="26,0,0,0" />
+                      <CheckBox Name="OptCtrlEnter" Content="_CTRL + ENTER sends a message" Margin="26,0,0,0" />
+                      <CheckBox Name="OptAutoComplete" Content="_Use Auto-Complete List to suggest names when typing in the To, Cc, and Bcc lines" Margin="26,0,0,0" />
+                      <CheckBox Name="OptWarnAttachment" Content="_Warn me when I send a message that may be missing an attachment" Margin="26,0,0,0" />
+                      <CheckBox Name="OptMention" Content="_Suggest names to mention when I use the @ symbol in a message (requires restarting Outlook)" Margin="26,0,0,0" />
+                    </StackPanel>
+                    <Button Grid.Column="2" Classes="olOptButton" Content="Empty Auto-Complete List" Tag="The Auto-Complete list" Click="OptionsPlaceholderClicked" VerticalAlignment="Center" Margin="16,0,0,0" />
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="MailTips" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptMailTips}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <TextBlock Grid.Column="1" Classes="olOptBody" Text="Manage MailTips options. For example, you may determine when and how to display the MailTips bar and which MailTips to display." Margin="6,4,0,0" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="olOptButton" Content="MailTips Options..." Tag="MailTips options" Click="OptionsPlaceholderClicked" Margin="16,0,0,0" />
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Tracking" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptTracking}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
+                      <TextBlock Classes="olOptBody" Text="Delivery and read receipts help provide confirmation that messages were successfully received. Not all email servers and applications support sending receipts." />
+                      <TextBlock Classes="olOptBody" Text="For all messages sent, request:" Margin="0,4,0,0" />
+                      <CheckBox Name="OptRequestDelivery" Content="_Delivery receipt confirming the message was delivered to the recipient's email server" Margin="26,0,0,0" />
+                      <CheckBox Name="OptRequestRead" Content="_Read receipt confirming the recipient viewed the message" Margin="26,0,0,0" />
+                      <TextBlock Classes="olOptBody" Text="For any message received that includes a read receipt request:" Margin="0,4,0,0" />
+                      <RadioButton Name="RrAlways" GroupName="OptReadReceipt" Content="_Always send a read receipt" Margin="26,0,0,0" FontSize="14" />
+                      <RadioButton Name="RrNever" GroupName="OptReadReceipt" Content="_Never send a read receipt" Margin="26,0,0,0" FontSize="14" />
+                      <RadioButton Name="RrAsk" GroupName="OptReadReceipt" Content="Ask each _time whether to send a read receipt" Margin="26,0,0,0" FontSize="14" />
+                      <CheckBox Name="OptAutoMeetings" Content="_Automatically process meeting requests and responses to meeting requests and polls" Margin="0,4,0,0" />
+                      <CheckBox Name="OptAutoUpdateSent" Content="_Automatically update original sent item with receipt information" Margin="0,0,0,0" />
+                      <CheckBox Name="OptUpdateDelete" Content="_Update tracking information, and then delete responses that don't contain comments" Margin="0,0,0,0" />
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <CheckBox Name="OptMoveReceipts" Content="After updating tracking information, move receipt to:" />
+                        <TextBox Width="230" Text="Deleted Items" IsEnabled="False" />
+                        <Button Classes="olOptButton" Content="_Browse..." IsEnabled="False" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Message format" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptFormat}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
+                      <CheckBox Name="OptCss" Content="_Use Cascading Style Sheets (CSS) for appearance of messages" />
+                      <CheckBox Name="OptReduceSize" Content="_Reduce message size by removing format information not necessary to display the message" />
+                      <CheckBox Name="OptUuencode" Content="_Encode attachments in UUENCODE format when sending plain-text messages" />
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Classes="olOptBody" Text="Automatically wrap text at character:" VerticalAlignment="Center" />
+                        <NumericUpDown Name="OptWrapAt" Minimum="25" Maximum="700" Width="104" />
+                      </StackPanel>
+                      <CheckBox Name="OptRemoveBreaks" Content="_Remove extra line breaks in plain text messages" />
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock Classes="olOptBody" Text="When sending messages in Rich Text format to Internet recipients:" VerticalAlignment="Center" />
+                        <ComboBox Name="OptRtfInternet" MinWidth="290">
+                          <ComboBoxItem>Convert to HTML format</ComboBoxItem>
+                          <ComboBoxItem>Compress Rich Text format</ComboBoxItem>
+                          <ComboBoxItem>Send with plain text</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                    </StackPanel>
+                  </Grid>
+
+                  <TextBlock Classes="olOptSection" Text="Other" />
+                  <Border Classes="olOptRule" />
+                  <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
+                    <ContentControl Template="{StaticResource OlIconOptOther}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
+                      <CheckBox Name="OptPasteOptions" Content="Show _Paste Options button when content is pasted into a message" />
+                      <CheckBox Name="OptNextPrev" Content="_Show Next and Previous links in the message headers when reading messages" />
+                      <CheckBox Name="OptNoAutoExpand" Content="_Don't automatically expand conversations when using the keyboard to change messages" />
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock Classes="olOptBody" Text="After moving or deleting an open item:" VerticalAlignment="Center" />
+                        <ComboBox Name="OptAfterMoveDelete" MinWidth="250">
+                          <ComboBoxItem>return to the current folder</ComboBoxItem>
+                          <ComboBoxItem>open the next item</ComboBoxItem>
+                          <ComboBoxItem>open the previous item</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                      <CheckBox Name="OptMarkReadDeleted" Content="_Mark messages as read when deleted" />
+                      <CheckBox Name="OptHighlightFlagged" Content="_Highlight flagged items in the message list" />
+                    </StackPanel>
+                  </Grid>
+                </StackPanel>
+
+                <!-- Everything else is a named placeholder until its category is built -->
+                <StackPanel Name="PageOptionPlaceholder" IsVisible="False" Margin="36,20,48,24">
+                  <TextBlock Name="OptionsPlaceholderHeading" Classes="olBsHeading" Text="Calendar" />
+                  <TextBlock Classes="olOptBody" Foreground="{DynamicResource OlTextSecondary}" Margin="0,12,0,0" MaxWidth="640" HorizontalAlignment="Left"
+                             Text="This settings category is planned for a future version of OpenOutlook. The Mail page is the first to be rebuilt to match classic Outlook." />
+                </StackPanel>
+
+              </StackPanel>
+            </ScrollViewer>
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="24,6,26,14">
+              <TextBlock Name="OptionsFeedback" FontSize="13" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="olOptDialog" Content="OK" Click="OptionsOkClicked" Margin="0,0,10,0" />
+              <Button Grid.Column="2" Classes="olOptDialog" Content="Cancel" Click="OptionsCancelClicked" />
+            </Grid>
+          </Grid>
+        </Grid>
+      </Grid>
+    </Border>
+
+    <!-- ==================== Editor Options dialog (Proofing) ==================== -->
+    <Panel Name="EditorOptionsHost" IsVisible="False" Background="#66000000" KeyDown="EditorDialogKeyDown">
+      <Border Width="980" MaxHeight="720" Background="White" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1"
+              BoxShadow="0 14 44 0 #55000000" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="16,9,10,7">
+            <TextBlock Text="Editor Options" FontSize="14.5" Foreground="{DynamicResource OlText}" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="olBsBack" Width="32" Height="32" Click="RibbonPlaceholderClicked" ToolTip.Tip="Help">
+              <TextBlock Text="?" FontSize="14" Foreground="{DynamicResource OlTextSecondary}" />
+            </Button>
+            <Button Grid.Column="2" Classes="olBsBack" Width="32" Height="32" Click="EditorCancelClicked" ToolTip.Tip="Close">
+              <Path Stroke="{DynamicResource OlText}" StrokeThickness="1.4" Data="M0,0 L10,10 M10,0 L0,10" />
+            </Button>
+          </Grid>
+          <Grid Grid.Row="1" ColumnDefinitions="205,*">
+            <Border Background="{DynamicResource OlBackstagePane}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,0,1,0">
+              <StackPanel Margin="0,10,0,14">
+                <RadioButton Classes="olOptItem" GroupName="EditorCat" Name="EdCatProofing" Tag="proofing" Click="EditorCategoryClicked" Content="Proofing" />
+                <RadioButton Classes="olOptItem" GroupName="EditorCat" Tag="accessibility" Click="EditorCategoryClicked" Content="Accessibility" />
+                <RadioButton Classes="olOptItem" GroupName="EditorCat" Tag="advanced" Click="EditorCategoryClicked" Content="Advanced" />
+              </StackPanel>
+            </Border>
+            <Grid Grid.Column="1" RowDefinitions="*,Auto">
+              <ScrollViewer>
+                <StackPanel>
+                  <StackPanel Name="EdPageProofing" IsVisible="False" Margin="36,14,48,24">
+                    <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,6">
+                      <ContentControl Template="{StaticResource OlIconOptSpell}" Width="34" Height="34" />
+                      <TextBlock Grid.Column="1" Classes="olOptBody" FontSize="15.5" Text="Specify how Outlook corrects and formats the contents of your e-mails." Margin="14,0,0,0" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Classes="olOptSection" Text="AutoCorrect options" />
+                    <Border Classes="olOptRule" />
+                    <StackPanel Orientation="Horizontal" Spacing="9" Margin="12,0,0,8">
+                      <TextBlock Classes="olOptBody" Text="Specify how Outlook corrects and formats text as you type." VerticalAlignment="Center" />
+                      <Button Classes="olOptButton" Content="AutoCorrect Options..." Tag="AutoCorrect options" Click="EditorPlaceholderClicked" />
+                    </StackPanel>
+                    <TextBlock Classes="olOptSection" Text="When correcting spelling in Microsoft Office programs" />
+                    <Border Classes="olOptRule" />
+                    <StackPanel Spacing="6" Margin="12,0,0,8">
+                      <CheckBox Name="EdIgnoreUppercase" Content="_Ignore words in UPPERCASE" />
+                      <CheckBox Name="EdIgnoreNumbers" Content="Ignore words that contain _numbers" />
+                      <CheckBox Name="EdIgnoreInternet" Content="Ignore _Internet and file addresses" />
+                      <CheckBox Name="EdFlagRepeated" Content="_Flag repeated words" />
+                      <CheckBox Name="EdFrenchAccented" Content="Enforce accented uppercase in _French" />
+                      <CheckBox Name="EdMainDictOnly" Content="_Suggest from main dictionary only" />
+                      <Button Classes="olOptButton" Content="Custom Dictionaries..." Tag="Custom dictionaries" Click="EditorPlaceholderClicked" Margin="0,4,0,0" />
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock Classes="olOptBody" Text="French modes:" VerticalAlignment="Center" Width="120" />
+                        <ComboBox Name="EdFrenchCombo" MinWidth="230">
+                          <ComboBoxItem>Traditional and new spellings</ComboBoxItem>
+                          <ComboBoxItem>Traditional spellings only</ComboBoxItem>
+                          <ComboBoxItem>New spellings only</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock Classes="olOptBody" Text="Spanish modes:" VerticalAlignment="Center" Width="120" />
+                        <ComboBox Name="EdSpanishCombo" MinWidth="230">
+                          <ComboBoxItem>Tuteo verb forms only</ComboBoxItem>
+                          <ComboBoxItem>Usted verb forms only</ComboBoxItem>
+                        </ComboBox>
+                      </StackPanel>
+                    </StackPanel>
+                    <TextBlock Classes="olOptSection" Text="When correcting spelling in Outlook" />
+                    <Border Classes="olOptRule" />
+                    <StackPanel Spacing="6" Margin="12,0,0,8">
+                      <CheckBox Name="EdCheckAsYouType" Content="_Check spelling as you type" />
+                      <CheckBox Name="EdMarkGrammar" Content="_Mark grammar errors as you type" />
+                      <CheckBox Name="EdConfusedWords" Content="_Frequently confused words" />
+                      <CheckBox Name="EdGrammarWithSpelling" Content="Check _grammar with spelling" />
+                      <CheckBox Content="Show reada_bility statistics" IsEnabled="False" />
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock Classes="olOptBody" Text="Writing Style:" VerticalAlignment="Center" Width="120" />
+                        <ComboBox Name="EdWritingStyle" MinWidth="230">
+                          <ComboBoxItem>Grammar</ComboBoxItem>
+                          <ComboBoxItem>Grammar and style</ComboBoxItem>
+                        </ComboBox>
+                        <Button Classes="olOptButton" Content="_Settings..." Tag="Writing style settings" Click="EditorPlaceholderClicked" />
+                      </StackPanel>
+                      <Button Classes="olOptButton" Content="Recheck _E-mail" IsEnabled="False" Margin="0,4,0,0" HorizontalAlignment="Stretch" MaxWidth="180" />
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel Name="EdPagePlaceholder" IsVisible="False" Margin="36,20,48,24">
+                    <TextBlock Name="EdPlaceholderHeading" Classes="olBsHeading" Text="Accessibility" />
+                    <TextBlock Classes="olOptBody" Foreground="{DynamicResource OlTextSecondary}" Margin="0,12,0,0" MaxWidth="640" HorizontalAlignment="Left"
+                               Text="This Editor Options page is planned for a future version of OpenOutlook." />
+                  </StackPanel>
+                </StackPanel>
+              </ScrollViewer>
+              <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="24,6,26,14">
+                <TextBlock Name="EditorFeedback" FontSize="13" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="olOptDialog" Content="OK" Click="EditorOkClicked" Margin="0,0,10,0" />
+                <Button Grid.Column="2" Classes="olOptDialog" Content="Cancel" Click="EditorCancelClicked" />
+              </Grid>
+            </Grid>
+          </Grid>
+        </Grid>
+      </Border>
+    </Panel>
+
+    <!-- ==================== Reading Pane dialog ==================== -->
+    <Panel Name="ReadingPaneHost" IsVisible="False" Background="#66000000" KeyDown="ReadingPaneDialogKeyDown">
+      <Border Width="640" Background="White" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1"
+              BoxShadow="0 14 44 0 #55000000" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="16,9,10,7">
+            <TextBlock Text="Reading Pane" FontSize="14.5" Foreground="{DynamicResource OlText}" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="olBsBack" Width="32" Height="32" Click="ReadingPaneCancelClicked" ToolTip.Tip="Close">
+              <Path Stroke="{DynamicResource OlText}" StrokeThickness="1.4" Data="M0,0 L10,10 M10,0 L0,10" />
+            </Button>
+          </Grid>
+          <StackPanel Grid.Row="1" Margin="26,8,30,10" Spacing="8">
+            <TextBlock Classes="olOptBody" Text="Reading Pane options" Margin="0,0,0,4" />
+            <CheckBox Name="RpMarkOnView" Content="Mark items as read when viewed in the Reading Pane" />
+            <StackPanel Orientation="Horizontal" Spacing="9" Margin="26,0,0,0">
+              <TextBlock Classes="olOptBody" Text="Wait" VerticalAlignment="Center" />
+              <NumericUpDown Name="RpWait" Minimum="0" Maximum="300" Width="104" />
+              <TextBlock Classes="olOptBody" Text="seconds before marking item as read" VerticalAlignment="Center" />
+            </StackPanel>
+            <CheckBox Name="RpMarkOnSelection" Content="Mark item as read when selection changes" />
+            <CheckBox Name="RpSingleKey" Content="Single key reading using space bar" />
+            <CheckBox Name="RpFullScreen" Content="Turn on automatic full-screen reading in portrait orientation" />
+            <CheckBox Name="RpAlwaysPreview" Content="Always preview messages" />
+          </StackPanel>
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="24,6,26,14">
+            <TextBlock Name="ReadingPaneFeedback" FontSize="13" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="olOptDialog" Content="OK" Click="ReadingPaneOkClicked" Margin="0,0,10,0" />
+            <Button Grid.Column="2" Classes="olOptDialog" Content="Cancel" Click="ReadingPaneCancelClicked" />
+          </Grid>
+        </Grid>
+      </Border>
+    </Panel>
 
   </Grid>
 </Grid>

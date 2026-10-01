@@ -57,6 +57,14 @@
         <ResourceInclude Source="avares://OpenOutlook.Desktop/Assets/OutlookIcons.axaml" />
       </ResourceDictionary.MergedDictionaries>
     </ResourceDictionary>
+    <!-- Classic Outlook accent: checked boxes, focus borders and selection follow it. -->
+    <Color x:Key="SystemAccentColor">#0F6CBD</Color>
+    <Color x:Key="SystemAccentColorLight1">#4A9AD8</Color>
+    <Color x:Key="SystemAccentColorLight2">#7DB8E4</Color>
+    <Color x:Key="SystemAccentColorLight3">#B0D6F0</Color>
+    <Color x:Key="SystemAccentColorDark1">#0D5AA8</Color>
+    <Color x:Key="SystemAccentColorDark2">#0A4785</Color>
+    <Color x:Key="SystemAccentColorDark3">#073562</Color>
   </Application.Resources>
 
   <Application.Styles>

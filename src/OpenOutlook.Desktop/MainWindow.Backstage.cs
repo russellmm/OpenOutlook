@@ -74,7 +74,7 @@ public partial class MainWindow
     private void SelectBackstagePage(string key)
     {
         foreach (var page in new Control[]
-                 { PageInfo, PageOpenExport, PageSaveAs, PageAttachments, PagePrint, PageOfficeAccount, PageFeedback, PageOptions })
+                 { PageInfo, PageOpenExport, PageSaveAs, PageAttachments, PagePrint, PageOfficeAccount, PageFeedback })
             page.IsVisible = false;
         (key switch
         {
@@ -84,7 +84,6 @@ public partial class MainWindow
             "print" => PagePrint,
             "officeaccount" => PageOfficeAccount,
             "feedback" => PageFeedback,
-            "options" => PageOptions,
             _ => PageInfo
         }).IsVisible = true;
     }
@@ -205,10 +204,6 @@ public partial class MainWindow
     private void BsSaveAttachmentsClicked(object? sender, RoutedEventArgs e) => ExportAttachmentClicked(sender, e);
 
     private void BsPrintClicked(object? sender, RoutedEventArgs e) => SavePrintablePdfClicked(sender, e);
-
-    private void BsAppearanceClicked(object? sender, RoutedEventArgs e) => OptionsClicked(sender, e);
-
-    private void BsShortcutsClicked(object? sender, RoutedEventArgs e) => ShortcutsClicked(sender, e);
 
     private void BackstageExitClicked(object? sender, RoutedEventArgs e) =>
         (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();

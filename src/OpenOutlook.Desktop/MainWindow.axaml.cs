@@ -1451,14 +1451,19 @@ public sealed partial class MainWindow : Window
         ClearInlineImages();
         _bodyHtml = string.IsNullOrWhiteSpace(html) ? null : html;
         _showOriginalHtml = false;
-        // The interactive reader renders real HTML, so its text can be selected and copied; the
-        // snapshot reader is a bitmap in which nothing can be highlighted. Start with interactive
-        // and let it fall back to the snapshot when TryShowEmbeddedHtmlAsync rejects the document
-        // (too large, navigation failed, or the content probe found an empty page). Checked on live
-        // mail before changing this: rendering matched the snapshot message for message and all six
-        // messages surveyed painted, so the old blanket preference cost text selection without
-        // buying reliability that the probe and fallback do not already provide.
-        _preferSnapshotForMessage = false;
+        // Connected mail starts on the snapshot reader. The interactive web view renders real HTML,
+        // so its text can be selected and copied, but on the owner's desktop it accepts the document
+        // and paints nothing: the reading pane goes blank while the header, buttons and content
+        // probe all report success. That failure is invisible to every check available here -- the
+        // probe runs in the page, and a native child surface cannot be captured from Avalonia -- so
+        // there is no way to detect it and fall back automatically. Opting in with "Use alternate
+        // reader" keeps the risk with the person who can see it.
+        //
+        // Making this the default again needs the blank paint fixed first, not a fallback. Suspect
+        // is WebKitGTK's accelerated path on this compositor; WEBKIT_DISABLE_DMABUF_RENDERER=1 and
+        // WEBKIT_DISABLE_COMPOSITING_MODE=1 are the usual levers. Note that a headless Xvfb run
+        // renders interactive mode fine, so it does NOT reproduce this and proves nothing either way.
+        _preferSnapshotForMessage = _activeGraphMessage is not null;
         _htmlImageSources = [];
         _failedMessageImages = 0;
         _richRuns = null;

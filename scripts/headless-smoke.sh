@@ -65,6 +65,13 @@ else
     scratch_home="$(mktemp -d "$root/.local/smoke-home.XXXXXX")" || exit 2
     run_home="$scratch_home"
     mkdir -p "$run_home/.local/share/OpenOutlook"
+    # Deterministic pane weights. Without them the layout comes from whatever was last used, which
+    # moves reader buttons between rows and makes scripted coordinates meaningless run to run.
+    panes="${OO_SMOKE_PANES:-1.4,3,5.6}"
+    IFS=',' read -r pane_folders pane_messages pane_reader <<< "$panes"
+    mkdir -p "$run_home/.config/OpenOutlook"
+    printf '{"FolderPaneWeight":%s,"MessagePaneWeight":%s,"ReaderPaneWeight":%s,"WindowMaximized":false}\n' \
+        "$pane_folders" "$pane_messages" "$pane_reader" > "$run_home/.config/OpenOutlook/view-layout.json"
     if [[ "${OO_SMOKE_LIVE:-0}" == "1" && -f "$HOME/.local/share/OpenOutlook/accounts.json" ]]; then
         cp "$HOME/.local/share/OpenOutlook/accounts.json" "$run_home/.local/share/OpenOutlook/"
         echo "live account run: registry copied into scratch HOME (keyring via session bus)"
@@ -145,6 +152,27 @@ for step in ${OO_SMOKE_CLICKS:-}; do
             text="${step#type:}"; text="${text//+/ }"
             DISPLAY="$display" xdotool type --clearmodifiers --delay 25 "$text"
             sleep 2
+            ;;
+        # clip:<name> saves the clipboard selection to <outdir>/<name>.txt, so a flow can prove
+        # that text really is selectable and copyable (Xvfb has its own clipboard).
+        clip:*)
+            name="${step#clip:}"
+            if command -v xclip >/dev/null; then
+                DISPLAY="$display" xclip -selection clipboard -o > "$outdir/$name.txt" 2>/dev/null
+            elif command -v xsel >/dev/null; then
+                DISPLAY="$display" xsel -b > "$outdir/$name.txt" 2>/dev/null
+            else
+                echo "  (no xclip/xsel; cannot read clipboard)"
+            fi
+            echo "  clip $name -> $(wc -c < "$outdir/$name.txt" 2>/dev/null || echo 0) bytes"
+            ;;
+        # drag:<x1>,<y1>,<x2>,<y2> presses, moves and releases -- the way text is really selected.
+        drag:*)
+            spec="${step#drag:}"; IFS=',' read -r x1 y1 x2 y2 <<< "$spec"
+            DISPLAY="$display" xdotool mousemove "$x1" "$y1" mousedown 1
+            DISPLAY="$display" xdotool mousemove_relative -- 12 6
+            DISPLAY="$display" xdotool mousemove "$x2" "$y2" mouseup 1
+            sleep 1
             ;;
         # key:<combo> sends a key combination, e.g. key:ctrl+b.
         key:*)

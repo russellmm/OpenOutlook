@@ -1451,9 +1451,14 @@ public sealed partial class MainWindow : Window
         ClearInlineImages();
         _bodyHtml = string.IsNullOrWhiteSpace(html) ? null : html;
         _showOriginalHtml = false;
-        // Connected mail often contains large, image-heavy HTML that WebKitGTK may accept
-        // without painting. Start with the verified snapshot reader; interaction is opt-in.
-        _preferSnapshotForMessage = _activeGraphMessage is not null;
+        // The interactive reader renders real HTML, so its text can be selected and copied; the
+        // snapshot reader is a bitmap in which nothing can be highlighted. Start with interactive
+        // and let it fall back to the snapshot when TryShowEmbeddedHtmlAsync rejects the document
+        // (too large, navigation failed, or the content probe found an empty page). Checked on live
+        // mail before changing this: rendering matched the snapshot message for message and all six
+        // messages surveyed painted, so the old blanket preference cost text selection without
+        // buying reliability that the probe and fallback do not already provide.
+        _preferSnapshotForMessage = false;
         _htmlImageSources = [];
         _failedMessageImages = 0;
         _richRuns = null;

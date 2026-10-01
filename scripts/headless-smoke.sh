@@ -139,6 +139,18 @@ for step in ${OO_SMOKE_CLICKS:-}; do
             done
             sleep 3
             ;;
+        # type:<text> types into whatever has focus; '+' stands for a space, since steps are
+        # word-split and a literal space would end the step.
+        type:*)
+            text="${step#type:}"; text="${text//+/ }"
+            DISPLAY="$display" xdotool type --clearmodifiers --delay 25 "$text"
+            sleep 2
+            ;;
+        # key:<combo> sends a key combination, e.g. key:ctrl+b.
+        key:*)
+            DISPLAY="$display" xdotool key "${step#key:}"
+            sleep 1
+            ;;
         *)
             coords="${step%%:*}"; wait_s="${step##*:}"; [[ "$wait_s" == "$step" ]] && wait_s=5
             DISPLAY="$display" xdotool mousemove "${coords%,*}" "${coords#*,}" click 1

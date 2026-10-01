@@ -183,7 +183,7 @@ public sealed class ComposeWindow : Window
     {
         try
         {
-            var selected = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            var selected = await SafePick.FilesAsync(this, new FilePickerOpenOptions
             { Title = "Attach files", AllowMultiple = true });
             foreach (var item in selected)
             {

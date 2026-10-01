@@ -398,7 +398,7 @@ public sealed partial class MainWindow : Window
 
     private async void OpenPstClicked(object? sender, RoutedEventArgs e)
     {
-        var chosen = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        var chosen = await SafePick.FilesAsync(this, new FilePickerOpenOptions
         {
             Title = "Open a PST archive read-only",
             AllowMultiple = true,
@@ -743,7 +743,7 @@ public sealed partial class MainWindow : Window
 
     private async void PreviewJunkImportClicked(object? sender, RoutedEventArgs e)
     {
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        var files = await SafePick.FilesAsync(this, new FilePickerOpenOptions
         {
             Title = "Preview legacy OutlookJunkCleaner config (no import or cleaning)",
             AllowMultiple = false,
@@ -1001,7 +1001,7 @@ public sealed partial class MainWindow : Window
         var version = _messageVersion;
         if (message is null || path is null || !_stores.TryGetValue(path, out var store)) return;
         // A directory picker avoids any provider-side creation or truncation of a target file.
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
         {
             Title = "Choose folder for a new EML file", AllowMultiple = false
         });
@@ -1022,7 +1022,7 @@ public sealed partial class MainWindow : Window
             finally { _readerGate.Release(); }
             StatusText.Text = "EML saved to a new file; PST unchanged.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidDataException or NotSupportedException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidDataException or NotSupportedException or InvalidOperationException or PstException)
         { StatusText.Text = "EML export failed or target already exists; no existing file was overwritten."; }
         finally { ExportMessageButton.IsEnabled = ReferenceEquals(_activeMessage, message); }
     }
@@ -1033,7 +1033,7 @@ public sealed partial class MainWindow : Window
             FolderTree.SelectedItem is not TreeViewItem { Tag: FolderSelection selection } ||
             !_stores.TryGetValue(selection.Path, out var store)) return;
         var version = _folderVersion;
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
         {
             Title = "Choose a parent folder for the new EML export directory (includes subfolders)",
             AllowMultiple = false
@@ -1113,7 +1113,7 @@ public sealed partial class MainWindow : Window
         catch (ArgumentException) { StatusText.Text = "This attachment has an unsafe filename and cannot be exported."; return; }
         // Choose a DIRECTORY rather than a SaveFilePicker target: some providers may
         // create/truncate an existing file as part of their picker flow before our no-overwrite guard.
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
         {
             Title = "Select where to export this attachment as a new file",
             AllowMultiple = false
@@ -1156,7 +1156,7 @@ public sealed partial class MainWindow : Window
         if (candidates.Length == 0) return;
         var attachment = candidates.Length == 1 ? candidates[0] : await ChooseGraphAttachmentAsync(candidates);
         if (attachment is null || version != _messageVersion || !ReferenceEquals(_activeGraphMessage, message)) return;
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
         {
             Title = "Choose where to save this attachment as a new file", AllowMultiple = false
         });
@@ -1610,7 +1610,7 @@ public sealed partial class MainWindow : Window
             catch (Exception) { /* Print the images that were available. */ }
         }
         if (version != _messageVersion) return;
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
         { Title = "Choose a folder for a new printable PDF", AllowMultiple = false });
         if (version != _messageVersion || folders.FirstOrDefault()?.TryGetLocalPath() is not { } folder) return;
         PrintablePdfButton.IsEnabled = false;

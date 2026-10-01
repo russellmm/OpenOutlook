@@ -1,310 +1,566 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="OpenOutlook.Desktop.MainWindow" Title="OpenOutlook — mail and archive preview" Width="1380" Height="850" MinWidth="850" MinHeight="560">
-  <Grid RowDefinitions="Auto,Auto,*,Auto">
-    <Border Name="TitleBand" Grid.Row="0" Background="#F4F5F7" BorderBrush="#D8DDE4" BorderThickness="0,0,0,1" Padding="14,9">
-      <StackPanel Orientation="Horizontal" Spacing="12">
-        <Border Name="AccentMark" Width="4" Background="#174879" CornerRadius="2" />
-        <TextBlock Name="AppTitleText" Text="OpenOutlook" FontSize="20" FontWeight="SemiBold" Foreground="#1E293B" VerticalAlignment="Center" />
-        <TextBlock Name="AppSubtitleText" Text="Mail and archive preview" Foreground="#64748B" VerticalAlignment="Center" />
-      </StackPanel>
+<!--
+  Layout mirrors classic Outlook (see screenshots/Outlook.jpg): grey window chrome with white content
+  cards, a narrow navigation rail, the tab strip and ribbon as one card, three resizable panes divided by
+  hairlines, and a reading pane whose header carries the subject, an initials avatar, the sender block and
+  the Reply / Reply All / Forward commands at the top right.
+
+  Ribbon groups that have no implementation behind them are present but report themselves as planned when
+  clicked — the layout is meant to be the real one now, with functionality arriving into it.
+-->
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="OpenOutlook.Desktop.MainWindow" Title="OpenOutlook" Width="1380" Height="850" MinWidth="900" MinHeight="560" Background="{DynamicResource OlChrome}" FontFamily="Inter, Segoe UI">
+  <DockPanel LastChildFill="True">
+
+    <!-- Title strip: quick commands left, search centred, account right -->
+    <Border DockPanel.Dock="Top" Name="TitleBand" Background="{DynamicResource OlChrome}" Height="40" Padding="8,0,10,0">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+          <ContentControl Template="{StaticResource OlIconAppMark}" Width="22" Height="22" Margin="2,0,8,0" />
+          <Button Classes="olRail" Width="30" Height="30" ToolTip.Tip="Undo — planned" Click="RibbonPlaceholderClicked" Tag="Undo">
+            <ContentControl Template="{StaticResource OlIconUndo}" Width="16" Height="16" />
+          </Button>
+          <Button Classes="olRail" Width="30" Height="30" ToolTip.Tip="Redo — planned" Click="RibbonPlaceholderClicked" Tag="Redo">
+            <ContentControl Template="{StaticResource OlIconRedo}" Width="16" Height="16" />
+          </Button>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="6" VerticalAlignment="Center">
+          <TextBox Name="ArchiveSearchBox" Classes="olSearch" Width="430" Watermark="Search" KeyDown="SearchBoxKeyDown" />
+          <Button Name="ArchiveSearchButton" Classes="olRail" Width="30" Height="30" Click="SearchClicked" ToolTip.Tip="Search the selected folder (Enter also works)">
+            <ContentControl Template="{StaticResource OlIconSearch}" Width="16" Height="16" />
+          </Button>
+        </StackPanel>
+        <Border Grid.Column="2" Name="AccountAvatar" Width="26" Height="26" CornerRadius="13" Background="#5A6B7C" VerticalAlignment="Center" ToolTip.Tip="Accounts">
+          <TextBlock Name="AccountAvatarInitials" Text="?" FontSize="12" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </Grid>
     </Border>
-    <Border Name="ToolbarBand" Grid.Row="1" Background="#F8F9FB" BorderBrush="#D8DDE4" BorderThickness="0,0,0,1">
-      <TabControl Name="RibbonTabs" SelectedIndex="1" BorderThickness="0" Padding="0">
-        <TabControl.Styles>
-          <Style Selector="Button.ribbonCommand">
-            <Setter Property="MinWidth" Value="82" />
-            <Setter Property="MinHeight" Value="68" />
-            <Setter Property="Margin" Value="2,1" />
-            <Setter Property="Padding" Value="7,4" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-          </Style>
-          <Style Selector="TextBlock.ribbonCaption">
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="Foreground" Value="#697586" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-            <Setter Property="Margin" Value="0,2,0,0" />
-          </Style>
-        </TabControl.Styles>
-        <TabItem Header="File">
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <StackPanel Orientation="Horizontal" Margin="10,5">
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <StackPanel Orientation="Horizontal">
-                    <Button Name="OpenPstButton" Classes="ribbonCommand" Click="OpenPstClicked" ToolTip.Tip="Attach a PST archive read-only">
-                      <StackPanel><TextBlock Text="▣" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Open PST" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                    <Button Name="DetachButton" Classes="ribbonCommand" Click="DetachClicked" ToolTip.Tip="Remove a PST from the sidebar without deleting it">
-                      <StackPanel><TextBlock Text="◧" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Detach PST" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                  </StackPanel>
-                  <TextBlock Classes="ribbonCaption" Text="Archives" />
-                </StackPanel>
-              </Border>
-              <StackPanel>
-                <Button Name="AccountSetupButton" Classes="ribbonCommand" Click="AccountSetupClicked">
-                  <StackPanel><TextBlock Text="◉" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Accounts" HorizontalAlignment="Center" /></StackPanel>
-                </Button>
-                <TextBlock Classes="ribbonCaption" Text="Account settings" />
-              </StackPanel>
-            </StackPanel>
-          </ScrollViewer>
-        </TabItem>
-        <TabItem Header="Home">
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <StackPanel Orientation="Horizontal" Margin="10,5">
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <Button Classes="ribbonCommand" Tag="new" Click="MailActionClicked" ToolTip.Tip="Compose using a connected Microsoft account">
-                    <StackPanel><TextBlock Text="✉" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="New Email" HorizontalAlignment="Center" /></StackPanel>
-                  </Button>
-                  <Button Classes="ribbonCommand" Tag="editDraft" Click="MailActionClicked" ToolTip.Tip="Edit the selected Microsoft draft">
-                    <StackPanel><TextBlock Text="✎" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Edit Draft" HorizontalAlignment="Center" /></StackPanel>
-                  </Button>
-                  <TextBlock Classes="ribbonCaption" Text="New" />
-                </StackPanel>
-              </Border>
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <StackPanel Orientation="Horizontal">
-                    <Button Classes="ribbonCommand" Tag="delete" Click="MailActionClicked" ToolTip.Tip="Move selected Microsoft mail to Deleted Items">
-                      <StackPanel><TextBlock Text="⌫" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Delete" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                    <Button Classes="ribbonCommand" Tag="archive" Click="MailActionClicked" ToolTip.Tip="Archive selected Microsoft mail">
-                      <StackPanel><TextBlock Text="▤" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Archive" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                  </StackPanel>
-                  <TextBlock Classes="ribbonCaption" Text="Delete" />
-                </StackPanel>
-              </Border>
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <StackPanel Orientation="Horizontal">
-                    <Button Classes="ribbonCommand" Tag="reply" Click="MailActionClicked" ToolTip.Tip="Reply to selected Microsoft mail">
-                      <StackPanel><TextBlock Text="↶" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Reply" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                    <Button Classes="ribbonCommand" Tag="replyAll" Click="MailActionClicked" ToolTip.Tip="Reply to all recipients">
-                      <StackPanel><TextBlock Text="⇇" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Reply All" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                    <Button Classes="ribbonCommand" Tag="forward" Click="MailActionClicked" ToolTip.Tip="Forward selected Microsoft mail">
-                      <StackPanel><TextBlock Text="↷" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Forward" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                  </StackPanel>
-                  <TextBlock Classes="ribbonCaption" Text="Respond" />
-                </StackPanel>
-              </Border>
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <StackPanel Orientation="Horizontal">
-                    <Button Classes="ribbonCommand" Tag="read" Click="MailActionClicked"><StackPanel><TextBlock Text="✓" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Read" HorizontalAlignment="Center" /></StackPanel></Button>
-                    <Button Classes="ribbonCommand" Tag="unread" Click="MailActionClicked"><StackPanel><TextBlock Text="●" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Unread" HorizontalAlignment="Center" /></StackPanel></Button>
-                    <Button Classes="ribbonCommand" Tag="flag" Click="MailActionClicked"><StackPanel><TextBlock Text="⚑" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Flag" HorizontalAlignment="Center" /></StackPanel></Button>
-                    <Button Classes="ribbonCommand" Tag="unflag" Click="MailActionClicked"><StackPanel><TextBlock Text="⚐" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Clear flag" HorizontalAlignment="Center" /></StackPanel></Button>
-                  </StackPanel>
-                  <TextBlock Classes="ribbonCaption" Text="Follow up" />
-                </StackPanel>
-              </Border>
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <StackPanel Orientation="Horizontal">
-                    <Button Name="ExportAttachmentButton" Classes="ribbonCommand" Click="ExportAttachmentClicked" IsEnabled="False">
-                      <StackPanel><TextBlock Text="♧" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Save attachment" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                    <Button Name="ExportMessageButton" Classes="ribbonCommand" Click="ExportMessageClicked" IsEnabled="False">
-                      <StackPanel><TextBlock Text="⇩" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Export EML" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                  </StackPanel>
-                  <TextBlock Classes="ribbonCaption" Text="Save" />
-                </StackPanel>
-              </Border>
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="4,0,12,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,17,0,9" Spacing="5">
-                    <TextBox Name="ArchiveSearchBox" Width="185" Watermark="Search selected folder" />
-                    <Button Name="ArchiveSearchButton" Content="Search" Click="SearchClicked" />
-                  </StackPanel>
-                  <TextBlock Classes="ribbonCaption" Text="Find" />
-                </StackPanel>
-              </Border>
-              <StackPanel>
-                <Button Name="PreviewJunkImportButton" Classes="ribbonCommand" Click="PreviewJunkImportClicked">
-                  <StackPanel><TextBlock Text="✣" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Junk rules" HorizontalAlignment="Center" /></StackPanel>
-                </Button>
-                <TextBlock Classes="ribbonCaption" Text="Junk" />
-              </StackPanel>
-            </StackPanel>
-          </ScrollViewer>
-        </TabItem>
-        <TabItem Header="Send / Receive">
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <StackPanel Orientation="Horizontal" Margin="10,5">
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <StackPanel Orientation="Horizontal">
-                    <Button Name="RefreshInboxButton" Classes="ribbonCommand" Click="RefreshInboxClicked" IsEnabled="False">
-                      <StackPanel><TextBlock Text="⟳" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Refresh folder" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                    <Button Classes="ribbonCommand" Tag="Send and receive all" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                      <StackPanel><TextBlock Text="⇄" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Send / Receive" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                  </StackPanel>
-                  <TextBlock Classes="ribbonCaption" Text="Send &amp; Receive" />
-                </StackPanel>
-              </Border>
-              <StackPanel>
-                <Button Classes="ribbonCommand" Tag="Work offline" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                  <StackPanel><TextBlock Text="◌" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Work Offline" HorizontalAlignment="Center" /></StackPanel>
-                </Button>
-                <TextBlock Classes="ribbonCaption" Text="Preferences" />
-              </StackPanel>
-            </StackPanel>
-          </ScrollViewer>
-        </TabItem>
-        <TabItem Header="Folder">
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <StackPanel Orientation="Horizontal" Margin="10,5">
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <StackPanel Orientation="Horizontal">
-                    <Button Name="ExportFolderButton" Classes="ribbonCommand" Click="ExportFolderClicked" IsEnabled="False">
-                      <StackPanel><TextBlock Text="▣" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Export folder" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                    <Button Name="CancelFolderExportButton" Classes="ribbonCommand" Click="CancelFolderExportClicked" IsEnabled="False">
-                      <StackPanel><TextBlock Text="⊗" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Cancel export" HorizontalAlignment="Center" /></StackPanel>
-                    </Button>
-                  </StackPanel>
-                  <TextBlock Classes="ribbonCaption" Text="PST export" />
-                </StackPanel>
-              </Border>
-              <StackPanel>
-                <Button Classes="ribbonCommand" Tag="New folder" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                  <StackPanel><TextBlock Text="⊞" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="New Folder" HorizontalAlignment="Center" /></StackPanel>
-                </Button>
-                <TextBlock Classes="ribbonCaption" Text="Organize" />
-              </StackPanel>
-            </StackPanel>
-          </ScrollViewer>
-        </TabItem>
-        <TabItem Header="View">
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <StackPanel Orientation="Horizontal" Margin="10,5">
-              <Border BorderBrush="#D8DDE4" BorderThickness="0,0,1,0" Padding="0,0,10,0" Margin="0,0,9,0">
-                <StackPanel>
-                  <Button Name="OptionsButton" Classes="ribbonCommand" Click="OptionsClicked">
-                    <StackPanel><TextBlock Text="◑" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Appearance" HorizontalAlignment="Center" /></StackPanel>
-                  </Button>
-                  <Button Classes="ribbonCommand" Click="ShortcutsClicked" ToolTip.Tip="Assign keyboard shortcuts for mail actions">
-                    <StackPanel><TextBlock Text="⌨" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Shortcuts" HorizontalAlignment="Center" /></StackPanel>
-                  </Button>
-                  <TextBlock Classes="ribbonCaption" Text="Current view" />
-                </StackPanel>
-              </Border>
-              <StackPanel>
-                <Button Classes="ribbonCommand" Tag="Reading pane options" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                  <StackPanel><TextBlock Text="▥" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Reading Pane" HorizontalAlignment="Center" /></StackPanel>
-                </Button>
-                <TextBlock Classes="ribbonCaption" Text="Layout" />
-              </StackPanel>
-            </StackPanel>
-          </ScrollViewer>
-        </TabItem>
-        <TabItem Header="Help">
-          <StackPanel Orientation="Horizontal" Margin="10,5">
-            <StackPanel>
-              <Button Classes="ribbonCommand" Tag="Help" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                <StackPanel><TextBlock Text="?" FontSize="27" HorizontalAlignment="Center" /><TextBlock Text="Help" HorizontalAlignment="Center" /></StackPanel>
-              </Button>
-              <TextBlock Classes="ribbonCaption" Text="Support" />
-            </StackPanel>
-          </StackPanel>
-        </TabItem>
-      </TabControl>
+
+    <!-- Status bar -->
+    <Border DockPanel.Dock="Bottom" Name="StatusBand" Background="{DynamicResource OlChrome}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,1,0,0" Height="26">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="10,0">
+        <TextBlock Grid.Column="0" Name="StatusText" Text="Ready. Open a PST or select a connected account." FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="1" Name="MessageCountText" Text="" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" Margin="16,0,0,0" />
+        <TextBlock Grid.Column="2" Name="ConnectionText" Text="" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" Margin="16,0,0,0" />
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="16,0,0,0">
+          <Slider Name="ZoomSlider" Width="90" Minimum="50" Maximum="200" Value="100" IsVisible="False" VerticalAlignment="Center" ToolTip.Tip="Message zoom" />
+          <TextBlock Name="ZoomText" Text="" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" />
+        </StackPanel>
+      </Grid>
     </Border>
-    <Grid Name="PaneGrid" Grid.Row="2" ColumnDefinitions="2*,5,5*,5,4*" Margin="8">
-      <Border Grid.Column="0" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8">
-        <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="Accounts and archives" FontWeight="Bold" Margin="4,4,0,10" />
-          <TreeView Name="FolderTree" SelectionChanged="FolderSelected" />
-        </DockPanel>
+
+    <Grid ColumnDefinitions="48,*">
+      <!-- Navigation rail -->
+      <Border Background="{DynamicResource OlChrome}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,0,1,0">
+        <StackPanel Spacing="2" Margin="0,4,0,0">
+          <Button Classes="olRail olRailActive" ToolTip.Tip="Mail">
+            <ContentControl Template="{StaticResource OlIconMail}" Width="22" Height="22" />
+          </Button>
+          <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="Calendar" ToolTip.Tip="Calendar — planned">
+            <ContentControl Template="{StaticResource OlIconCalendar}" Width="22" Height="22" />
+          </Button>
+          <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="People" ToolTip.Tip="People — planned">
+            <ContentControl Template="{StaticResource OlIconPeople}" Width="22" Height="22" />
+          </Button>
+          <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="Tasks" ToolTip.Tip="Tasks — planned">
+            <ContentControl Template="{StaticResource OlIconTasks}" Width="22" Height="22" />
+          </Button>
+        </StackPanel>
       </Border>
-      <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
-      <Border Grid.Column="2" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8">
-        <DockPanel>
-          <DockPanel DockPanel.Dock="Top" Margin="4,4,0,10">
-            <CheckBox Name="GroupByDateCheck" DockPanel.Dock="Right" Content="Group by date" IsChecked="True" />
-            <TextBlock Text="Messages" FontWeight="Bold" />
-          </DockPanel>
-          <DataGrid Name="MessageList" SelectionMode="Extended" SelectionChanged="MessageSelected" Sorting="MessageListSorting"
-                    LoadingRowGroup="MessageListLoadingRowGroup" AutoGenerateColumns="False"
-                    IsReadOnly="True" CanUserSortColumns="True" CanUserReorderColumns="True"
-                    CanUserResizeColumns="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                    RowHeight="28" ColumnHeaderHeight="30">
-            <DataGrid.Columns>
-              <DataGridTemplateColumn Width="42" SortMemberPath="HasAttachment">
-                <DataGridTemplateColumn.Header>
-                  <Path Width="14" Height="19" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="2"
-                        Data="M 14 7 L 14 17 C 14 19.5 12 21 10 21 C 8 21 6 19.5 6 17 L 6 5 C 6 3 8 2 10 2 C 12 2 14 3 14 5 L 14 16 C 14 17 13.5 18 12.5 18 C 11.5 18 11 17 11 16 L 11 7" ToolTip.Tip="Attachment" />
-                </DataGridTemplateColumn.Header>
-                <DataGridTemplateColumn.CellTemplate>
-                  <DataTemplate>
-                    <Path Width="13" Height="17" HorizontalAlignment="Center" IsVisible="{Binding HasAttachment}"
-                          Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="2"
-                          Data="M 14 7 L 14 17 C 14 19.5 12 21 10 21 C 8 21 6 19.5 6 17 L 6 5 C 6 3 8 2 10 2 C 12 2 14 3 14 5 L 14 16 C 14 17 13.5 18 12.5 18 C 11.5 18 11 17 11 16 L 11 7" />
-                  </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-              </DataGridTemplateColumn>
-              <DataGridTextColumn Header="From" Width="145" Binding="{Binding FromDisplay}" SortMemberPath="FromSort" />
-              <DataGridTextColumn Header="Subject" Width="2*" Binding="{Binding Subject}" SortMemberPath="Subject" />
-              <DataGridTextColumn Header="Received" Width="150" Binding="{Binding ReceivedDisplay}" SortMemberPath="ReceivedSort" />
-              <DataGridTextColumn Header="Size" Width="80" Binding="{Binding SizeDisplay}" SortMemberPath="SizeBytes" />
-            </DataGrid.Columns>
-          </DataGrid>
-        </DockPanel>
-      </Border>
-      <GridSplitter Grid.Column="3" ResizeDirection="Columns" />
-      <Border Name="ReaderPane" Grid.Column="4" BorderBrush="#CBD5E1" BorderThickness="1" Padding="16">
-        <Grid RowDefinitions="Auto,*">
-          <ScrollViewer Grid.Row="0" MaxHeight="250" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="8">
-            <TextBlock Name="SubjectText" Text="Select a folder to begin" FontWeight="Bold" FontSize="20" TextWrapping="Wrap" />
-            <TextBlock Name="SenderText" TextWrapping="Wrap" />
-            <TextBlock Name="RecipientText" TextWrapping="Wrap" />
-            <TextBlock Name="AttachmentText" TextWrapping="Wrap" />
-            <Separator />
-            <TextBlock Name="HtmlStatusText" IsVisible="False" TextWrapping="Wrap" Foreground="#475569" />
-            <StackPanel Name="ReaderZoomControls" Orientation="Horizontal" Spacing="6" IsVisible="False">
-              <Button Content="−" Click="ZoomOutClicked" ToolTip.Tip="Zoom out" />
-              <Button Content="+" Click="ZoomInClicked" ToolTip.Tip="Zoom in" />
-              <Button Content="Fit" Click="ZoomFitClicked" ToolTip.Tip="Fit message to pane" />
-            </StackPanel>
-            <WrapPanel Orientation="Horizontal">
-              <Button Name="BodyViewButton" Content="View plain text" IsVisible="False" Click="ToggleBodyViewClicked" />
-              <Button Name="ReaderModeButton" Content="Use alternate reader" IsVisible="False" Click="ReaderModeClicked" />
-              <Button Name="ViewOriginalButton" Content="View original here (trusted mail)" IsVisible="False" Click="ToggleOriginalClicked" />
-              <Button Name="PopOutMessageButton" Content="Open in new window" IsVisible="False" Click="PopOutMessageClicked" />
-              <Button Name="InteractiveReaderButton" Content="Open interactive message" IsVisible="False" Click="OpenInteractiveReaderClicked" />
-              <Button Name="PrintablePdfButton" Content="Save printable PDF" IsVisible="False" Click="SavePrintablePdfClicked" />
-              <Button Name="OpenInBrowserButton" Content="Open in browser" IsVisible="False"
-                      ToolTip.Tip="Opens this message in your system browser, where text can be selected, searched and copied"
-                      Click="OpenInBrowserClicked" />
-            </WrapPanel>
-            </StackPanel>
-          </ScrollViewer>
-          <Grid Grid.Row="1" Margin="0,10,0,0">
-            <ScrollViewer Name="ReaderScrollViewer" HorizontalScrollBarVisibility="Auto">
-              <StackPanel>
-                <TextBox Name="BodyText" Text="Select a message to read it." TextWrapping="Wrap" IsReadOnly="True" BorderThickness="0" Background="Transparent" />
-                <StackPanel Name="RichBodyPanel" IsVisible="False" Spacing="2" />
-                <StackPanel Name="HtmlPagesPanel" IsVisible="False" Spacing="0" HorizontalAlignment="Left" />
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="0,0,8,4">
+        <!-- Ribbon -->
+        <Border Name="ToolbarBand" Grid.Row="0" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,0,0,0">
+          <TabControl Name="RibbonTabs" Classes="olTabs" SelectedIndex="1" Padding="0">
+            <TabItem Header="File">
+              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" Margin="8,4">
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Outlook Data Files" />
+
+                      <StackPanel Orientation="Horizontal">
+                        <Button Name="OpenPstButton" Classes="olLarge" Click="OpenPstClicked" ToolTip.Tip="Attach a PST archive read-only">
+                          <StackPanel><ContentControl Template="{StaticResource OlIconOpenArchive}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Open PST" /></StackPanel>
+                        </Button>
+                        <Button Name="DetachButton" Classes="olLarge" Click="DetachClicked" ToolTip.Tip="Remove a PST from the sidebar without deleting it">
+                          <StackPanel><ContentControl Template="{StaticResource OlIconDetach}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Detach PST" /></StackPanel>
+                        </Button>
+                      </StackPanel>
+                      
+                                        </DockPanel>
+                  </Border>
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Account settings" />
+
+                      <Button Name="AccountSetupButton" Classes="olLarge" Click="AccountSetupClicked">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconPeople}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Accounts" /></StackPanel>
+                      </Button>
+                      
+                                        </DockPanel>
+                  </Border>
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Settings" />
+
+                      <Button Name="OptionsButton" Classes="olLarge" Click="OptionsClicked">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconAppearance}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Options" /></StackPanel>
+                      </Button>
+                      
+                                        </DockPanel>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Home">
+              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" Margin="8,4">
+
+                  <!-- New -->
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="New" />
+
+                      <StackPanel Orientation="Horizontal">
+                        <Button Classes="olLarge" Tag="new" Click="MailActionClicked" ToolTip.Tip="Compose using a connected Microsoft account">
+                          <StackPanel><ContentControl Template="{StaticResource OlIconNewMail}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="New Email" /></StackPanel>
+                        </Button>
+                        <Button Classes="olLarge" Tag="New items" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                          <StackPanel><ContentControl Template="{StaticResource OlIconNewItems}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="New Items" /></StackPanel>
+                        </Button>
+                      </StackPanel>
+                      
+                                        </DockPanel>
+                  </Border>
+
+                  <!-- Delete -->
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Delete" />
+
+                      <StackPanel Orientation="Horizontal">
+                        <Button Classes="olLarge" Tag="delete" Click="MailActionClicked" ToolTip.Tip="Move selected Microsoft mail to Deleted Items">
+                          <StackPanel><ContentControl Template="{StaticResource OlIconDelete}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Delete" /></StackPanel>
+                        </Button>
+                        <StackPanel VerticalAlignment="Top" Margin="2,0,0,0">
+                          <Button Classes="olSmall" Tag="Ignore message" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconIgnore}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Ignore" /></StackPanel>
+                          </Button>
+                          <Button Classes="olSmall" Tag="Clean up" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconCleanUp}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Clean Up" /></StackPanel>
+                          </Button>
+                          <Button Name="PreviewJunkImportButton" Classes="olSmall" Click="PreviewJunkImportClicked" ToolTip.Tip="Preview a legacy OutlookJunkCleaner configuration (read-only)">
+                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconJunk}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Junk" /></StackPanel>
+                          </Button>
+                        </StackPanel>
+                        <Button Classes="olLarge" Tag="archive" Click="MailActionClicked" Margin="6,0,0,0" ToolTip.Tip="Archive selected Microsoft mail">
+                          <StackPanel><ContentControl Template="{StaticResource OlIconArchive}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Archive" /></StackPanel>
+                        </Button>
+                      </StackPanel>
+                      
+                                        </DockPanel>
+                  </Border>
+
+                  <!-- Respond -->
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Respond" />
+
+                      <StackPanel Orientation="Horizontal">
+                        <Button Classes="olLarge" Tag="reply" Click="MailActionClicked" ToolTip.Tip="Reply to selected Microsoft mail">
+                          <StackPanel><ContentControl Template="{StaticResource OlIconReply}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Reply" /></StackPanel>
+                        </Button>
+                        <Button Classes="olLarge" Tag="replyAll" Click="MailActionClicked" ToolTip.Tip="Reply to all recipients">
+                          <StackPanel><ContentControl Template="{StaticResource OlIconReplyAll}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Reply All" /></StackPanel>
+                        </Button>
+                        <Button Classes="olLarge" Tag="forward" Click="MailActionClicked" ToolTip.Tip="Forward selected Microsoft mail">
+                          <StackPanel><ContentControl Template="{StaticResource OlIconForward}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Forward" /></StackPanel>
+                        </Button>
+                        <StackPanel VerticalAlignment="Top" Margin="2,0,0,0">
+                          <Button Classes="olSmall" Tag="Meeting" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconCalendar}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Meeting" /></StackPanel>
+                          </Button>
+                          <Button Classes="olSmall" Tag="More" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconNewItems}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="More" /></StackPanel>
+                          </Button>
+                        </StackPanel>
+                      </StackPanel>
+                      
+                                        </DockPanel>
+                  </Border>
+
+                  <!-- Quick Steps -->
+                  <Border Classes="olGroup">
+                    <StackPanel VerticalAlignment="Top" MinWidth="120">
+                      <Button Classes="olSmall" Tag="Quick step" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconQuickSteps}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Create New" /></StackPanel>
+                      </Button>
+                      <Button Classes="olSmall" Tag="Quick step settings" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconMore}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Quick Step Settings" /></StackPanel>
+                      </Button>
+                      <TextBlock Classes="olGroupLabel" Text="Quick Steps" />
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Move -->
+                  <Border Classes="olGroup">
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="olLarge" Tag="Move" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconMove}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Move" /></StackPanel>
+                      </Button>
+                      <Button Classes="olLarge" Tag="Rules" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconRules}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Rules" /></StackPanel>
+                      </Button>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Tags -->
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Tags" />
+
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="olLarge" Tag="unread" Click="MailActionClicked" ToolTip.Tip="Mark the selected message unread">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconUnreadRead}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Unread / Read" /></StackPanel>
+                      </Button>
+                      <Button Classes="olLarge" Tag="Categorize" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconCategorize}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Categorize" /></StackPanel>
+                      </Button>
+                      <StackPanel VerticalAlignment="Top" Margin="2,0,0,0">
+                        <Button Classes="olSmall" Tag="flag" Click="MailActionClicked" ToolTip.Tip="Flag for follow up">
+                          <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconFlag}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Follow Up" /></StackPanel>
+                        </Button>
+                        <Button Classes="olSmall" Tag="unflag" Click="MailActionClicked" ToolTip.Tip="Clear the follow up flag">
+                          <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconFlagClear}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Clear Flag" /></StackPanel>
+                        </Button>
+                      </StackPanel>
+                    </StackPanel>
+                    
+                                                          </DockPanel>
+                  </Border>
+
+                  <!-- Save -->
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Save" />
+
+                    <StackPanel Orientation="Horizontal">
+                      <Button Name="ExportAttachmentButton" Classes="olLarge" Click="ExportAttachmentClicked" IsEnabled="False" ToolTip.Tip="Save the selected attachment to a new local file">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconSave}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Save Attachment" /></StackPanel>
+                      </Button>
+                      <Button Name="ExportMessageButton" Classes="olLarge" Click="ExportMessageClicked" IsEnabled="False" ToolTip.Tip="Export the selected message as MIME EML">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconExport}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Export EML" /></StackPanel>
+                      </Button>
+                    </StackPanel>
+                    
+                                                          </DockPanel>
+                  </Border>
+
+                  <!-- Groups -->
+                  <Border Classes="olGroup">
+                    <StackPanel VerticalAlignment="Top">
+                      <Button Classes="olSmall" Tag="New Group" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconPeople}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="New Group" /></StackPanel>
+                      </Button>
+                      <Button Classes="olSmall" Tag="Browse Groups" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconAddressBook}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Browse Groups" /></StackPanel>
+                      </Button>
+                      <TextBlock Classes="olGroupLabel" Text="Groups" />
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Find -->
+                  <Border Classes="olGroup">
+                    <StackPanel VerticalAlignment="Top">
+                      <Button Classes="olSmall" Tag="Address Book" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconAddressBook}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Address Book" /></StackPanel>
+                      </Button>
+                      <Button Classes="olSmall" Tag="Filter Email" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconFilter}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Filter Email" /></StackPanel>
+                      </Button>
+                      <TextBlock Classes="olGroupLabel" Text="Find" />
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Speech, language, apps -->
+                  <Border Classes="olGroup">
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="olLarge" Tag="Read Aloud" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconReadAloud}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Read Aloud" /></StackPanel>
+                      </Button>
+                      <Button Classes="olLarge" Tag="Translate" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconTranslate}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Translate" /></StackPanel>
+                      </Button>
+                      <Button Classes="olLarge" Tag="All Apps" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconAllApps}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="My Apps" /></StackPanel>
+                      </Button>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Junk -->
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Junk" />
+
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="olLarge" Tag="Phishing" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconJunk}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Phishing" /></StackPanel>
+                      </Button>
+                      <Button Classes="olLarge" Tag="Remove Junk" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconRemoveJunk}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Remove Junk" /></StackPanel>
+                      </Button>
+                    </StackPanel>
+                    
+                                                          </DockPanel>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Send / Receive">
+              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" Margin="8,4">
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Send &amp; Receive" />
+
+                    <StackPanel Orientation="Horizontal">
+                      <Button Name="RefreshInboxButton" Classes="olLarge" Click="RefreshInboxClicked" IsEnabled="False">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconRefresh}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Send/Receive All Folders" /></StackPanel>
+                      </Button>
+                      <Button Classes="olLarge" Tag="Offline" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconOffline}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Work Offline" /></StackPanel>
+                      </Button>
+                    </StackPanel>
+                    
+                                                          </DockPanel>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Folder">
+              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" Margin="8,4">
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Folder" />
+
+                      <Button Classes="olSmall" Tag="New Folder" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconNewFolder}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Create New Folder" /></StackPanel>
+                      </Button>
+                      <Button Classes="olSmall" Tag="Move Folder" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconMove}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Move Other Folder" /></StackPanel>
+                      </Button>
+                      
+                                        </DockPanel>
+                  </Border>
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="PST export" />
+
+                    <StackPanel Orientation="Horizontal">
+                      <Button Name="ExportFolderButton" Classes="olLarge" Click="ExportFolderClicked" IsEnabled="False" ToolTip.Tip="Export the selected folder and its subfolders as EML files">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconExport}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Export Folder" /></StackPanel>
+                      </Button>
+                      <Button Name="CancelFolderExportButton" Classes="olLarge" Click="CancelFolderExportClicked" IsEnabled="False">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconDetach}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Cancel Export" /></StackPanel>
+                      </Button>
+                    </StackPanel>
+                    
+                                                          </DockPanel>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="View">
+              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" Margin="8,4">
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Current View" />
+
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="olLarge" Click="ShortcutsClicked" ToolTip.Tip="Assign keyboard shortcuts for mail actions">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconKeyboard}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Shortcuts" /></StackPanel>
+                      </Button>
+                      <Button Classes="olLarge" Tag="Change View" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconReadingPane}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Change View" /></StackPanel>
+                      </Button>
+                    </StackPanel>
+                    
+                                                          </DockPanel>
+                  </Border>
+                  <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Layout" />
+
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="olLarge" Tag="Reading Pane" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconReadingPane}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Reading Pane" /></StackPanel>
+                      </Button>
+                      <Button Classes="olLarge" Tag="Zoom" Click="RibbonPlaceholderClicked" ToolTip.Tip="Use the zoom control at the bottom right">
+                        <StackPanel><ContentControl Template="{StaticResource OlIconSearch}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Zoom" /></StackPanel>
+                      </Button>
+                    </StackPanel>
+                    
+                                                          </DockPanel>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Help">
+              <StackPanel Orientation="Horizontal" Margin="8,4">
+                <Border Classes="olGroup">
+                    <DockPanel LastChildFill="True">
+                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Support" />
+
+                  <StackPanel Orientation="Horizontal">
+                    <Button Classes="olLarge" Tag="Help" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                      <StackPanel><ContentControl Template="{StaticResource OlIconHelp}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Help" /></StackPanel>
+                    </Button>
+                  </StackPanel>
+                  
+                                                        </DockPanel>
+                  </Border>
               </StackPanel>
-            </ScrollViewer>
-            <NativeWebView Name="MainHtmlWebView" IsVisible="False" />
+            </TabItem>
+          </TabControl>
+        </Border>
+
+        <!-- Panes: one white card divided by hairlines, like classic Outlook's folder / list / reading panes -->
+        <Border Grid.Row="1" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,6,0,0" ClipToBounds="True">
+          <Grid Name="PaneGrid" ColumnDefinitions="2*,5,5*,5,4*">
+            <!-- Folder pane -->
+            <DockPanel Grid.Column="0" Margin="0,0,0,0">
+              <Border DockPanel.Dock="Top" Background="{DynamicResource OlGroupBand}" BorderBrush="{DynamicResource OlHairline}" BorderThickness="0,0,0,1" Height="26">
+                <Grid ColumnDefinitions="*,Auto" Margin="8,0">
+                  <TextBlock Text="Folders" FontSize="11" Foreground="{DynamicResource OlTextTertiary}" VerticalAlignment="Center" />
+                </Grid>
+              </Border>
+              <TreeView Name="FolderTree" Classes="olFolders" SelectionChanged="FolderSelected" Margin="0,4,0,0" />
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" Width="5" />
+
+            <!-- Message list -->
+            <DockPanel Grid.Column="2">
+              <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,8,10,4">
+                <TextBlock Grid.Column="0" Name="ListFilterAll" Text="All" FontSize="15" Foreground="{DynamicResource OlAccent}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Name="ListFilterUnread" Text="Unread" FontSize="15" Foreground="{DynamicResource OlTextSecondary}" Margin="16,0,0,0" VerticalAlignment="Center" Cursor="Hand" PointerPressed="ListFilterUnreadPressed" ToolTip.Tip="Show only unread messages — planned" />
+                <CheckBox Grid.Column="3" Name="GroupByDateCheck" Classes="olChip" Content="By date ▾" IsChecked="True" VerticalAlignment="Center" />
+              </Grid>
+              <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource OlHairline}" />
+              <DataGrid Name="MessageList" Classes="olList" SelectionMode="Extended" SelectionChanged="MessageSelected" Sorting="MessageListSorting"
+                        LoadingRowGroup="MessageListLoadingRowGroup" AutoGenerateColumns="False"
+                        IsReadOnly="True" CanUserSortColumns="True" CanUserReorderColumns="True"
+                        CanUserResizeColumns="True" HeadersVisibility="Column" GridLinesVisibility="None"
+                        RowHeight="26" ColumnHeaderHeight="28" Background="Transparent">
+                <DataGrid.Columns>
+                  <DataGridTemplateColumn Width="30" SortMemberPath="HasAttachment">
+                    <DataGridTemplateColumn.Header>
+                      <ContentControl Template="{StaticResource OlIconPaperclip}" Width="13" Height="13" ToolTip.Tip="Attachment" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                      <DataTemplate>
+                        <ContentControl Template="{StaticResource OlIconPaperclip}" Width="13" Height="13" HorizontalAlignment="Center" IsVisible="{Binding HasAttachment}" />
+                      </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
+                  <DataGridTemplateColumn Header="From" Width="150" SortMemberPath="FromSort">
+                    <DataGridTemplateColumn.CellTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding FromDisplay}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                   FontWeight="{Binding TextWeight}" />
+                      </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
+                  <DataGridTemplateColumn Header="Subject" Width="2*" SortMemberPath="Subject">
+                    <DataGridTemplateColumn.CellTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding Subject}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                   FontWeight="{Binding TextWeight}" />
+                      </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
+                  <DataGridTextColumn Header="Received" Width="150" Binding="{Binding ReceivedDisplay}" SortMemberPath="ReceivedSort" />
+                  <DataGridTextColumn Header="Size" Width="72" Binding="{Binding SizeDisplay}" SortMemberPath="SizeBytes" />
+                </DataGrid.Columns>
+              </DataGrid>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="3" Background="Transparent" ResizeDirection="Columns" Width="5" />
+
+            <!-- Reading pane -->
+            <Grid Name="ReaderPane" Grid.Column="4" RowDefinitions="Auto,Auto,Auto,Auto,*">
+              <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="20,16,16,4">
+                <TextBlock Name="SubjectText" Text="Select a folder to begin" FontSize="20" FontWeight="Normal" Foreground="{DynamicResource OlText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+                  <Button Name="ReaderReplyButton" Classes="olReaderAction" Tag="reply" Click="MailActionClicked" IsVisible="False">
+                    <StackPanel Orientation="Horizontal" Spacing="6"><ContentControl Template="{StaticResource OlIconReply}" Width="15" Height="15" /><TextBlock Text="Reply" VerticalAlignment="Center" /></StackPanel>
+                  </Button>
+                  <Button Name="ReaderReplyAllButton" Classes="olReaderAction" Tag="replyAll" Click="MailActionClicked" IsVisible="False">
+                    <StackPanel Orientation="Horizontal" Spacing="6"><ContentControl Template="{StaticResource OlIconReplyAll}" Width="15" Height="15" /><TextBlock Text="Reply All" VerticalAlignment="Center" /></StackPanel>
+                  </Button>
+                  <Button Name="ReaderForwardButton" Classes="olReaderAction" Tag="forward" Click="MailActionClicked" IsVisible="False">
+                    <StackPanel Orientation="Horizontal" Spacing="6"><ContentControl Template="{StaticResource OlIconForward}" Width="15" Height="15" /><TextBlock Text="Forward" VerticalAlignment="Center" /></StackPanel>
+                  </Button>
+                </StackPanel>
+              </Grid>
+
+              <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="20,6,16,8">
+                <Border Name="ReaderAvatar" Width="40" Height="40" CornerRadius="20" Background="#C75B12" VerticalAlignment="Top" IsVisible="False">
+                  <TextBlock Name="ReaderAvatarInitials" Text="" FontSize="15" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="1">
+                  <TextBlock Name="SenderText" TextWrapping="Wrap" FontSize="14" Foreground="{DynamicResource OlText}" />
+                  <TextBlock Name="RecipientText" TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource OlTextSecondary}" />
+                  <TextBlock Name="AttachmentText" TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource OlTextSecondary}" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" Name="MessageDateText" Text="" FontSize="12.5" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="8,2,0,0" />
+              </Grid>
+
+              <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6" Margin="20,0,16,6">
+                <ContentControl Template="{StaticResource OlIconInfo}" Width="14" Height="14" VerticalAlignment="Center"
+                        IsVisible="{Binding #HtmlStatusText.IsVisible}" />
+                <TextBlock Name="HtmlStatusText" IsVisible="False" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" MaxWidth="900" />
+              </StackPanel>
+
+              <Border Grid.Row="3" Height="1" Background="{DynamicResource OlHairline}" Margin="20,0,16,0" />
+
+              <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="6" Margin="20,8,16,0">
+                <Button Name="BodyViewButton" Classes="olChip" Content="View plain text" IsVisible="False" Click="ToggleBodyViewClicked" />
+                <Button Name="ReaderModeButton" Classes="olChip" Content="Use alternate reader" IsVisible="False" Click="ReaderModeClicked" />
+                <Button Name="ViewOriginalButton" Classes="olChip" Content="View original here (trusted mail)" IsVisible="False" Click="ToggleOriginalClicked" />
+                <Button Name="PopOutMessageButton" Classes="olChip" Content="Open in new window" IsVisible="False" Click="PopOutMessageClicked" />
+                <Button Name="InteractiveReaderButton" Classes="olChip" Content="Open interactive message" IsVisible="False" Click="OpenInteractiveReaderClicked" />
+                <Button Name="PrintablePdfButton" Classes="olChip" Content="Save printable PDF" IsVisible="False" Click="SavePrintablePdfClicked" />
+                <Button Name="OpenInBrowserButton" Classes="olChip" Content="Open in browser" IsVisible="False"
+                        ToolTip.Tip="Opens this message in your system browser, where text can be selected, searched and copied"
+                        Click="OpenInBrowserClicked" />
+                <StackPanel Name="ReaderZoomControls" Orientation="Horizontal" Spacing="4" IsVisible="False">
+                  <Button Classes="olChip" Content="−" Click="ZoomOutClicked" ToolTip.Tip="Zoom out" />
+                  <Button Classes="olChip" Content="+" Click="ZoomInClicked" ToolTip.Tip="Zoom in" />
+                  <Button Classes="olChip" Content="Fit" Click="ZoomFitClicked" ToolTip.Tip="Fit message to pane" />
+                </StackPanel>
+              </StackPanel>
+
+              <Grid Grid.Row="5" Margin="20,10,8,0">
+                <ScrollViewer Name="ReaderScrollViewer" HorizontalScrollBarVisibility="Auto">
+                  <StackPanel>
+                    <TextBox Name="BodyText" Text="Select a message to read it." TextWrapping="Wrap" IsReadOnly="True" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource OlText}" />
+                    <StackPanel Name="RichBodyPanel" IsVisible="False" Spacing="2" />
+                    <StackPanel Name="HtmlPagesPanel" IsVisible="False" Spacing="0" HorizontalAlignment="Left" />
+                  </StackPanel>
+                </ScrollViewer>
+                <NativeWebView Name="MainHtmlWebView" IsVisible="False" />
+              </Grid>
+            </Grid>
           </Grid>
-        </Grid>
-      </Border>
+        </Border>
+      </Grid>
     </Grid>
-    <Border Name="StatusBand" Grid.Row="3" Background="#EDF2F7" Padding="12,6">
-      <TextBlock Name="StatusText" Text="Ready. Open a PST or select a connected account." TextWrapping="Wrap" />
-    </Border>
-  </Grid>
+  </DockPanel>
 </Window>

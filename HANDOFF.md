@@ -41,7 +41,10 @@ buttons y~495 and y~527.
 
 ## Open items, in priority order
 
-1. New features -- the crash/picker queue is done. CEF (or Chromium) with off-screen rendering remains
+1. UI fidelity pass (in progress): ribbon groups/labels, folder tree and reading-pane header now follow
+   screenshots/Outlook.jpg. Still to check against a populated classic Outlook: message row height and
+   column spacing, date-group band look, dark mode, high-DPI. Small icons (Meeting/More/Create New) are
+   crude and worth redrawing. Publish before showing the user. CEF (or Chromium) with off-screen rendering remains
    the strategic reading-pane fix: it removes the Wayland child-window constraint and would restore
    character-level selection, find-in-page and real link handling. Details/costs:
    docs/reading-pane-text-selection.md.

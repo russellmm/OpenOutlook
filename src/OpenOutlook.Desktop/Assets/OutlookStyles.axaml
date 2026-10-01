@@ -1,0 +1,280 @@
+<!--
+  Control styles for the Outlook 2024 classic look: flat text tabs with an accent underline, ribbon
+  buttons with the icon above a two-line caption, compact stacked ribbon buttons, the navigation rail,
+  and restyled grid/tree surfaces.
+
+  Colours are never hardcoded here — every brush is a DynamicResource resolved from the palette in
+  App.axaml, so the light/dark switch keeps working when these styles replace the Fluent defaults.
+-->
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Ribbon tab strip: plain text, active tab bold with an accent underline -->
+    <Style Selector="TabControl.olTabs">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TabControl.olTabs /template/ Border#PART_ContentPanel">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TabControl.olTabs > TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="Padding" Value="12,8,12,7" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Panel Background="Transparent">
+            <Border Name="bg" Background="{TemplateBinding Background}" />
+            <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Header}" Margin="{TemplateBinding Padding}"
+                              Background="Transparent" Foreground="{TemplateBinding Foreground}"
+                              HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+            <Border Name="underline" Height="2" VerticalAlignment="Bottom" Margin="8,0,8,0" Background="Transparent" />
+          </Panel>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="TabControl.olTabs > TabItem:pointerover /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+    <Style Selector="TabControl.olTabs > TabItem:selected">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TabControl.olTabs > TabItem:selected /template/ Border#underline">
+      <Setter Property="Background" Value="{DynamicResource OlAccent}" />
+    </Style>
+
+
+    <!-- Ribbon group: content plus a bottom-pinned caption, separated from its neighbour by a hairline -->
+    <Style Selector="Border.olGroup">
+      <Setter Property="BorderBrush" Value="{DynamicResource OlHairline}" />
+      <Setter Property="BorderThickness" Value="0,0,1,0" />
+      <Setter Property="Padding" Value="0,2,9,0" />
+      <Setter Property="Margin" Value="0,0,9,0" />
+      <Setter Property="MinHeight" Value="74" />
+    </Style>
+    <Style Selector="Border.olGroup:last-child">
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- Ribbon group label, centred under its group -->
+    <Style Selector="TextBlock.olGroupLabel">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource OlTextTertiary}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,3,0,2" />
+    </Style>
+
+    <!-- Ribbon large command: icon above caption -->
+    <Style Selector="Button.olLarge">
+      <Setter Property="MinWidth" Value="60" />
+      <Setter Property="MaxWidth" Value="84" />
+      <Setter Property="MinHeight" Value="58" />
+      <Setter Property="Margin" Value="1,0" />
+      <Setter Property="Padding" Value="5,3" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="bg" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Top" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.olLarge:pointerover /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+    <Style Selector="Button.olLarge:pressed /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlPressed}" />
+    </Style>
+    <Style Selector="Button.olLarge:disabled">
+      <Setter Property="Opacity" Value="0.42" />
+    </Style>
+
+    <!-- Ribbon compact command: small icon with caption to the right -->
+    <Style Selector="Button.olSmall">
+      <Setter Property="MinHeight" Value="23" />
+      <Setter Property="Margin" Value="1,0" />
+      <Setter Property="Padding" Value="5,2" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="bg" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.olSmall:pointerover /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+
+    <!-- Caption text inside ribbon buttons -->
+    <Style Selector="TextBlock.olCaption">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="MaxWidth" Value="76" />
+      <Setter Property="Margin" Value="0,3,0,0" />
+    </Style>
+    <Style Selector="TextBlock.olSmallCaption">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="5,0,0,0" />
+    </Style>
+
+    <!-- Navigation rail on the far left -->
+    <Style Selector="Button.olRail">
+      <Setter Property="Width" Value="48" />
+      <Setter Property="Height" Value="46" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Panel Background="Transparent">
+            <Border Name="bg" Background="{TemplateBinding Background}" />
+            <Border Name="bar" Width="3" HorizontalAlignment="Left" Background="Transparent" />
+            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Panel>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.olRail:pointerover /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+    <Style Selector="Button.olRailActive /template/ Border#bar">
+      <Setter Property="Background" Value="{DynamicResource OlAccent}" />
+    </Style>
+
+    <!-- Title-bar search box -->
+    <Style Selector="TextBox.olSearch">
+      <Setter Property="Height" Value="30" />
+      <Setter Property="MinWidth" Value="240" />
+      <Setter Property="MaxWidth" Value="520" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Padding" Value="10,0,8,0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlCardBorder}" />
+      <Setter Property="Background" Value="{DynamicResource OlField}" />
+    </Style>
+
+    <!-- Reading pane command buttons: outlined, icon plus caption -->
+    <Style Selector="Button.olReaderAction">
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="Background" Value="{DynamicResource OlCard}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlStrongBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+    </Style>
+    <Style Selector="Button.olReaderAction:pointerover">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+
+    <Style Selector="Button.olChip">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource OlTextSecondary}" />
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlCardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="3" />
+    </Style>
+    <Style Selector="Button.olChip:pointerover">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+
+    <!-- Text-only toggle used where Outlook shows a sort/filter chip instead of a checkbox -->
+    <Style Selector="CheckBox.olChip">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource OlTextSecondary}" />
+      <Setter Property="Padding" Value="7,3" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="bg" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource OlCardBorder}"
+                  BorderThickness="1" CornerRadius="3" Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="CheckBox.olChip:pointerover /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+    <Style Selector="CheckBox.olChip:checked /template/ Border#bg">
+      <Setter Property="Background" Value="{DynamicResource OlSelected}" />
+    </Style>
+
+    <!-- Message list surface -->
+    <Style Selector="DataGrid.olList">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="RowBackground" Value="Transparent" />
+      <Setter Property="GridLinesVisibility" Value="None" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="DataGrid.olList DataGridColumnHeader">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource OlTextTertiary}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Normal" />
+      <Setter Property="Padding" Value="6,4" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlHairline}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="DataGrid.olList DataGridRow">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+    </Style>
+    <Style Selector="DataGrid.olList DataGridRow:pointerover /template/ Rectangle#BackgroundRectangle">
+      <Setter Property="Fill" Value="{DynamicResource OlHover}" />
+    </Style>
+    <Style Selector="DataGrid.olList DataGridRow:selected /template/ Rectangle#BackgroundRectangle">
+      <Setter Property="Fill" Value="{DynamicResource OlSelected}" />
+    </Style>
+    <Style Selector="DataGrid.olList DataGridCell">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="DataGrid.olList DataGridRowGroupHeader">
+      <Setter Property="Background" Value="{DynamicResource OlGroupBand}" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <!-- Folder tree -->
+    <Style Selector="TreeView.olFolders">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="TreeView.olFolders TreeViewItem">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="TreeView.olFolders TreeViewItem:selected /template/ Border#PART_LayoutRoot">
+      <Setter Property="Background" Value="{DynamicResource OlSelected}" />
+    </Style>
+
+</Styles>

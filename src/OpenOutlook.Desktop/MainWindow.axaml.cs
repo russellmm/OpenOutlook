@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.Controls.Primitives;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Input;
@@ -131,6 +132,14 @@ public sealed partial class MainWindow : Window
             _embeddedNavigation?.TrySetResult(true);
         };
         GroupByDateCheck.IsCheckedChanged += GroupByDateChanged;
+        // The status-bar zoom control and the reading pane's own zoom buttons drive one value.
+        ZoomSlider.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != RangeBase.ValueProperty) return;
+            _htmlZoom = Math.Clamp(ZoomSlider.Value / 100, 0.5, 2.5);
+            FitHtmlPageImage();
+            ApplyEmbeddedZoom();
+        };
         MessageList.DoubleTapped += MessageListDoubleTapped;
         MessageList.AddHandler(InputElement.KeyDownEvent, MessageListShortcutKeyDown,
             RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -516,7 +525,7 @@ public sealed partial class MainWindow : Window
             _activePath = null;
             _activeFolder = null;
             _currentMessages = null;
-            MessageList.ItemsSource = null;
+            MessageList.ItemsSource = null; RefreshItemCount();
             ClearReader();
             _activeMicrosoftAccount = online.Account;
             _activeMicrosoftFolder = online;
@@ -530,7 +539,7 @@ public sealed partial class MainWindow : Window
             _activePath = null;
             _activeFolder = null;
             _currentMessages = null;
-            MessageList.ItemsSource = null;
+            MessageList.ItemsSource = null; RefreshItemCount();
             ClearReader();
             return;
         }
@@ -539,7 +548,7 @@ public sealed partial class MainWindow : Window
         _activePath = selection.Path;
         _activeFolder = selection.Folder;
         _currentMessages = null;
-        MessageList.ItemsSource = null;
+        MessageList.ItemsSource = null; RefreshItemCount();
         ClearReader();
         var cacheKey = (selection.Path, selection.Folder.Nid);
         if (_folderCache.TryGetValue(cacheKey, out var cached))
@@ -576,7 +585,7 @@ public sealed partial class MainWindow : Window
         _currentGraphMessages = null;
         _graphRows = null;
         Interlocked.Increment(ref _messageVersion);
-        MessageList.ItemsSource = null;
+        MessageList.ItemsSource = null; RefreshItemCount();
         ClearReader();
         RefreshConnectedAccounts();
         StatusText.Text = "Account settings updated. Select a Microsoft folder to continue.";
@@ -707,7 +716,7 @@ public sealed partial class MainWindow : Window
         if (GroupByDateCheck.IsChecked == true)
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(nameof(GraphMessageListRow.DateGroup)));
         _updatingMessageList = true;
-        try { MessageList.ItemsSource = view; MessageList.SelectedItem = null; }
+        try { MessageList.ItemsSource = view; RefreshItemCount(); MessageList.SelectedItem = null; }
         finally { _updatingMessageList = false; }
     }
 
@@ -797,7 +806,7 @@ public sealed partial class MainWindow : Window
         var version = Interlocked.Increment(ref _folderVersion);
         Interlocked.Increment(ref _messageVersion);
         _currentMessages = null;
-        MessageList.ItemsSource = null;
+        MessageList.ItemsSource = null; RefreshItemCount();
         ClearReader();
         StatusText.Text = "Searching subject, sender and recipient in selected folder…";
         try
@@ -832,7 +841,7 @@ public sealed partial class MainWindow : Window
         _updatingMessageList = true;
         try
         {
-            MessageList.ItemsSource = view;
+            MessageList.ItemsSource = view; RefreshItemCount();
             MessageList.SelectedItem = null;
         }
         finally { _updatingMessageList = false; }
@@ -917,8 +926,14 @@ public sealed partial class MainWindow : Window
             ExportAttachmentButton.IsEnabled = message.Attachments.Count > 0;
             ExportMessageButton.IsEnabled = true;
             SubjectText.Text = message.Summary.Subject;
-            SenderText.Text = $"From: {message.Summary.From}";
-            RecipientText.Text = $"To: {message.Summary.To}";
+            SenderText.Text = message.Summary.From;
+            RecipientText.Text = $"To   {message.Summary.To}";
+            var pstDate = message.Summary.Received == DateTime.MinValue
+                ? message.Summary.Sent : message.Summary.Received;
+            MessageDateText.Text = pstDate == DateTime.MinValue ? "" : pstDate.ToString("ddd M/d/yyyy h:mm tt");
+            SetReaderAvatar(message.Summary.From);
+            ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible =
+                ReaderForwardButton.IsVisible = false;
             AttachmentText.Text = message.Attachments.Count == 0 ? "" :
                 $"Attachments: {string.Join(", ", message.Attachments.Select(a => a.FileName))}";
             SetMessageBody(message.BodyHtml, message.BodyText);
@@ -975,8 +990,12 @@ public sealed partial class MainWindow : Window
             _currentGraphAttachments = attachments;
             ExportAttachmentButton.IsEnabled = attachments.Any(CanSaveGraphAttachment);
             SubjectText.Text = message.Subject;
-            SenderText.Text = $"From: {message.From}";
-            RecipientText.Text = $"To: {message.To}";
+            SenderText.Text = message.From;
+            RecipientText.Text = $"To   {message.To}";
+            MessageDateText.Text = message.Received?.ToLocalTime().ToString("ddd M/d/yyyy h:mm tt") ?? "";
+            SetReaderAvatar(message.From);
+            ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible =
+                ReaderForwardButton.IsVisible = true;
             AttachmentText.Text = attachmentError ? "Could not load attachments. Select this message again to retry." :
                 attachments.Count == 0 ? "" :
                 $"Attachments: {string.Join(", ", attachments.Select(a => a.Name +
@@ -1238,7 +1257,7 @@ public sealed partial class MainWindow : Window
             _activePath = null;
             _activeFolder = null;
             _currentMessages = null;
-            MessageList.ItemsSource = null;
+            MessageList.ItemsSource = null; RefreshItemCount();
             foreach (var key in _folderCache.Keys.Where(key => key.Path == path).ToArray())
                 _folderCache.Remove(key);
             var remaining = _folderCacheOrder.Where(key => key.Path != path).ToArray();
@@ -1324,34 +1343,91 @@ public sealed partial class MainWindow : Window
         await ExecuteMailActionAsync(shortcut.Action);
     }
 
+
+    /// <summary>Outlook's own avatar palette, so a sender keeps the same colour across messages.</summary>
+    private static readonly string[] AvatarColors =
+        ["#C75B12", "#0F6CBD", "#107C41", "#8764B8", "#D83B01", "#038387", "#CA5010", "#5C2D91"];
+
+    /// <summary>Initials circle in the reading pane header, coloured from the sender's name.</summary>
+    private void SetReaderAvatar(string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            ReaderAvatar.IsVisible = false;
+            return;
+        }
+        ReaderAvatarInitials.Text = InitialsOf(displayName);
+        var hash = 0;
+        foreach (var c in displayName) hash = (hash * 31 + c) & 0x3FFFFFFF;
+        ReaderAvatar.Background = Brush.Parse(AvatarColors[hash % AvatarColors.Length]);
+        ReaderAvatar.IsVisible = true;
+    }
+
+    /// <summary>First letters of the first and last words, ignoring a trailing address in brackets.</summary>
+    internal static string InitialsOf(string displayName)
+    {
+        var core = displayName.Split('<')[0].Trim();
+        if (core.Length == 0) core = displayName.Trim();
+        if (core.Length == 0) return "?";
+        var words = core.Split(new[] { ' ', '.', ',' }, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) return "?";
+        if (words.Length == 1)
+            return words[0].Length >= 2 ? words[0][..2].ToUpperInvariant() : words[0].ToUpperInvariant();
+        return string.Concat(words[0][0], words[^1][0]).ToUpperInvariant();
+    }
+
+    private void RefreshItemCount()
+    {
+        // DataGrid exposes no public item count, so the bound collection is counted directly.
+        var count = MessageList.ItemsSource switch
+        {
+            System.Collections.ICollection collection => collection.Count,
+            _ => 0,
+        };
+        MessageCountText.Text = count == 0 ? "" : $"Items: {count:N0}";
+    }
+
+    private void UpdateZoomUi()
+    {
+        var percent = (int)Math.Round(_htmlZoom * 100);
+        ZoomText.Text = percent == 100 ? "" : $"Zoom {percent}%";
+        ZoomSlider.Value = Math.Clamp(percent, ZoomSlider.Minimum, ZoomSlider.Maximum);
+    }
+
+    private void SearchBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) SearchClicked(sender, e);
+    }
+
+    private void ListFilterUnreadPressed(object? sender, PointerPressedEventArgs e) =>
+        StatusText.Text = "Showing only unread messages is planned; every message in the folder is listed.";
+
     private void ApplyAppearance()
     {
         if (Application.Current is { } app)
             app.RequestedThemeVariant = _appearance.DarkMode ? ThemeVariant.Dark : ThemeVariant.Light;
         // These named high-contrast accents avoid arbitrary user hex colors with illegible foregrounds.
+        // The override goes on the window's own resources: those take precedence over the application
+        // palette and its theme dictionaries, so one assignment restyles every use of the accent.
         var accent = _appearance.Accent switch
         {
-            "Green" => "#176339", "Purple" => "#5A3186", "Orange" => "#895013", _ => "#174879"
+            "Green" => "#107C41", "Purple" => "#5C2D91", "Orange" => "#CA5010", _ => "#0F6CBD"
         };
-        TitleBand.Background = Brush.Parse(_appearance.DarkMode ? "#252D38" : "#F4F5F7");
-        AccentMark.Background = Brush.Parse(accent);
-        AppTitleText.Foreground = Brush.Parse(_appearance.DarkMode ? "#F2F5F9" : "#1E293B");
-        AppSubtitleText.Foreground = Brush.Parse(_appearance.DarkMode ? "#B8C4D2" : "#64748B");
-        ToolbarBand.Background = Brush.Parse(_appearance.DarkMode ? "#202833" : "#F8F9FB");
-        StatusBand.Background = Brush.Parse(_appearance.DarkMode ? "#202833" : "#EDF2F7");
+        Resources["OlAccent"] = new SolidColorBrush(Color.Parse(accent));
         var size = _appearance.TextSize;
         FontSize = size;
-        AppTitleText.FontSize = size + 5;
-        AppSubtitleText.FontSize = size - 1;
         RibbonTabs.FontSize = size;
         FolderTree.FontSize = MessageList.FontSize = BodyText.FontSize = size;
-        SubjectText.FontSize = size + 5;
-        SenderText.FontSize = RecipientText.FontSize = AttachmentText.FontSize = size;
+        SubjectText.FontSize = size + 4;
+        SenderText.FontSize = size;
+        RecipientText.FontSize = AttachmentText.FontSize = Math.Max(10, size - 1);
         BodyViewButton.FontSize = size;
-        StatusText.FontSize = size - 1;
+        StatusText.FontSize = Math.Max(10, size - 1);
         OpenPstButton.FontSize = DetachButton.FontSize = OptionsButton.FontSize = size;
-        ArchiveSearchButton.FontSize = ExportAttachmentButton.FontSize = ExportMessageButton.FontSize = ExportFolderButton.FontSize = CancelFolderExportButton.FontSize = PreviewJunkImportButton.FontSize = AccountSetupButton.FontSize = RefreshInboxButton.FontSize = ArchiveSearchBox.FontSize = size;
-        if (_richRuns is not null) ShowMessageBody();
+        ArchiveSearchButton.FontSize = ExportAttachmentButton.FontSize = ExportMessageButton.FontSize =
+            ExportFolderButton.FontSize = CancelFolderExportButton.FontSize = PreviewJunkImportButton.FontSize =
+            AccountSetupButton.FontSize = RefreshInboxButton.FontSize = ArchiveSearchBox.FontSize =
+            Math.Max(10, size - 1);        if (_richRuns is not null) ShowMessageBody();
     }
 
     private void ApplyViewLayout(ViewLayoutSettings settings)
@@ -1946,6 +2022,7 @@ public sealed partial class MainWindow : Window
     private void ZoomInClicked(object? sender, RoutedEventArgs e)
     {
         _htmlZoom = Math.Min(2.5, Math.Round(_htmlZoom * 1.25, 2));
+        UpdateZoomUi();
         FitHtmlPageImage();
         ApplyEmbeddedZoom();
     }
@@ -1953,6 +2030,7 @@ public sealed partial class MainWindow : Window
     private void ZoomOutClicked(object? sender, RoutedEventArgs e)
     {
         _htmlZoom = Math.Max(0.5, Math.Round(_htmlZoom / 1.25, 2));
+        UpdateZoomUi();
         FitHtmlPageImage();
         ApplyEmbeddedZoom();
     }
@@ -1960,6 +2038,7 @@ public sealed partial class MainWindow : Window
     private void ZoomFitClicked(object? sender, RoutedEventArgs e)
     {
         _htmlZoom = 1;
+        UpdateZoomUi();
         FitHtmlPageImage();
         ApplyEmbeddedZoom();
     }
@@ -2011,6 +2090,8 @@ public sealed partial class MainWindow : Window
         PrintablePdfButton.IsVisible = PopOutMessageButton.IsVisible;
         OpenInBrowserButton.IsVisible = _bodyHtml is not null;
         ReaderZoomControls.IsVisible = _bodyHtml is not null;
+        ZoomSlider.IsVisible = _bodyHtml is not null;
+        UpdateZoomUi();
         BodyViewButton.Content = _showRichBody ? "View plain text" : "View rich text";
         if (!_showRichBody || (_richRuns is null && _htmlPageBitmaps.Count == 0 && !_embeddedHtmlActive))
         {
@@ -2123,6 +2204,10 @@ public sealed partial class MainWindow : Window
         BodyText.IsVisible = true;
         SubjectText.Text = "Select a message";
         SenderText.Text = RecipientText.Text = AttachmentText.Text = BodyText.Text = "";
+        MessageDateText.Text = "";
+        ReaderAvatar.IsVisible = false;
+        ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible =
+            ReaderForwardButton.IsVisible = false;
     }
 
     private sealed record FolderSelection(string Path, MailFolder Folder);

@@ -18,7 +18,12 @@ public sealed class GraphMessageListRow(GraphInboxMessage message) : INotifyProp
     }
     public bool HasAttachment => Message.HasAttachments;
     public string FromSort => Message.From;
-    public string FromDisplay => Message.IsRead ? Message.From : "● " + Message.From;
+    public bool IsUnread => !Message.IsRead;
+
+    /// <summary>Classic Outlook marks unread mail by bolding the row, not with a marker glyph.</summary>
+    public Avalonia.Media.FontWeight TextWeight => IsUnread ? Avalonia.Media.FontWeight.Bold : Avalonia.Media.FontWeight.Normal;
+
+    public string FromDisplay => Message.From;
     public string Subject => (Message.IsDraft ? "[Draft] " : "") +
         (Message.IsFlagged ? "⚑ " : "") + Message.Subject;
     public DateTime ReceivedSort => Message.Received?.LocalDateTime ?? DateTime.MinValue;

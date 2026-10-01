@@ -1,6 +1,60 @@
 <Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="OpenOutlook.Desktop.App" RequestedThemeVariant="Light">
+  <!--
+    Palette for the Outlook 2024 classic look. The light values come from measuring the owner's
+    screenshots of classic Outlook — chrome #F0F0F0 with white content cards on top of it, #F4F4F4 date
+    bands, grey row selection, and blue reserved for accents such as the active tab underline and unread
+    counts — so the appearance follows the reference rather than an impression of it. Dark variants keep
+    the same structure; every surface reads these keys through DynamicResource, so toggling
+    RequestedThemeVariant restyles the whole window.
+  -->
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Default">
+          <SolidColorBrush x:Key="OlChrome" Color="#F0F0F0" />
+          <SolidColorBrush x:Key="OlCard" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="OlCardBorder" Color="#E1E1E1" />
+          <SolidColorBrush x:Key="OlHairline" Color="#ECECEC" />
+          <SolidColorBrush x:Key="OlStrongBorder" Color="#D2D2D2" />
+          <SolidColorBrush x:Key="OlText" Color="#1F1F1F" />
+          <SolidColorBrush x:Key="OlTextSecondary" Color="#616161" />
+          <SolidColorBrush x:Key="OlTextTertiary" Color="#8A8A8A" />
+          <SolidColorBrush x:Key="OlAccent" Color="#0F6CBD" />
+          <SolidColorBrush x:Key="OlHover" Color="#F4F4F4" />
+          <SolidColorBrush x:Key="OlPressed" Color="#E5E5E5" />
+          <SolidColorBrush x:Key="OlSelected" Color="#E8E8E8" />
+          <SolidColorBrush x:Key="OlGroupBand" Color="#F4F4F4" />
+          <SolidColorBrush x:Key="OlField" Color="#F7F7F7" />
+          <SolidColorBrush x:Key="OlIcon" Color="#3B3B3B" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="OlChrome" Color="#1F1F1F" />
+          <SolidColorBrush x:Key="OlCard" Color="#2A2A2A" />
+          <SolidColorBrush x:Key="OlCardBorder" Color="#3A3A3A" />
+          <SolidColorBrush x:Key="OlHairline" Color="#333333" />
+          <SolidColorBrush x:Key="OlStrongBorder" Color="#4A4A4A" />
+          <SolidColorBrush x:Key="OlText" Color="#F2F2F2" />
+          <SolidColorBrush x:Key="OlTextSecondary" Color="#B5B5B5" />
+          <SolidColorBrush x:Key="OlTextTertiary" Color="#969696" />
+          <SolidColorBrush x:Key="OlAccent" Color="#4FA3E3" />
+          <SolidColorBrush x:Key="OlHover" Color="#333333" />
+          <SolidColorBrush x:Key="OlPressed" Color="#3E3E3E" />
+          <SolidColorBrush x:Key="OlSelected" Color="#3A3A3A" />
+          <SolidColorBrush x:Key="OlGroupBand" Color="#262626" />
+          <SolidColorBrush x:Key="OlField" Color="#333333" />
+          <SolidColorBrush x:Key="OlIcon" Color="#D6D6D6" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://OpenOutlook.Desktop/Assets/OutlookIcons.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
   <Application.Styles>
     <FluentTheme />
     <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+    <StyleInclude Source="avares://OpenOutlook.Desktop/Assets/OutlookStyles.axaml" />
   </Application.Styles>
 </Application>

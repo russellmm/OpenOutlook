@@ -8,7 +8,12 @@ public sealed class MessageListRow(MailSummary summary)
     public MailSummary Summary { get; } = summary;
     public bool HasAttachment => Summary.HasAttachment;
     public string FromSort => Summary.From;
-    public string FromDisplay => Summary.IsRead ? Summary.From : "● " + Summary.From;
+    public bool IsUnread => !Summary.IsRead;
+
+    /// <summary>Classic Outlook marks unread mail by bolding the row, not with a marker glyph.</summary>
+    public Avalonia.Media.FontWeight TextWeight => IsUnread ? Avalonia.Media.FontWeight.Bold : Avalonia.Media.FontWeight.Normal;
+
+    public string FromDisplay => Summary.From;
     public string Subject => Summary.Subject;
     public DateTime ReceivedSort => Summary.Received == DateTime.MinValue ? Summary.Sent : Summary.Received;
     public string ReceivedDisplay => ReceivedSort == DateTime.MinValue ? "" : ReceivedSort.ToString("g");

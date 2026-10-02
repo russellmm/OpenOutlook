@@ -1269,12 +1269,67 @@ public sealed partial class MainWindow : Window
 
     private async void DetachClicked(object? sender, RoutedEventArgs e)
     {
-        var path = FolderTree.SelectedItem is TreeViewItem item ?
-            item.Tag is FolderSelection folder ? folder.Path : item.Tag as string : null;
-        if (path is null || !_stores.TryGetValue(path, out var store)) return;
+        // Pick which open archive to close from a list - no dependence on what the folder tree
+        // happens to have selected (navigating through Backstage can drop that selection).
+        if (_stores.Count == 0)
+        {
+            StatusText.Text = "No Outlook Data Files are open.";
+            return;
+        }
+        CloseBackstage();
+        var chosen = await PickArchiveAsync("Close an Outlook Data File",
+            "Select the Outlook Data File to close. The file itself is never deleted.");
+        if (chosen is null) return;
+        if (!_stores.TryGetValue(chosen, out var store))
+        {
+            StatusText.Text = "That archive is no longer open.";
+            return;
+        }
         // The gate avoids disposing while a reader operation is in flight.
-        try { await DetachAsync(path, store); }
+        try { await DetachAsync(chosen, store); }
         catch (Exception ex) { StatusText.Text = $"Could not detach; the PST is still attached: {ex.Message}"; }
+    }
+
+    /// <summary>Simple list picker over the open archives (file name + full path), used by Close.</summary>
+    private async Task<string?> PickArchiveAsync(string title, string instruction)
+    {
+        var dialog = new Window
+        {
+            Title = title, Width = 560, Height = 400,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false
+        };
+        var list = new ListBox();
+        foreach (var path in _stores.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+        {
+            list.Items.Add(new ListBoxItem
+            {
+                Content = new StackPanel
+                {
+                    Spacing = 2,
+                    Children =
+                    {
+                        new TextBlock { Text = Path.GetFileName(path), FontWeight = Avalonia.Media.FontWeight.SemiBold },
+                        new TextBlock { Text = path, FontSize = 11, Foreground = Avalonia.Media.Brushes.Gray }
+                    }
+                },
+                Tag = path
+            });
+        }
+        var ok = new Button { Content = "Close File", IsEnabled = false, MinWidth = 100 };
+        var cancel = new Button { Content = "Cancel", MinWidth = 90 };
+        list.SelectionChanged += (_, _) => ok.IsEnabled = list.SelectedItem is ListBoxItem;
+        ok.Click += (_, _) => dialog.Close((list.SelectedItem as ListBoxItem)?.Tag as string);
+        cancel.Click += (_, _) => dialog.Close((string?)null);
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(16), Spacing = 10, Children =
+            {
+                new TextBlock { Text = instruction, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                list,
+                new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Children = { ok, cancel } }
+            }
+        };
+        return await dialog.ShowDialog<string?>(this);
     }
 
     private async Task DetachAsync(string path, PstStore store)
@@ -1286,6 +1341,20 @@ public sealed partial class MainWindow : Window
         try
         {
             if (!_stores.ContainsKey(path)) return;
+            // Finalize any live edit session BEFORE disposing its store: every operation was already
+            // verified when it ran, so this commit re-verifies and seals; a failure rolls back to the
+            // automatic backup rather than stranding a half-written archive or a dead session.
+            if (_editSessions.TryGetValue(path, out var session))
+            {
+                _editSessions.Remove(path);
+                try { await Task.Run(session.Commit); }
+                catch (Exception ex) when (ex is PstException or IOException)
+                {
+                    try { session.Rollback(); } catch (Exception rex) when (rex is IOException) { }
+                    StatusText.Text = $"Edits to {Path.GetFileName(path)} failed final verification; the automatic backup restored it.";
+                }
+                try { session.Dispose(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+            }
             _attachedPstStore.Remove(path);
             _stores.Remove(path);
             store.Dispose();

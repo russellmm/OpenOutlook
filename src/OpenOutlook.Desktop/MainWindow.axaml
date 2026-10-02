@@ -759,7 +759,7 @@
                   <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconImportR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Import from another mail application — planned" VerticalAlignment="Center" /></StackPanel>
                 </Button>
               </StackPanel>
-              <TextBlock Classes="olBsBody" Margin="0,24,0,0" Foreground="{DynamicResource OlTextSecondary}" Text="OpenOutlook opens PST archives read-only: no command here writes to an archive." />
+              <TextBlock Classes="olBsBody" Margin="0,24,0,0" Foreground="{DynamicResource OlTextSecondary}" Text="Archives are editable at all times. Every first write makes an automatic backup copy next to the file, and every change is verified as it is saved." />
             </StackPanel>
 
             <!-- Save As -->

@@ -25,6 +25,15 @@ public partial class MainWindow
     private Point _messageDragStart;
     private bool _messageDragCandidate;
     private bool _messageDragRightButton;
+    private DateTime _lastDragEndUtc = DateTime.MinValue;
+
+    /// <summary>A right-button drag ends with a release that Avalonia would otherwise treat as an
+    /// ordinary right-click, popping the message context menu over the Move/Copy popup we just
+    /// showed. Suppress the flyout for a moment after any drag finishes.</summary>
+    private void MessageListContextRequested(object? sender, Avalonia.Controls.ContextRequestedEventArgs e)
+    {
+        if ((DateTime.UtcNow - _lastDragEndUtc).TotalMilliseconds < 600) e.Handled = true;
+    }
 
     /// <summary>Attaches the message-list drag source once (called from the folder-load path where
     /// MessageList is guaranteed live).</summary>
@@ -37,6 +46,7 @@ public partial class MainWindow
         MessageList.AddHandler(PointerMovedEvent, MessageListDragMoved, RoutingStrategies.Tunnel);
         MessageList.AddHandler(PointerReleasedEvent, (_, _) => _messageDragCandidate = false, RoutingStrategies.Tunnel);
         MessageList.AddHandler(PointerCaptureLostEvent, (_, _) => _messageDragCandidate = false, RoutingStrategies.Bubble);
+        MessageList.AddHandler(ContextRequestedEvent, MessageListContextRequested, RoutingStrategies.Tunnel);
     }
 
     /// <summary>Right-click path for the same move engine: "Move to Folder..." opens a picker over
@@ -141,6 +151,7 @@ public partial class MainWindow
         data.Set(DataFormats.Text, text);
         try { await DragDrop.DoDragDrop(e, data, DragDropEffects.Move); }
         catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException) { /* drag aborted */ }
+        finally { _lastDragEndUtc = DateTime.UtcNow; }
     }
 
     /// <summary>Marks a PST folder tree item as a drop target for message moves.</summary>

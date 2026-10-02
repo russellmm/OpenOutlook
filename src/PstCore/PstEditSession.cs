@@ -25,6 +25,26 @@ public sealed class PstEditSession : IDisposable
     {
         var full = Path.GetFullPath(path);
         if (!File.Exists(full)) throw new FileNotFoundException("PST not found.", full);
+
+        // Single-writer guard: two windows editing one archive silently overwrite each other's
+        // work (each keeps its own in-memory view and backup) - the classic cause of "I moved it
+        // but it vanished". The lock names its owner process so a crashed run's stale lock is
+        // simply replaced.
+        var lockPath = full + ".lck";
+        if (File.Exists(lockPath))
+        {
+            string owner = "";
+            try { owner = File.ReadAllText(lockPath).Trim(); } catch (IOException) { }
+            if (int.TryParse(owner, out var pid))
+            {
+                try { System.Diagnostics.Process.GetProcessById(pid); throw new PstException(
+                    "This archive is already open for editing in another OpenOutlook window (process " + pid +
+                    "). Close that window first - two writers on one file would overwrite each other's changes."); }
+                catch (ArgumentException) { /* owner gone: stale lock, replace it */ }
+            }
+            else { throw new PstException("This archive has a leftover edit lock (" + lockPath + "); delete it only if no OpenOutlook window has the file open."); }
+        }
+
         var backup = full + ".bak";
         File.Copy(full, backup, overwrite: true);
         PstStore store;
@@ -38,6 +58,7 @@ public sealed class PstEditSession : IDisposable
             // it is byte-identical to the untouched original.
             throw;
         }
+        File.WriteAllText(lockPath, Environment.ProcessId.ToString());
         return new PstEditSession(full, backup, store);
     }
 
@@ -70,5 +91,18 @@ public sealed class PstEditSession : IDisposable
             try { File.Copy(BackupPath, ArchivePath, overwrite: true); }
             catch (IOException) { /* backup remains on disk for manual recovery */ }
         }
+        ReleaseLock();
+    }
+
+    private void ReleaseLock()
+    {
+        var lockPath = ArchivePath + ".lck";
+        try
+        {
+            if (File.ReadAllText(lockPath).Trim() == Environment.ProcessId.ToString())
+                File.Delete(lockPath);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 }

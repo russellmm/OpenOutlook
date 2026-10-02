@@ -37,6 +37,9 @@ internal sealed class Ndb : IDisposable
     private readonly FileStream _stream;
     private readonly Dictionary<ulong, BbtEntry> _bbt = new();
     private readonly Dictionary<uint, NbtEntry> _nbt = new();
+    // BT pages (NBT/BBT) are addressed through the header roots, NOT through BBT entries - empirically
+    // none of them appear in the BBT. The allocator must know them separately or it would overwrite one.
+    private readonly HashSet<ulong> _btPageIbs = new();
     private readonly object _io = new();
 
     private Ndb(FileStream stream, PstHeader header)
@@ -284,6 +287,14 @@ internal sealed class Ndb : IDisposable
             var start = (long)(e.Offset / 64);
             for (var s = start; s < start + slots; s++) occupied.Add(s);
         }
+        foreach (var pageIb in _btPageIbs) // NBT/BBT pages: not in the BBT at all (see field comment)
+            for (var s = pageIb / 64; s < pageIb / 64 + 8; s++) occupied.Add((long)s);
+        // DList + every AMap page + PMap pages by their arithmetic positions.
+        for (var s = ReservedDListIb / 64; s < ReservedDListIb / 64 + 8; s++) occupied.Add(s);
+        for (ulong p = FirstAMapPage; p + 512 <= Header.FileEof; p += AMapSpan)
+            for (var s = p / 64; s < p / 64 + 8; s++) occupied.Add((long)s);
+        for (ulong p = 0x4600; p + 512 <= Header.FileEof; p += 2_031_616)
+            for (var s = p / 64; s < p / 64 + 8; s++) occupied.Add((long)s);
         return occupied;
     }
 
@@ -650,6 +661,7 @@ internal sealed class Ndb : IDisposable
 
     private void WalkBt(ulong ib, bool isNbt)
     {
+        _btPageIbs.Add(ib);
         var page = ReadPage(ib);
         var unicode = Unicode;
         var cEntOff = unicode ? 488 : 496;

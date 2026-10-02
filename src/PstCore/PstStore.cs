@@ -571,6 +571,26 @@ public sealed class PstStore : IDisposable
         // Appended heap items: [0] = new BTH leaf, then variable cell payloads in order.
         appended.Insert(0, newLeaf);
 
+        // ---- plan: rebuilt heap with appended items + repointed BTINFO.hidRoot / TCINFO.hnidRows ----
+        var rebuilt = HeapOnNode.RebuildBlockWithAppends(dstTable.Heap.Blocks[0].Data, appended, 0, out var newHnids)
+            ?? throw new PstException("The destination table heap has a shape this editor will not guess; nothing was changed.");
+        if (!HeapOnNode.TryGetAllocStart(rebuilt, (int)(dstTable.HidRowIndex >> 5), out var btinfoOff) || btinfoOff + 8 > rebuilt.Length)
+            throw new PstException("The destination table's Row-ID header could not be located; nothing was changed.");
+        HeapOnNode.PatchBytesInPlace(rebuilt, btinfoOff + 4, BitConverter.GetBytes(newHnids[0])); // BTINFO.hidRoot -> grown leaf
+
+        // Now that the appended items have HIDs, point the record's variable cells at them.
+        foreach (var (appendedIndex, col) in variableCellTargets)
+        {
+            var hnidBytes = BitConverter.GetBytes(newHnids[appendedIndex + 1]); // [0] is the grown BTH leaf
+            if (col.CbData == 2)
+                rec[col.IbData] = hnidBytes[0];
+            else
+                hnidBytes.AsSpan(0, col.CbData).CopyTo(rec.AsSpan(col.IbData));
+            var existByte = dstTable.Tci1 + (col.IBit >> 3);
+            if (existByte < rec.Length)
+                rec[existByte] |= (byte)(1 << (col.IBit & 7));
+        }
+
         // ---- plan: matrix bytes (grow case) or in-place slot (reuse case) ----
         byte[]? matrixBytes = null;
         uint matrixSubNid = dstTable.HnidRows;
@@ -608,19 +628,9 @@ public sealed class PstStore : IDisposable
                 if (idx > maxIdx) maxIdx = idx;
             }
             matrixSubNid = (uint)((maxIdx + 1) << 5) | (uint)NidType.Ltp;
-        }
-
-        // ---- plan: rebuilt heap with appended items + repointed BTINFO.hidRoot / TCINFO.hnidRows ----
-        var rebuilt = HeapOnNode.RebuildBlockWithAppends(dstTable.Heap.Blocks[0].Data, appended, 0, out var newHnids)
-            ?? throw new PstException("The destination table heap has a shape this editor will not guess; nothing was changed.");
-        if (!HeapOnNode.TryGetAllocStart(rebuilt, (int)(dstTable.HidRowIndex >> 5), out var btinfoOff) || btinfoOff + 8 > rebuilt.Length)
-            throw new PstException("The destination table's Row-ID header could not be located; nothing was changed.");
-        HeapOnNode.PatchBytesInPlace(rebuilt, btinfoOff + 4, BitConverter.GetBytes(newHnids[0])); // BTINFO.hidRoot -> grown leaf
-        if (dstTable.HnidRows == 0)
-        {
             if (!HeapOnNode.TryGetAllocStart(rebuilt, (int)(dstTable.Heap.UserRoot >> 5), out var tcinfoOff) || tcinfoOff + 18 > rebuilt.Length)
                 throw new PstException("The destination table's context header could not be located; nothing was changed.");
-            HeapOnNode.PatchBytesInPlace(rebuilt, tcinfoOff + 14, BitConverter.GetBytes(matrixSubNid)); // TCINFO.hnidRows
+            HeapOnNode.PatchBytesInPlace(rebuilt, tcinfoOff + 14, BitConverter.GetBytes(matrixSubNid)); // TCINFO.hnidRows -> new subnode
         }
 
         // ---- plan: sub-node list entry for the matrix (patch in place, or create/extend the SLB) ----

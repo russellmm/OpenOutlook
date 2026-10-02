@@ -288,6 +288,144 @@ public sealed class PstEditingTests
             finally { Cleanup(tmp, tmp + ".bak"); }
     }
 
+    // ---- Phase C: real move between folders (re-link semantics) ----
+
+    private static MailFolder Folder(PstStore store, string name) =>
+        store.AllFolders().FirstOrDefault(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+        ?? throw new InvalidOperationException($"fixture has no {name} folder");
+
+    [Fact]
+    public void MoveMessageToDeletedItemsPersistsAcrossReopen()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            uint movedNid; string movedSubject, movedFrom; DateTime movedReceived; int srcCountBefore, dstCountBefore;
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var source = Folder(session.Store, "treasurydirect");
+                var dest = Folder(session.Store, "Deleted Items");
+                var message = session.Store.GetMessages(source).First();
+                movedNid = message.Nid; movedSubject = message.Subject; movedFrom = message.From; movedReceived = message.Received;
+                srcCountBefore = session.Store.GetMessages(source).Count;
+                dstCountBefore = session.Store.GetMessages(dest).Count;
+                session.Store.MoveMessage(message, dest);
+                // live store reflects the move without reload:
+                Assert.DoesNotContain(session.Store.GetMessages(source), m => m.Nid == movedNid);
+                Assert.Contains(session.Store.GetMessages(dest), m => m.Nid == movedNid);
+                session.Commit(); // full VerifyIntegrity runs inside
+            }
+            using (var reopened = PstStore.Open(tmp, writable: false))
+            {
+                var source = Folder(reopened, "treasurydirect");
+                var dest = Folder(reopened, "Deleted Items");
+                Assert.Empty(reopened.VerifyIntegrity());
+                var srcAfter = reopened.GetMessages(source);
+                var dstAfter = reopened.GetMessages(dest);
+                Assert.Equal(srcCountBefore - 1, srcAfter.Count);
+                Assert.Equal(dstCountBefore + 1, dstAfter.Count);
+                Assert.DoesNotContain(srcAfter, m => m.Nid == movedNid);
+                var landed = Assert.Single(dstAfter, m => m.Nid == movedNid);
+                Assert.Equal(movedSubject, landed.Subject);
+                Assert.Equal(movedFrom, landed.From);
+                Assert.Equal(movedReceived, landed.Received);
+            }
+        }
+        finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
+    [Fact]
+    public void UncommittedMoveRestoresOriginalBytes()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            var before = HashAll(tmp);
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var source = Folder(session.Store, "treasurydirect");
+                var dest = Folder(session.Store, "Deleted Items");
+                var message = session.Store.GetMessages(source).First();
+                session.Store.MoveMessage(message, dest);
+                // dispose without commit:
+            }
+            Assert.Equal(before, HashAll(tmp));
+        }
+        finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
+    [Fact]
+    public void SequentialMovesAndBackRoundTripStayConsistent()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            uint first, second;
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var treasury = Folder(session.Store, "treasurydirect");
+                var trash = Folder(session.Store, "Deleted Items");
+                var msgs = session.Store.GetMessages(treasury);
+                first = msgs[0].Nid; second = msgs[1].Nid;
+                session.Store.MoveMessage(msgs[0], trash);
+                session.Store.MoveMessage(session.Store.GetMessages(treasury).First(m => m.Nid == second), trash);
+                // round trip: bring the first one back
+                var inTrash = session.Store.GetMessages(trash).First(m => m.Nid == first);
+                session.Store.MoveMessage(inTrash, treasury);
+                session.Commit();
+            }
+            using (var reopened = PstStore.Open(tmp, writable: false))
+            {
+                Assert.Empty(reopened.VerifyIntegrity());
+                var treasury = Folder(reopened, "treasurydirect");
+                var trash = Folder(reopened, "Deleted Items");
+                var t = reopened.GetMessages(treasury);
+                var d = reopened.GetMessages(trash);
+                Assert.Contains(t, m => m.Nid == first);
+                Assert.DoesNotContain(d, m => m.Nid == first);
+                Assert.Contains(d, m => m.Nid == second);
+                Assert.DoesNotContain(t, m => m.Nid == second);
+            }
+        }
+        finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
+    [Fact]
+    public void MovedMessageOpensAndKeepsBodyAfterCommit()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            uint movedNid; string bodyBefore;
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var source = Folder(session.Store, "treasurydirect");
+                var dest = Folder(session.Store, "Deleted Items");
+                var message = session.Store.GetMessages(source).First();
+                movedNid = message.Nid;
+                bodyBefore = session.Store.OpenMessage(message).BodyText;
+                session.Store.MoveMessage(message, dest);
+                session.Commit();
+            }
+            using (var reopened = PstStore.Open(tmp, writable: false))
+            {
+                var dest = Folder(reopened, "Deleted Items");
+                var landed = reopened.GetMessages(dest).First(m => m.Nid == movedNid);
+                Assert.Equal(bodyBefore, reopened.OpenMessage(landed).BodyText); // the item itself never moved
+                Assert.Empty(reopened.VerifyIntegrity());
+            }
+        }
+        finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
     private static string HashAll(string path)
     {
         using var sha = System.Security.Cryptography.SHA256.Create();

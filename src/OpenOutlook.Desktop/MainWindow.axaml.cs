@@ -200,7 +200,7 @@ public sealed partial class MainWindow : Window
 
     private async Task ExecuteMailActionAsync(string action)
     {
-        if (TryHandlePstFlagAction(action)) return;
+        if (await TryHandlePstFlagActionAsync(action)) return;
         if (await TryHandlePstDeleteAsync(action)) return;
         ConnectedAccount? account = _activeMicrosoftAccount;
         if (account is null && action == "new")

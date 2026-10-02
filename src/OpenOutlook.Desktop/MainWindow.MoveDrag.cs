@@ -53,12 +53,13 @@ public partial class MainWindow
     private async Task MoveViaDialogAsync()
     {
         InitMessageContextMenu();
-        if (_activePath is not { } path || _activeFolder is not { } folder ||
-            !_stores.TryGetValue(path, out var store) || !store.CanWrite)
+        if (_activePath is not { } path || _activeFolder is not { } folder)
         {
-            StatusText.Text = "Turn on Editing Mode to move messages between folders.";
+            StatusText.Text = "Select a message in an archive first.";
             return;
         }
+        var store = EnsureWritableStore(path);
+        if (store is null) return;
         var nids = MessageList.SelectedItems.OfType<MessageListRow>().Select(r => r.Summary.Nid).ToArray();
         if (nids.Length == 0) return;
         // Only folders the user can actually see (same filter as the folder tree) - never the MAPI
@@ -103,7 +104,7 @@ public partial class MainWindow
         _messageDragCandidate = false;
         if (!e.GetCurrentPoint(MessageList).Properties.IsLeftButtonPressed) return;
         if (MessageList.SelectedItems.OfType<MessageListRow>().Any() &&
-            _activePath is { } path && _stores.TryGetValue(path, out var store) && store.CanWrite &&
+            _activePath is { } path && _stores.ContainsKey(path) &&
             _activeFolder is { } folder)
         {
             _messageDragStart = e.GetPosition(MessageList);
@@ -178,18 +179,15 @@ public partial class MainWindow
     {
         var payload = ParseMovePayload(data);
         if (payload is not { } p) return false;
-        if (!_stores.TryGetValue(p.Path, out var store) || !store.CanWrite) return false;
+        if (!_stores.ContainsKey(p.Path)) return false;
         if (p.SourceFolderNid == target.Folder.Nid) return false; // same folder - nothing to do
         return true;
     }
 
     private async Task MoveRowsToFolderAsync(string path, uint sourceFolderNid, uint[] nids, MailFolder destFolder)
     {
-        if (!_stores.TryGetValue(path, out var store) || !store.CanWrite)
-        {
-            StatusText.Text = "Turn on Editing Mode to move messages between folders.";
-            return;
-        }
+        var store = EnsureWritableStore(path);
+        if (store is null) return;
         IReadOnlyList<MailSummary> sourceMessages;
         try
         {
@@ -214,10 +212,10 @@ public partial class MainWindow
         if (_activePath == path && _activeFolder?.Nid == sourceFolderNid)
             _ = RefreshActivePstFolderAsync(path);
         InvalidateFolderCache(path); // badges/counts refresh on next folder render
+        if (moved > 0 && !await VerifyOperationAsync(path)) return;
         StatusText.Text = moved > 0
-            ? $"Moved {moved} message{(moved == 1 ? "" : "s")} to {destFolder.Name} in {Path.GetFileName(path)} · turn off Editing Mode to verify and seal the archive" +
-              (firstError is null || moved == nids.Length ? "" : $" · {nids.Length - moved} not moved: {firstError}")
+            ? $"Moved {moved} message{(moved == 1 ? "" : "s")} to {destFolder.Name} in {Path.GetFileName(path)}" +
+              (firstError is null || moved == nids.Length ? " \u00b7 verified" : $" \u00b7 {nids.Length - moved} not moved: {firstError}")
             : $"Could not move: {firstError ?? "the dragged rows are no longer in the source folder"}";
-        await Task.CompletedTask;
     }
 }

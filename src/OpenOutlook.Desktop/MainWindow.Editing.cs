@@ -13,48 +13,24 @@ using PstCore;
 namespace OpenOutlook.Desktop;
 
 /// <summary>
-/// Editing mode for PST archives. Off (the default), archives stay exactly what they have always
-/// been: opened read-only, with local read-state kept in the sidecar overlay. Turning it on opens a
-/// PstEditSession - a byte-for-byte .bak is made first, the archive is reopened writable, and every
-/// flag edit lands in the real file (both the item property and the folder contents-table copy, plus
-/// the unread badge). Turning it off runs a full integrity verification; if anything fails the
-/// original archive is restored from the backup automatically. Window close finalizes open sessions
-/// the same way, so edits are never silently dropped or half-written.
+/// PST archives are editable at all times, like Outlook: the first write to an archive transparently
+/// starts a PstEditSession (a byte-for-byte .bak is copied side-by-side BEFORE any mutation), every
+/// operation is followed by a full integrity verification of the on-disk file, and a failed
+/// verification instantly restores the automatic backup - the user never toggles anything and can
+/// never be left with a half-edited archive. Sessions stay open for the app's lifetime; window close
+/// re-verifies and seals them (rollback on failure). Read-state for archives that cannot be opened
+/// writable (missing write permission) still falls back to the local sidecar overlay.
 /// </summary>
 public partial class MainWindow
 {
     private readonly Dictionary<string, PstEditSession> _editSessions = new(StringComparer.Ordinal);
 
-    private void ToggleArchiveEditing(string archivePath)
+    /// <summary>Returns a writable store for the archive, transparently starting an edit session
+    /// (backup first) on first use. Null means the archive cannot be edited right now; the reason is
+    /// already in the status bar.</summary>
+    private PstStore? EnsureWritableStore(string archivePath)
     {
-        if (_editSessions.TryGetValue(archivePath, out var session))
-        {
-            try
-            {
-                session.Commit();
-                StatusText.Text = $"Editing finished · {Path.GetFileName(archivePath)} verified against every block CRC · backup kept at {Path.GetFileName(session.BackupPath)}";
-            }
-            catch (Exception ex) when (ex is PstException or IOException or UnauthorizedAccessException)
-            {
-                session.Rollback();
-                AppLog.Error("pst-edit", ex, "commit failed; archive restored from backup");
-                StatusText.Text = "Archive failed verification after editing - the original was restored from backup.";
-            }
-            finally
-            {
-                _editSessions.Remove(archivePath);
-                session.Dispose(); // idempotent after Commit/Rollback
-                ReplaceWithReadOnlyStore(archivePath);
-            }
-            _ = RefreshActivePstFolderAsync(archivePath);
-            return;
-        }
-
-        if (!_stores.TryGetValue(archivePath, out var current))
-        {
-            StatusText.Text = "That archive is not open.";
-            return;
-        }
+        if (_editSessions.TryGetValue(archivePath, out var open)) return open.Store;
         try
         {
             var begun = PstEditSession.Begin(archivePath);
@@ -63,14 +39,37 @@ public partial class MainWindow
             // closes it at shutdown) and hand the writable one to everything that looks it up anew.
             _stores[archivePath] = begun.Store;
             InvalidateFolderCache(archivePath);
-            StatusText.Text = $"EDITING {Path.GetFileName(archivePath)} · flag changes write to the archive immediately · backup: {Path.GetFileName(begun.BackupPath)}";
+            return begun.Store;
         }
         catch (Exception ex) when (ex is PstException or IOException or UnauthorizedAccessException)
         {
-            AppLog.Error("pst-edit", ex, "could not begin editing session");
-            StatusText.Text = $"Could not start editing: {ex.Message}";
+            AppLog.Error("pst-edit", ex, "could not begin automatic edit session");
+            StatusText.Text = $"Could not open {Path.GetFileName(archivePath)} for editing: {ex.Message}";
+            return null;
         }
+    }
+
+    /// <summary>Full block-CRC verification after every operation. Success is silent (true); failure
+    /// restores the automatic backup, reopens the archive read-only and explains itself (false).</summary>
+    private async Task<bool> VerifyOperationAsync(string archivePath)
+    {
+        if (!_editSessions.TryGetValue(archivePath, out var session)) return false;
+        IReadOnlyList<string> problems;
+        try { problems = await Task.Run(session.Store.VerifyIntegrity); }
+        catch (Exception ex) when (ex is PstException or IOException or ObjectDisposedException)
+        { problems = new[] { ex.Message ?? "verification error" }; }
+        if (problems.Count == 0) return true;
+        AppLog.Error("pst-edit", new PstException(problems.FirstOrDefault() ?? "verification failed"),
+            "post-operation verification failed; archive restored from automatic backup");
+        try { session.Rollback(); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        { AppLog.Error("pst-edit", ex, "rollback after failed verification also failed"); }
+        _editSessions.Remove(archivePath);
+        try { session.Dispose(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+        ReplaceWithReadOnlyStore(archivePath);
         _ = RefreshActivePstFolderAsync(archivePath);
+        StatusText.Text = $"{Path.GetFileName(archivePath)} failed verification after the edit - the automatic backup restored it ({problems.FirstOrDefault()}).";
+        return false;
     }
 
     private void ReplaceWithReadOnlyStore(string archivePath)
@@ -132,24 +131,26 @@ public partial class MainWindow
     /// caller continues unchanged. Writable archives (editing mode) write into the file and drop the
     /// sidecar override; read-only archives keep using the overlay exactly as before.
     /// </summary>
-    private bool TryHandlePstFlagAction(string action)
+    private async Task<bool> TryHandlePstFlagActionAsync(string action)
     {
         if (action is not ("read" or "unread" or "flag" or "unflag")) return false;
         if (MessageList.SelectedItem is not MessageListRow row) return false;
-        if (_activePath is not { } path || !_stores.TryGetValue(path, out var store)) return false;
+        if (_activePath is not { } path) return false;
 
         bool read = action is "read" or "unread";
         bool on = action is "read" or "flag";
+        var store = EnsureWritableStore(path);
+        if (store is null) return true;
         try
         {
             if (read)
             {
-                if (store.CanWrite && row.Summary.IsRead != on) store.SetReadState(row.Summary, on);
+                if (row.Summary.IsRead != on) store.SetReadState(row.Summary, on);
                 row.SetRead(on);
             }
             else
             {
-                store.SetFlagged(row.Summary, on); // throws when the item carries no flag property (read-only or otherwise)
+                store.SetFlagged(row.Summary, on); // throws when the item carries no flag property
                 row.Summary.Flagged = on;
             }
         }
@@ -164,18 +165,16 @@ public partial class MainWindow
         var key = PstMessageKey(path, row.Summary.Nid);
         if (read)
         {
-            if (store.CanWrite) _readOverrides.Remove(key); // native flag now authoritative
-            else _readOverrides[key] = on;
+            _readOverrides.Remove(key); // native flag is authoritative now
             PersistReadState();
         }
+        if (!await VerifyOperationAsync(path)) return true; // rollback already explained itself
         var what = read ? "Read state" : "Flag";
-        StatusText.Text = store.CanWrite
-            ? $"{what} written to {Path.GetFileName(path)} · turn off Editing Mode to verify and seal the archive"
-            : $"{what} saved locally (archive is opened read-only)";
+        StatusText.Text = $"{what} saved to {Path.GetFileName(path)} \u00b7 verified, backup in {Path.GetFileName(path)}.bak";
         return true;
     }
 
-    /// <summary>Handles Delete for PST rows before the Microsoft-account logic. Read-only archives get
+    /// <summary>Handles Delete for PST rows    /// <summary>Handles Delete for PST rows before the Microsoft-account logic. Read-only archives get
     /// a pointer to Editing Mode instead of the mailbox popup; writable archives confirm and then
     /// unlink the rows for real (Phase B delete). The list is reloaded from the file afterwards so
     /// what the user sees is exactly what the archive now contains.</summary>
@@ -186,16 +185,13 @@ public partial class MainWindow
             .Concat(MessageList.SelectedItem is MessageListRow single ? [single] : Array.Empty<MessageListRow>())
             .Distinct().ToList();
         if (rows.Count == 0) return false;
-        if (_activePath is not { } path || !_stores.TryGetValue(path, out var store))
+        if (_activePath is not { } path)
         {
             StatusText.Text = "The archive for this selection is no longer open.";
             return true;
         }
-        if (!store.CanWrite)
-        {
-            StatusText.Text = "This archive is opened read-only - right-click the archive in the folder pane and turn on Editing Mode to delete messages.";
-            return true;
-        }
+        var store = EnsureWritableStore(path);
+        if (store is null) return true;
         // Classic Outlook semantics: Delete moves to Deleted Items; Shift+Delete (or deleting from
         // inside Deleted Items) removes for real. Both paths confirm first.
         var inDeletedItems = _activeFolder is not null &&
@@ -217,9 +213,10 @@ public partial class MainWindow
                 catch (Exception ex) when (ex is PstException or IOException) { moveError ??= ex.Message; }
             }
             _ = RefreshActivePstFolderAsync(path);
+            if (moved > 0 && !await VerifyOperationAsync(path)) return true;
             StatusText.Text = moved > 0
-                ? $"Moved {moved} message{(moved == 1 ? "" : "s")} to Deleted Items in {Path.GetFileName(path)} · turn off Editing Mode to verify and seal the archive" +
-                  (moveError is null || moved == rows.Count ? "" : $" · {rows.Count - moved} not moved: {moveError}")
+                ? $"Moved {moved} message{(moved == 1 ? "" : "s")} to Deleted Items in {Path.GetFileName(path)}" +
+                  (moveError is null || moved == rows.Count ? " \u00b7 verified" : $" \u00b7 {rows.Count - moved} not moved: {moveError}")
                 : $"Could not move to Deleted Items: {moveError ?? "unknown reason"}";
             return true;
         }
@@ -232,9 +229,10 @@ public partial class MainWindow
             catch (Exception ex) when (ex is PstException or IOException) { firstError ??= ex.Message; }
         }
         _ = RefreshActivePstFolderAsync(path);
+        if (done > 0 && !await VerifyOperationAsync(path)) return true;
         StatusText.Text = done > 0
-            ? $"Deleted {done} message{(done == 1 ? "" : "s")} from {Path.GetFileName(path)} · turn off Editing Mode to verify and seal the archive" +
-              (firstError is null || done == rows.Count ? "" : $" · {rows.Count - done} not deleted: {firstError}")
+            ? $"Deleted {done} message{(done == 1 ? "" : "s")} from {Path.GetFileName(path)}" +
+              (firstError is null || done == rows.Count ? " \u00b7 verified" : $" \u00b7 {rows.Count - done} not deleted: {firstError}")
             : $"Could not delete: {firstError ?? "unknown reason"}";
         return true;
     }
@@ -256,7 +254,7 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
-                    Text = $"Remove {(count == 1 ? "this message" : $"{count} messages")} from {archiveName}? The archive's backup copy keeps everything as it was when Editing Mode began.",
+                    Text = $"Remove {(count == 1 ? "this message" : $"{count} messages")} from {archiveName}? An automatic backup keeps the archive exactly as it was before editing began.",
                     TextWrapping = TextWrapping.Wrap
                 },
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { delete, cancel } }
@@ -270,11 +268,8 @@ public partial class MainWindow
     /// the folder half-emptied, and only after an explicit confirmation.</summary>
     private async Task EmptyDeletedItemsAsync(FolderSelection sel)
     {
-        if (!_stores.TryGetValue(sel.Path, out var store) || !store.CanWrite)
-        {
-            StatusText.Text = "This archive is opened read-only - turn on Editing Mode to empty Deleted Items.";
-            return;
-        }
+        var store = EnsureWritableStore(sel.Path);
+        if (store is null) return;
         int done = 0;
         string? firstError = null;
         try
@@ -304,9 +299,10 @@ public partial class MainWindow
         }
         if (_activePath == sel.Path && _activeFolder?.Nid == sel.Folder.Nid)
             _ = RefreshActivePstFolderAsync(sel.Path);
+        if (done > 0 && !await VerifyOperationAsync(sel.Path)) return;
         StatusText.Text = done > 0
-            ? $"Emptied {done} message{(done == 1 ? "" : "s")} from Deleted Items in {Path.GetFileName(sel.Path)} · turn off Editing Mode to verify and seal the archive" +
-              (firstError is null ? "" : $" · some could not be removed: {firstError}")
+            ? $"Emptied {done} message{(done == 1 ? "" : "s")} from Deleted Items in {Path.GetFileName(sel.Path)}" +
+              (firstError is null ? " \u00b7 verified" : $" \u00b7 some could not be removed: {firstError}")
             : $"Could not empty Deleted Items: {firstError ?? "unknown reason"}";
     }
 

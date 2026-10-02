@@ -127,7 +127,6 @@ public partial class MainWindow
 
     /// <summary>Right-click menu for one tree row. Enabled state is recomputed every time the menu opens,
     /// because siblings come and go while the window lives.</summary>
-    private bool IsEditingArchive(string archivePath) => _editSessions.ContainsKey(archivePath);
 
     private void EnableFolderReordering(TreeViewItem item)
     {
@@ -139,22 +138,11 @@ public partial class MainWindow
         down.Click += (_, _) => MoveFolderNodeBy(item, +1);
         top.Click += (_, _) => MoveFolderNode(item, 0);
         var items = new List<object> { up, down, top };
-        if (item.Tag is string archivePath)
-        {
-            var edit = new MenuItem();
-            edit.Click += (_, _) => ToggleArchiveEditing(archivePath);
-            menuOpeningExtras.Add(() => edit.Header = IsEditingArchive(archivePath)
-                ? "Finish Editing Mode (verify + save)" : "Turn On Editing Mode…");
-            items.Add(new Separator());
-            items.Add(edit);
-        }
         if (item.Tag is FolderSelection sel &&
             string.Equals(sel.Folder.Name, "Deleted Items", StringComparison.OrdinalIgnoreCase))
         {
             var purge = new MenuItem { Header = "Empty Deleted Items" };
             purge.Click += (_, _) => _ = EmptyDeletedItemsAsync(sel);
-            menuOpeningExtras.Add(() => purge.IsEnabled =
-                _stores.TryGetValue(sel.Path, out var s) && s.CanWrite);
             items.Add(new Separator());
             items.Add(purge);
         }

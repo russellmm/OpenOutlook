@@ -8,7 +8,7 @@ Status: **Approved design baseline**, amended with owner-confirmed deletion, Hot
 - **Provider access:** Microsoft Graph delegated mail API for personal accounts; Gmail REST API for consumer accounts. Use browser-based authorization-code/PKCE and native loopback callbacks. If an API integration demonstrably fails for the owner's accounts, investigate provider-supported OAuth (XOAUTH2) over IMAP for receiving and SMTP for sending, without password/basic-auth bypass. The fallback must satisfy all Must features, including offline sync and organization, before adoption; IMAP/SMTP is not a substitute for OAuth authorization. No backend server. Retry/throttle using provider guidance, with cancellation and bounded concurrency.
 - **Local data:** SQLite under XDG data directory (`~/.local/share/OpenOutlook/`) for accounts, normalized message metadata, bodies, drafts, operation queue, sync cursors and full-text search (FTS5); attachment blobs stored by opaque IDs in controlled files under XDG cache/data as appropriate. App preferences under XDG config directory. Only provider OAuth tokens in desktop Secret Service/keyring, referenced by opaque account ID. Account data is not separately encrypted. Schema migrations, database backup and recovery must be designed before persistent data release.
 - **Junk Cleaner:** reuse or adapt the existing cross-platform `OutlookJunkCleaner.Core` keyword/matching rules after reviewing test coverage; do not copy WPF, tray, Outlook COM or Windows-specific config paths. Run scans through OpenOutlook's Microsoft mailbox provider, tied to a real account ID and well-known Junk folder ID.
-- **PST:** an adapter around the existing cross-platform `PstCore` (`net8.0`) for reading, with attach/detach archive lifecycle operations (detach closes the handle and leaves its file untouched). The owner built `PstCore` from scratch and permits incorporation and distribution; prefer a tracked source copy within the OpenOutlook repository (or equivalent reproducible source dependency) so a public checkout builds independently of the owner's filesystem. Avoid copying private PST fixtures or the WPF app unintentionally. The WPF app is *not* reused. PST writing is a dedicated engineering track; existing in-place flag/move/delete functions are not production-ready proof of correctness, and there is no demonstrated folder-creation or MIME-insertion API.
+- **PST:** an adapter around the existing cross-platform `PstCore` (`net8.0`) for reading, with attach/detach archive lifecycle operations (detach closes the handle and leaves its file untouched). The owner built `PstCore` from scratch and permits incorporation and distribution; prefer a tracked source copy within the OpenOutlook repository (or equivalent reproducible source dependency) so a public checkout builds independently of the owner's filesystem. Avoid copying private PST fixtures or the WPF app unintentionally. The WPF app is *not* reused. PST writing became an implemented track (2026-10-02): flag/read edits, delete-to-Deleted-Items, confirmed permanent delete, purge and between-folder moves ship behind backup-first Editing Mode with full-CRC sealing (see section 5 and docs/pst-editing-design.md); the earlier fake move primitive is removed. Folder creation/rename/delete and MIME insertion remain unimplemented.
 
 ## 2. Project structure
 
@@ -40,7 +40,7 @@ Use OpenOutlook-owned desktop OAuth clients, loopback redirect, PKCE/state and o
 
 ### Deletion policy
 
-Use distinct commands `MoveToTrash` and `PermanentDelete`, never a context-ambiguous generic delete in the durable queue. On Delete, inspect the selected message's current canonical location: if outside Trash, move to Trash; if in Trash, confirm permanent purge. Shift+Delete always requests confirmed permanent purge. At execution time, recheck server/PST location and revision; if an offline item changed locations, pause for review instead of escalating a queued soft delete into permanent deletion. Confirm before purging; update cache/FTS only after acknowledged outcome. Gmail multi-label Trash transitions, Microsoft Deleted Items and PST Deleted Items require separate adapters; absent PST Deleted Items must be handled safely rather than inventing an unvalidated folder.
+Use distinct commands `MoveToTrash` and `PermanentDelete`, never a context-ambiguous generic delete in the durable queue. On Delete, inspect the selected message's current canonical location: if outside Trash, move to Trash; if in Trash, confirm permanent purge. Shift+Delete always requests confirmed permanent purge. At execution time, recheck server/PST location and revision; if an offline item changed locations, pause for review instead of escalating a queued soft delete into permanent deletion. Confirm before purging; update cache/FTS only after acknowledged outcome. Gmail multi-label Trash transitions, Microsoft Deleted Items and PST Deleted Items require separate adapters; absent PST Deleted Items must be handled safely rather than inventing an unvalidated folder. This policy is now implemented for editable PSTs exactly as written: Delete relinks into the archive's own Deleted Items (if the archive has none, the move refuses and suggests Shift+Delete rather than inventing a folder), in-trash deletes and Shift+Delete require confirmed permanent purge, and every edit runs inside a backup-first session.
 
 ### Hotmail Junk Cleaner
 
@@ -54,7 +54,27 @@ Store per-account enable flag, keywords, options and 1–60 minute interval. Pro
 
 Open read-only by default; sniff header/encoding/version via `PstStore.Inspect`, reject WIP and unsupported encryption, and enumerate folders/messages through `PstStore`. Index in small batches; do not load a multi-GB archive wholly into RAM. Export uses the reader, but validate EML/MIME fidelity (attachments, inline CID, header folding, unicode, embedded messages) before using it as the canonical transfer representation.
 
-### Writer feasibility gate
+### Writer feasibility gate - OUTCOME (2026-10-02)
+
+The gate below was answered affirmatively for Unicode PSTs and shipped. What the implementation
+does about each concern raised: contents tables are rebuilt in step with every edit (flags write
+both the property heap and the Contents-Table row; moves re-link rows per MS-PST 2.6.3.2.8);
+unread/content counts update best-effort and Outlook recomputes them anyway; allocation uses only
+existing free slots from a BBT-authoritative occupancy map with hard no-split refusal when full -
+the file never grows or shrinks in v1; every write recomputes affected block/page CRCs, and the
+session seal re-verifies every BT page CRC and every block trailer (signature, payload CRC, bid
+echo) before closing, auto-restoring the .bak backup on any failure; independent reopen is proven
+by tests that close, reopen and re-verify after each committed edit. The three owner archives are
+mandatory test cases: rmarrash_2.pst drives the fixture suite (399/399), and all three carry
+captured read-only integrity baselines with md5 checks proving non-target files are untouched by
+every run. Deviation from the proposed strategy: instead of a temporary writable working archive,
+editing happens in place behind an upfront full-file .bak plus verify-or-restore sealing - chosen
+because atomic replacement of multi-GB archives across filesystems is exactly what the gate warns
+against, while backup-first + seal-or-roll-back gives equivalent recoverability without doubling
+disk churn mid-edit. Password/WIP PSTs remain out of scope; ANSI (97-2002) stays read-only.
+Remaining for full gate closure: an independent third-party reader pass (libpff/java-libpst) over
+edited archives, and the real Windows Outlook open test - both listed as outstanding follow-ups in
+docs/pst-editing-design.md. Original gate text retained below as written at review time.
 
 Before committing to a writer strategy, inventory actual MS-PST structure updates for each action: node/subnode trees, property contexts, folder hierarchy, contents/associated tables, unread counts, allocation maps, checksums, and recovery. Compare behavior with the current reader and independently reopen using classic Outlook. `PstCore` currently writes some flags and parent relationships without rebuilding contents tables; that is **not** sufficient to assume Outlook will display correct folders or counts. Folder creation, rename, deletion (including nonempty-folder confirmation and safe handling of descendants), reparenting and message ingestion require new capabilities, not just UI calls. All three owner-supplied PSTs must pass the read/write and Windows Outlook gate, not just a subset.
 
@@ -62,7 +82,7 @@ Proposed safety strategy (subject to feasibility): exclusive access; snapshot or
 
 ### Copy/move between stores
 
-A durable transfer manifest records source and destination IDs, stable message fingerprint, target folder/label, stage, results and errors. Convert source message to RFC 5322/MIME with correctly reconstructed attachments/inline resources; provider imports use supported Graph/Gmail mechanisms (confirm fidelity, sent dates and server IDs experimentally); PST imports require validated writer API. **Copy:** upload/write destination, read back key properties and attachments, then mark successful. **Move:** perform verified copy and only then delete/trash source after explicit confirmation; on error leave source intact and provide retry/undo where feasible. Define duplicate policy as skip/keep both/ask with conservative default; no silent loss and no cross-provider atomicity claim. Archive-to-account and account-to-archive use identical safety state machine but provider-specific adapters.
+A durable transfer manifest records source and destination IDs, stable message fingerprint, target folder/label, stage, results and errors. Convert source message to RFC 5322/MIME with correctly reconstructed attachments/inline resources; provider imports use supported Graph/Gmail mechanisms (confirm fidelity, sent dates and server IDs experimentally); PST imports require validated writer API (intra-PST moves are implemented as spec re-link with verified sealing; cross-store transfer via MIME import remains unimplemented). **Copy:** upload/write destination, read back key properties and attachments, then mark successful. **Move:** perform verified copy and only then delete/trash source after explicit confirmation; on error leave source intact and provide retry/undo where feasible. Define duplicate policy as skip/keep both/ask with conservative default; no silent loss and no cross-provider atomicity claim. Archive-to-account and account-to-archive use identical safety state machine but provider-specific adapters.
 
 ## 6. Interface specification
 

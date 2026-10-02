@@ -48,8 +48,12 @@ public partial class MainWindow
         if (store is null) return;
         var name = await PromptForFolderNameAsync(store.DisplayName);
         if (string.IsNullOrWhiteSpace(name)) return;
+        // Real archives keep user folders inside the "Top of Outlook data file" wrapper; creating
+        // beside it would hide them from wrapper-scoped views. Prefer the wrapper as the parent.
+        var parentFolder = store.Root.Children.FirstOrDefault(c =>
+            c.Name.Equals("Top of Outlook data file", StringComparison.OrdinalIgnoreCase)) ?? store.Root;
         MailFolder created;
-        try { created = await Task.Run(() => store.CreateFolder(store.Root.Nid, name)); }
+        try { created = await Task.Run(() => store.CreateFolder(parentFolder.Nid, name)); }
         catch (Exception ex) when (ex is PstException or IOException)
         {
             StatusText.Text = $"Could not create folder: {ex.Message}";

@@ -24,6 +24,7 @@ public partial class MainWindow
     private bool _moveDragWired;
     private Point _messageDragStart;
     private bool _messageDragCandidate;
+    private bool _messageDragRightButton;
 
     /// <summary>Attaches the message-list drag source once (called from the folder-load path where
     /// MessageList is guaranteed live).</summary>
@@ -105,7 +106,11 @@ public partial class MainWindow
     private void MessageListDragPressed(object? sender, PointerPressedEventArgs e)
     {
         _messageDragCandidate = false;
-        if (!e.GetCurrentPoint(MessageList).Properties.IsLeftButtonPressed) return;
+        var pressed = e.GetCurrentPoint(MessageList).Properties;
+        // Left drag = move on drop (Outlook default); right drag = Move/Copy menu on drop.
+        if (pressed.IsLeftButtonPressed) _messageDragRightButton = false;
+        else if (pressed.IsRightButtonPressed) _messageDragRightButton = true;
+        else return;
         if (MessageList.SelectedItems.OfType<MessageListRow>().Any() &&
             _activePath is { } path && _stores.ContainsKey(path) &&
             _activeFolder is { } folder)
@@ -118,7 +123,9 @@ public partial class MainWindow
     private async void MessageListDragMoved(object? sender, PointerEventArgs e)
     {
         if (!_messageDragCandidate) return;
-        if (!e.GetCurrentPoint(MessageList).Properties.IsLeftButtonPressed) { _messageDragCandidate = false; return; }
+        var pt = e.GetCurrentPoint(MessageList).Properties;
+        var stillHeld = _messageDragRightButton ? pt.IsRightButtonPressed : pt.IsLeftButtonPressed;
+        if (!stillHeld) { _messageDragCandidate = false; return; }
         var dx = e.GetPosition(MessageList).X - _messageDragStart.X;
         var dy = e.GetPosition(MessageList).Y - _messageDragStart.Y;
         if (dx * dx + dy * dy < 400) return;
@@ -157,7 +164,21 @@ public partial class MainWindow
             if (payload is null || !CanAcceptMovePayload(e.Data, sel)) { e.DragEffects = DragDropEffects.None; return; }
             e.DragEffects = DragDropEffects.Move;
             e.Handled = true;
-            await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder);
+            if (_messageDragRightButton)
+            {
+                // Right-button drop: Outlook's classic "Move Here / Copy Here / Cancel" popup.
+                _messageDragRightButton = false;
+                var menu = new MenuFlyout();
+                var moveHere = new MenuItem { Header = "Move Here" };
+                var copyHere = new MenuItem { Header = "Copy Here" };
+                moveHere.Click += async (_, _) => await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder, copy: false);
+                copyHere.Click += async (_, _) => await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder, copy: true);
+                menu.Items.Add(moveHere);
+                menu.Items.Add(copyHere);
+                menu.ShowAt(item); // anchored to the folder that received the drop
+            }
+            else
+                await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder);
         });
     }
 

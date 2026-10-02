@@ -204,14 +204,39 @@ internal sealed class HeapOnNode
         }
     }
 
-    public bool TryPatchHidBytes(Hid hid, int offsetInItem, ReadOnlySpan<byte> bytes)
+    public bool TryPatchHidBytes(Hid hid, int offsetInItem, ReadOnlySpan<byte> bytes, bool dryRun = false)
     {
         var (block, start, length) = LocateHid(hid);
         if (!block.CanRewrite) return false;
         if (offsetInItem < 0 || offsetInItem + bytes.Length > length) return false;
+        if (dryRun) return true;
         bytes.CopyTo(block.Data.AsSpan(start + offsetInItem));
         _ndb.RewriteExternalBlock(block.Bid, block.Data);
         return true;
+    }
+
+    /// <summary>Patch bytes inside a heap sub-node's data tree at an item-relative offset (used for
+    /// table row matrices). Resolves which leaf block holds the range; the write keeps every block
+    /// size identical so parent indirection stays valid. dryRun only checks that the target resolves.</summary>
+    public bool TryPatchSubNodeBytes(uint hnid, long offsetInItem, ReadOnlySpan<byte> bytes, bool dryRun = false)
+    {
+        if (hnid == 0 || bytes.Length == 0) return false;
+        if (!_subNodes.TryGetValue(hnid, out var sub) && !_subNodes.TryGetValue(hnid & 0xFFFFFFE0, out sub))
+            return false;
+        long consumed = 0;
+        foreach (var (bid, data) in _ndb.ReadDataTreeBlocks(sub.Data))
+        {
+            if (offsetInItem >= consumed && offsetInItem + bytes.Length <= consumed + data.Length)
+            {
+                if (dryRun) return true;
+                var patched = data.ToArray();
+                bytes.CopyTo(patched.AsSpan((int)(offsetInItem - consumed)));
+                _ndb.RewriteExternalBlock(bid, patched);
+                return true;
+            }
+            consumed += data.Length;
+        }
+        return false;
     }
 
     public static bool IsHid(uint hnid) => (hnid & 0x1F) == 0;
@@ -358,7 +383,7 @@ internal static class PropertyContext
         return bag;
     }
 
-    public static bool TryPatchFixedUInt32(HeapOnNode heap, ushort propId, uint value)
+    public static bool TryPatchFixedUInt32(HeapOnNode heap, ushort propId, uint value, bool dryRun = false)
     {
         foreach (var (key, rec, leafHid, recOff) in heap.WalkBth(heap.UserRoot))
         {
@@ -366,7 +391,7 @@ internal static class PropertyContext
             var type = BinaryUtil.ReadU16(rec, 2);
             if (PropType.IsVariable(type) || PropType.FixedSize(type) > 4) return false;
             var bytes = BitConverter.GetBytes(value);
-            return heap.TryPatchHidBytes(leafHid, recOff + 4, bytes);
+            return heap.TryPatchHidBytes(leafHid, recOff + 4, bytes, dryRun);
         }
         return false;
     }

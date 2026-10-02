@@ -219,6 +219,90 @@ internal sealed class Ndb : IDisposable
         WriteBlockBytes(entry, encoded, crc);
     }
 
+    /// <summary>Full-file integrity pass: verifies every B-tree page CRC and every block trailer
+    /// (size signature + payload CRC + bid echo) against what is stored on disk. Used after editing
+    /// to prove a write session left the archive consistent; an empty result means every byte that
+    /// any reader depends on checks out.</summary>
+    public IReadOnlyList<string> VerifyIntegrity(int maxProblems = 50)
+    {
+        var problems = new List<string>();
+        VerifyBtPages(Header.NbtRootIb, isNbt: true, problems);
+        VerifyBtPages(Header.BbtRootIb, isNbt: false, problems);
+        var trailerSize = Unicode ? 16 : 12;
+        foreach (var entry in _bbt.Values)
+        {
+            if (problems.Count >= maxProblems) break;
+            var total = ((entry.Size + trailerSize + 63) / 64) * 64;
+            var trailerOff = (int)(total - trailerSize);
+            var raw = new byte[entry.Size];
+            var trailer = new byte[trailerSize];
+            lock (_io)
+            {
+                _stream.Seek((long)entry.Offset, SeekOrigin.Begin);
+                if (_stream.Read(raw, 0, raw.Length) != raw.Length)
+                {
+                    problems.Add($"Block 0x{entry.Bid.Value:X}: short read at offset {entry.Offset}.");
+                    continue;
+                }
+                _stream.Seek((long)entry.Offset + trailerOff, SeekOrigin.Begin);
+                if (_stream.Read(trailer, 0, trailer.Length) != trailer.Length)
+                {
+                    problems.Add($"Block 0x{entry.Bid.Value:X}: trailer unreadable.");
+                    continue;
+                }
+            }
+            var storedSig = BinaryUtil.ReadU16(trailer, 2);
+            var expectSig = PstCrypto.ComputeSig(entry.Offset, entry.Bid.Value);
+            if (storedSig != expectSig)
+            {
+                problems.Add($"Block 0x{entry.Bid.Value:X}: trailer signature 0x{storedSig:X4} does not match offset/bid (expected 0x{expectSig:X4}).");
+                continue;
+            }
+            var storedCrc = Unicode ? BinaryUtil.ReadU32(trailer, 4) : BinaryUtil.ReadU32(trailer, 8);
+            var actualCrc = PstCrypto.ComputeCrc(raw);
+            if (storedCrc != actualCrc)
+                problems.Add($"Block 0x{entry.Bid.Value:X}: payload CRC 0x{actualCrc:X8} does not match stored 0x{storedCrc:X8}.");
+            if (Unicode)
+            {
+                var storedBid = BitConverter.ToUInt64(trailer, 8);
+                if (storedBid != entry.Bid.Value)
+                    problems.Add($"Block 0x{entry.Bid.Value:X}: trailer echoes bid 0x{storedBid:X}.");
+            }
+        }
+        return problems;
+    }
+
+    private void VerifyBtPages(ulong ib, bool isNbt, List<string> problems)
+    {
+        if (problems.Count >= 50) return;
+        var page = ReadPage(ib);
+        var unicode = Unicode;
+        var cEntOff = unicode ? 488 : 496;
+        var cEnt = page[cEntOff];
+        var cbEnt = page[cEntOff + 2];
+        var cLevel = page[cEntOff + 3];
+        var trailerOff = unicode ? 496 : 500;
+        var ptype = page[trailerOff];
+        var expectedType = isNbt ? (byte)0x81 : (byte)0x80;
+        if (ptype != expectedType)
+        {
+            problems.Add($"B-tree page at {ib}: type 0x{ptype:X2}, expected 0x{expectedType:X2}.");
+            return;
+        }
+        var storedCrc = BinaryUtil.ReadU32(page, unicode ? trailerOff + 4 : trailerOff + 8);
+        var actualCrc = PstCrypto.ComputeCrc(page.AsSpan(0, trailerOff));
+        if (storedCrc != actualCrc)
+            problems.Add($"B-tree page at {ib}: CRC 0x{actualCrc:X8} does not match stored 0x{storedCrc:X8}.");
+        if (cLevel > 0)
+        {
+            for (var i = 0; i < cEnt; i++)
+            {
+                var e = page.AsSpan(i * cbEnt, cbEnt);
+                VerifyBtPages(unicode ? BinaryUtil.ReadU64(e, 16) : BinaryUtil.ReadU32(e, 8), isNbt, problems);
+            }
+        }
+    }
+
     public void Dispose() => _stream.Dispose();
 
     private static PstHeader ReadHeader(FileStream stream, string path)

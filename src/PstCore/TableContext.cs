@@ -23,10 +23,22 @@ internal sealed class TableContext
     public IReadOnlyList<TableColumn> Columns { get; }
     public IReadOnlyList<TableRow> Rows { get; }
 
-    private TableContext(IReadOnlyList<TableColumn> columns, IReadOnlyList<TableRow> rows)
+    private readonly HeapOnNode _heap;
+    private readonly uint _hnidRows;
+    private readonly int _rowSize;
+    private readonly int _tci1;
+    private readonly Dictionary<uint, uint> _rowIdToIndex;
+
+    private TableContext(IReadOnlyList<TableColumn> columns, IReadOnlyList<TableRow> rows,
+        HeapOnNode heap, uint hnidRows, int rowSize, int tci1, Dictionary<uint, uint> rowIdToIndex)
     {
         Columns = columns;
         Rows = rows;
+        _heap = heap;
+        _hnidRows = hnidRows;
+        _rowSize = rowSize;
+        _tci1 = tci1;
+        _rowIdToIndex = rowIdToIndex;
     }
 
     public static TableContext? TryLoad(Ndb ndb, uint nid)
@@ -83,11 +95,11 @@ internal sealed class TableContext
 
         var rows = new List<TableRow>();
         if (hnidRows == 0 || tciBm == 0)
-            return new TableContext(columns, rows);
+            return new TableContext(columns, rows, heap, hnidRows, tciBm, tci1, rowIdToIndex);
 
         var matrix = heap.GetItem(hnidRows);
         var rowSize = tciBm;
-        if (rowSize <= 0) return new TableContext(columns, rows);
+        if (rowSize <= 0) return new TableContext(columns, rows, heap, hnidRows, tciBm, tci1, rowIdToIndex);
 
         var trailer = heap.Ndb.Unicode ? 16 : 12;
         var blockData = 8192 - trailer;
@@ -125,7 +137,39 @@ internal sealed class TableContext
             rows.Add(new TableRow { RowId = rowId, Cells = cells });
         }
 
-        return new TableContext(columns, rows);
+        return new TableContext(columns, rows, heap, hnidRows, tciBm, tci1, rowIdToIndex);
+    }
+
+    /// <summary>Overwrite a fixed-size cell in one row of the matrix, in place on disk (or validate
+    /// only, when dryRun). Mirrors Load's offset arithmetic exactly; refuses variable cells and rows
+    /// without the existence bit, so a false return means nothing was written.</summary>
+    public bool TryPatchCell(uint rowId, ushort columnId, ReadOnlySpan<byte> value, bool dryRun = false)
+    {
+        if (_hnidRows == 0 || _rowSize <= 0) return false;
+        if (!_rowIdToIndex.TryGetValue(rowId, out var rowIndex)) return false;
+        TableColumn? col = null;
+        foreach (var c in Columns)
+            if (c.Id == columnId) { col = c; break; }
+        if (col is null || PropType.IsVariable(col.Type) || col.CbData != value.Length) return false;
+
+        var matrix = _heap.GetItem(_hnidRows);
+        int offset;
+        if (matrix.Length >= (rowIndex + 1) * (long)_rowSize && matrix.Length % _rowSize == 0)
+            offset = (int)(rowIndex * (long)_rowSize);
+        else
+        {
+            var trailer = _heap.Ndb.Unicode ? 16 : 12;
+            var blockData = 8192 - trailer;
+            var rowsPerBlock = Math.Max(1, blockData / _rowSize);
+            offset = (int)(rowIndex / rowsPerBlock) * blockData + (int)(rowIndex % rowsPerBlock) * _rowSize;
+        }
+        if (offset < 0 || offset + col.IbData + value.Length > matrix.Length) return false;
+
+        var existByte = _tci1 + (col.IBit >> 3);
+        if (existByte >= _rowSize) return false;
+        if ((matrix[offset + existByte] & (1 << (col.IBit & 7))) == 0) return false;
+
+        return _heap.TryPatchSubNodeBytes(_hnidRows, offset + col.IbData, value, dryRun);
     }
 
     private static byte[]? ReadCell(HeapOnNode heap, TableColumn col, ReadOnlySpan<byte> row)

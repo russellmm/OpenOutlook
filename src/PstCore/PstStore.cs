@@ -361,22 +361,62 @@ public sealed class PstStore : IDisposable
         var heap = HeapOnNode.Load(_ndb, node);
         var bag = PropertyContext.Read(heap);
         var flags = bag.GetInt(Pid.MessageFlags);
+        var wasRead = (flags & MailFlags.Read) != 0;
         flags = read ? flags | MailFlags.Read : flags & ~MailFlags.Read;
-        if (!PropertyContext.TryPatchFixedUInt32(heap, Pid.MessageFlags, (uint)flags))
-            throw new PstException("Could not update the message flags in this PST (the property is not a 4-byte in-heap value).");
+
+        // PR_MESSAGE_FLAGS lives twice: in the item's own property heap and in the folder Contents
+        // Table row that drives the message list. Both copies are validated before either is written,
+        // so a failure leaves the archive untouched instead of desynchronising the two views.
+        var table = TableContext.TryLoad(_ndb, message.FolderNid | (uint)NidType.ContentsTable);
+        var cellBytes = BitConverter.GetBytes((uint)flags);
+        if (!(table?.TryPatchCell(message.Nid, Pid.MessageFlags, cellBytes, dryRun: true) ?? false))
+            throw new PstException("Could not locate this message's row in the folder contents table; nothing was changed.");
+        if (!PropertyContext.TryPatchFixedUInt32(heap, Pid.MessageFlags, (uint)flags, dryRun: true))
+            throw new PstException("Could not update the message flags in this PST (the property is not a 4-byte in-heap value); nothing was changed.");
+
+        table!.TryPatchCell(message.Nid, Pid.MessageFlags, cellBytes);
+        PropertyContext.TryPatchFixedUInt32(heap, Pid.MessageFlags, (uint)flags);
         message.IsRead = read;
+        if (wasRead != read) AdjustFolderUnread(message.FolderNid, read ? -1 : +1);
     }
+
+    /// <summary>Keeps the folder's unread badge honest after a flag write. A failure here never fails
+    /// the caller's edit: the message itself persisted, and Outlook recomputes badges on its own.</summary>
+    private void AdjustFolderUnread(uint folderNid, int delta)
+    {
+        if (delta == 0 || !_folders.TryGetValue(folderNid, out var folder)) return;
+        try
+        {
+            var node = _ndb.GetNode(folder.Nid);
+            var heap = HeapOnNode.Load(_ndb, node);
+            var current = PropertyContext.Read(heap).GetInt(Pid.ContentUnread);
+            if (current < 0) return;
+            var updated = (uint)Math.Max(0, current + delta);
+            if (PropertyContext.TryPatchFixedUInt32(heap, Pid.ContentUnread, updated))
+                folder.UnreadCount = (int)updated;
+        }
+        catch (PstException) { /* badge drift is tolerable */ }
+    }
+
+    /// <summary>Full-file consistency check: every B-tree page CRC and every block trailer.</summary>
+    public IReadOnlyList<string> VerifyIntegrity() => _ndb.VerifyIntegrity();
 
     public void SetFlagged(MailSummary message, bool flagged)
     {
         EnsureWritable();
         var node = _ndb.GetNode(message.Nid);
         var heap = HeapOnNode.Load(_ndb, node);
-        if (!PropertyContext.TryPatchFixedUInt32(heap, Pid.FlagStatus, flagged ? 2u : 0u))
-            throw new PstException("Could not update the flag on this message. The flag property may be missing from the original PST.");
+        if (!PropertyContext.TryPatchFixedUInt32(heap, Pid.FlagStatus, flagged ? 2u : 0u, dryRun: true))
+            throw new PstException("Could not update the flag on this message. The flag property may be missing from the original PST; nothing was changed.");
+        var table = TableContext.TryLoad(_ndb, message.FolderNid | (uint)NidType.ContentsTable);
+        // Best effort on the list-view copy: the FlagStatus column is optional in some tables. The
+        // authoritative item property is written below; the badge refreshes when the folder reloads.
+        table?.TryPatchCell(message.Nid, Pid.FlagStatus, BitConverter.GetBytes(flagged ? 2u : 0u));
+        PropertyContext.TryPatchFixedUInt32(heap, Pid.FlagStatus, flagged ? 2u : 0u);
         message.Flagged = flagged;
     }
 
+    [Obsolete("Not a real move: it only rewrites the NID parent while the row stays in the source folder's Contents BTree. Replaced by true contents-row moves (see docs/pst-editing-design.md Phase C).")]
     public void MoveMessage(MailSummary message, MailFolder destination)
     {
         EnsureWritable();

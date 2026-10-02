@@ -8,7 +8,7 @@ public sealed class MailFolder
     public required string Name { get; init; }
     public required uint ParentNid { get; init; }
     public int ContentCount { get; init; }
-    public int UnreadCount { get; init; }
+    public int UnreadCount { get; set; }
     public bool HasSubfolders { get; init; }
     public List<MailFolder> Children { get; } = [];
     public override string ToString() => Name;

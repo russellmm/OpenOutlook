@@ -292,10 +292,11 @@ internal sealed class HeapOnNode
     /// flush (mapEnd == blockLength), which this requires. Returns null for any shape it does not
     /// fully understand - callers must refuse rather than guess.
     /// </summary>
-    internal static byte[]? RebuildBlockWithAppends(byte[] old, IReadOnlyList<byte[]> items, int blockIndex, out uint[] newHnids)
+    internal static byte[]? RebuildBlockWithAppends(byte[] old, IReadOnlyList<byte[]> items, int blockIndex, out uint[] newHnids, bool hasHnhdr = true)
     {
         newHnids = [];
-        if (old.Length < 12 || old[2] != 0xEC) return null;
+        if (old.Length < 12) return null;
+        if (hasHnhdr && old[2] != 0xEC) return null; // only the head block carries the HN header
         var mapOff = BinaryUtil.ReadU16(old, 0);
         if (mapOff + 4 > old.Length) return null;
         var cAlloc = BinaryUtil.ReadU16(old, mapOff);
@@ -304,7 +305,7 @@ internal sealed class HeapOnNode
 
         var bounds = new int[cAlloc + 1];
         for (var i = 0; i <= cAlloc; i++) bounds[i] = BinaryUtil.ReadU16(old, mapOff + 4 + i * 2);
-        if (bounds[0] < 12) return null; // HNHDR is 12 bytes (incl. rgbFillLevel)
+        if (hasHnhdr && bounds[0] < 12) return null; // HNHDR is 12 bytes (incl. rgbFillLevel); tail blocks may start at 0
         for (var i = 1; i <= cAlloc; i++)
             if (bounds[i] < bounds[i - 1] || bounds[i] > mapOff) return null;
         var dataEnd = bounds[cAlloc];

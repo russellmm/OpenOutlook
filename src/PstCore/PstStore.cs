@@ -469,6 +469,8 @@ public sealed class PstStore : IDisposable
     /// multi-leaf matrices, multi-level Row-ID BTrees, oversized cells) refuse with nothing written.
     /// Callers must use this inside a PstEditSession so a failure can roll back from the backup.
     /// </summary>
+    internal Ndb NdbForProbe => _ndb;
+
     public void MoveMessage(MailSummary message, MailFolder destFolder)
     {
         EnsureWritable();
@@ -488,10 +490,27 @@ public sealed class PstStore : IDisposable
             ?? throw new PstException("The destination contents table could not be parsed; nothing was changed.");
         if (dstTable.RowIndexMap.ContainsKey(message.Nid))
             throw new PstException("The destination folder already contains this message.");
-        if (dstTable.Heap.Blocks.Count != 1)
-            throw new PstException("The destination table heap spans multiple blocks; moving into large folders is not supported yet.");
-        if (!dstTable.MatrixIsSingleContiguousLeaf())
-            throw new PstException("The destination row matrix is fragmented across blocks; not supported yet.");
+        // Multi-block heaps are supported when reached through a single-level BREF indirection:
+        // appends go to the last block, header items get patched in their own block's copy, and one
+        // same-size BREF page write flips every repointed entry atomically. HIDs survive because
+        // they encode (block ordinal << 16 | slot), and ordinals are preserved positionally.
+        var heapBlocks = dstTable.Heap.Blocks;
+        byte[]? brefPlan = null;
+        if (heapBlocks.Count > 1 || dstNode.Data.IsInternal)
+        {
+            if (!dstNode.Data.IsInternal)
+                throw new PstException("The destination table's data reference is unsupported; nothing was changed.");
+            var brefRaw = _ndb.ReadRawBlockForWrite(dstNode.Data);
+            if (brefRaw == null || brefRaw.Length < 8 || brefRaw[0] != 1 || brefRaw[1] != 1)
+                throw new PstException("The destination table heap uses multi-level indirection; not supported yet.");
+            var cEntB = BinaryUtil.ReadU16(brefRaw, 2);
+            if (cEntB != heapBlocks.Count || brefRaw.Length != 8 + cEntB * 8)
+                throw new PstException("The destination table heap's indirection list does not match its blocks; nothing was changed.");
+            brefPlan = brefRaw;
+        }
+        // A fragmented row matrix is fine: the grow case writes a fresh contiguous block, and the
+        // reuse case patches whichever block holds the target slot (TryPatchSubNodeBytes walks the
+        // block chain). No upfront leaf requirement.
 
         var srcRow = srcTable.Rows.FirstOrDefault(r => r.RowId == message.Nid)
             ?? throw new PstException("The source row could not be read; nothing was changed.");
@@ -572,11 +591,30 @@ public sealed class PstStore : IDisposable
         appended.Insert(0, newLeaf);
 
         // ---- plan: rebuilt heap with appended items + repointed BTINFO.hidRoot / TCINFO.hnidRows ----
-        var rebuilt = HeapOnNode.RebuildBlockWithAppends(dstTable.Heap.Blocks[0].Data, appended, 0, out var newHnids)
+        var tailIdx = heapBlocks.Count - 1;
+        var rebuiltTail = HeapOnNode.RebuildBlockWithAppends(heapBlocks[tailIdx].Data, appended, tailIdx, out var newHnids, hasHnhdr: tailIdx == 0)
             ?? throw new PstException("The destination table heap has a shape this editor will not guess; nothing was changed.");
-        if (!HeapOnNode.TryGetAllocStart(rebuilt, (int)(dstTable.HidRowIndex >> 5), out var btinfoOff) || btinfoOff + 8 > rebuilt.Length)
+        var modified = new Dictionary<int, byte[]> { [tailIdx] = rebuiltTail };
+        int OrdinalOf(uint hid)
+        {
+            var (blk, off, _) = dstTable.Heap.LocateHid(new Hid(hid));
+            var idx = -1;
+            for (var bi = 0; bi < heapBlocks.Count; bi++) if (heapBlocks[bi].Bid.Value == blk.Bid.Value) { idx = bi; break; }
+            if (idx < 0) throw new PstException("A header item of the destination table lives outside its blocks; nothing was changed.");
+            return idx;
+        }
+        byte[] BufferOf(int idx)
+        {
+            if (!modified.TryGetValue(idx, out var buf)) modified[idx] = buf = heapBlocks[idx].Data.ToArray();
+            return buf;
+        }
+        // Item offsets are unchanged by the rebuild (the item region is copied byte-identically), so
+        // located offsets patch straight into the right block's copy.
+        var btBufIdx = OrdinalOf(dstTable.HidRowIndex);
+        var btBuf = BufferOf(btBufIdx);
+        if (!HeapOnNode.TryGetAllocStart(btBuf, (int)(dstTable.HidRowIndex >> 5), out var btinfoOff) || btinfoOff + 8 > btBuf.Length)
             throw new PstException("The destination table's Row-ID header could not be located; nothing was changed.");
-        HeapOnNode.PatchBytesInPlace(rebuilt, btinfoOff + 4, BitConverter.GetBytes(newHnids[0])); // BTINFO.hidRoot -> grown leaf
+        HeapOnNode.PatchBytesInPlace(btBuf, btinfoOff + 4, BitConverter.GetBytes(newHnids[0])); // BTINFO.hidRoot -> grown leaf
 
         // Now that the appended items have HIDs, point the record's variable cells at them.
         foreach (var (appendedIndex, col) in variableCellTargets)
@@ -628,9 +666,10 @@ public sealed class PstStore : IDisposable
                 if (idx > maxIdx) maxIdx = idx;
             }
             matrixSubNid = (uint)((maxIdx + 1) << 5) | (uint)NidType.Ltp;
-            if (!HeapOnNode.TryGetAllocStart(rebuilt, (int)(dstTable.Heap.UserRoot >> 5), out var tcinfoOff) || tcinfoOff + 18 > rebuilt.Length)
+            var tcBuf = BufferOf(OrdinalOf(dstTable.Heap.UserRoot));
+            if (!HeapOnNode.TryGetAllocStart(tcBuf, (int)(dstTable.Heap.UserRoot >> 5), out var tcinfoOff) || tcinfoOff + 18 > tcBuf.Length)
                 throw new PstException("The destination table's context header could not be located; nothing was changed.");
-            HeapOnNode.PatchBytesInPlace(rebuilt, tcinfoOff + 14, BitConverter.GetBytes(matrixSubNid)); // TCINFO.hnidRows -> new subnode
+            HeapOnNode.PatchBytesInPlace(tcBuf, tcinfoOff + 14, BitConverter.GetBytes(matrixSubNid)); // TCINFO.hnidRows -> new subnode
         }
 
         // ---- plan: sub-node list entry for the matrix (patch in place, or create/extend the SLB) ----
@@ -713,8 +752,21 @@ public sealed class PstStore : IDisposable
                     throw new PstException("Could not write the moved message's row into the destination matrix.");
             }
 
-            var newHeapBid = _ndb.AllocateAndWrite(batch, rebuilt, encrypt: true);
-            _ndb.RewriteNbtDataBid(dstNode, newHeapBid); // atomic flip to the grown table (row appears here)
+            if (brefPlan == null)
+            {
+                var newHeapBid = _ndb.AllocateAndWrite(batch, modified[0], encrypt: true);
+                _ndb.RewriteNbtDataBid(dstNode, newHeapBid); // atomic flip to the grown table (row appears here)
+            }
+            else
+            {
+                var bref = brefPlan;
+                foreach (var (idx, buf) in modified.OrderBy(kv => kv.Key))
+                {
+                    var nb = _ndb.AllocateAndWrite(batch, buf, encrypt: true);
+                    BinaryUtil.WriteU64(bref, 8 + idx * 8, nb.Value);
+                }
+                _ndb.RewriteInternalBlockSameSize(dstNode.Data, bref); // one page write flips every entry (row appears here)
+            }
 
             srcTable.TryUnlinkRow(message.Nid);
             var msgNode = _ndb.GetNode(message.Nid);

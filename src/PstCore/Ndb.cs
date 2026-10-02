@@ -225,6 +225,19 @@ internal sealed class Ndb : IDisposable
     /// <summary>Same-size rewrite of an external block WITHOUT crypt encoding. Sub-node (SLB) trees
     /// are demonstrably stored unencrypted in real archives (this reader never decodes them), so
     /// patches to them must round-trip the same way.</summary>
+    /// <summary>Rewrite an internal BREF indirection block with a same-length payload (entries
+    /// repointed to freshly allocated data blocks). Same-size by contract; the single block write is
+    /// the atomic flip point for multi-block heaps.</summary>
+    internal void RewriteInternalBlockSameSize(Bid bid, byte[] payload)
+    {
+        if (!bid.IsInternal) throw new PstException("Not an internal block.");
+        if (!_bbt.TryGetValue(bid.LookupKey, out var entry))
+            throw new PstException($"Internal block 0x{bid.Value:X} is not allocated.");
+        if (entry.Size != payload.Length)
+            throw new PstException("Internal block rewrite must preserve length.");
+        WriteBlockBytes(entry, payload, PstCrypto.ComputeCrc(payload));
+    }
+
     internal void RewriteRawExternalBlock(Bid bid, byte[] payload)
     {
         if (!_bbt.TryGetValue(bid.LookupKey, out var entry))

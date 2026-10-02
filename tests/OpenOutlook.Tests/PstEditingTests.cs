@@ -294,6 +294,19 @@ public sealed class PstEditingTests
         store.AllFolders().FirstOrDefault(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
         ?? throw new InvalidOperationException($"fixture has no {name} folder");
 
+    /// <summary>Any real mail folder holding at least one message, for move tests that must run
+    /// against every owner archive (folder names differ between them).</summary>
+    private static MailFolder SourceFolder(PstStore store)
+    {
+        foreach (var f in store.AllFolders())
+        {
+            if (f.Name.Equals("Deleted Items", StringComparison.OrdinalIgnoreCase)) continue;
+            try { if (store.GetMessages(f).Count > 0) return f; }
+            catch (PstException) { }
+        }
+        throw new InvalidOperationException("fixture has no folder containing messages");
+    }
+
     [Fact]
     public void MoveMessageToDeletedItemsPersistsAcrossReopen()
     {
@@ -305,7 +318,7 @@ public sealed class PstEditingTests
             uint movedNid; string movedSubject, movedFrom; DateTime movedReceived; int srcCountBefore, dstCountBefore;
             using (var session = PstEditSession.Begin(tmp))
             {
-                var source = Folder(session.Store, "treasurydirect");
+                var source = SourceFolder(session.Store);
                 var dest = Folder(session.Store, "Deleted Items");
                 var message = session.Store.GetMessages(source).First();
                 movedNid = message.Nid; movedSubject = message.Subject; movedFrom = message.From; movedReceived = message.Received;
@@ -319,7 +332,7 @@ public sealed class PstEditingTests
             }
             using (var reopened = PstStore.Open(tmp, writable: false))
             {
-                var source = Folder(reopened, "treasurydirect");
+                var source = SourceFolder(reopened);
                 var dest = Folder(reopened, "Deleted Items");
                 Assert.Empty(reopened.VerifyIntegrity());
                 var srcAfter = reopened.GetMessages(source);
@@ -347,7 +360,7 @@ public sealed class PstEditingTests
             var before = HashAll(tmp);
             using (var session = PstEditSession.Begin(tmp))
             {
-                var source = Folder(session.Store, "treasurydirect");
+                var source = SourceFolder(session.Store);
                 var dest = Folder(session.Store, "Deleted Items");
                 var message = session.Store.GetMessages(source).First();
                 session.Store.MoveMessage(message, dest);
@@ -369,7 +382,7 @@ public sealed class PstEditingTests
             uint first, second;
             using (var session = PstEditSession.Begin(tmp))
             {
-                var treasury = Folder(session.Store, "treasurydirect");
+                var treasury = SourceFolder(session.Store);
                 var trash = Folder(session.Store, "Deleted Items");
                 var msgs = session.Store.GetMessages(treasury);
                 first = msgs[0].Nid; second = msgs[1].Nid;
@@ -383,7 +396,7 @@ public sealed class PstEditingTests
             using (var reopened = PstStore.Open(tmp, writable: false))
             {
                 Assert.Empty(reopened.VerifyIntegrity());
-                var treasury = Folder(reopened, "treasurydirect");
+                var treasury = SourceFolder(reopened);
                 var trash = Folder(reopened, "Deleted Items");
                 var t = reopened.GetMessages(treasury);
                 var d = reopened.GetMessages(trash);
@@ -407,7 +420,7 @@ public sealed class PstEditingTests
             uint movedNid; string bodyBefore;
             using (var session = PstEditSession.Begin(tmp))
             {
-                var source = Folder(session.Store, "treasurydirect");
+                var source = SourceFolder(session.Store);
                 var dest = Folder(session.Store, "Deleted Items");
                 var message = session.Store.GetMessages(source).First();
                 movedNid = message.Nid;

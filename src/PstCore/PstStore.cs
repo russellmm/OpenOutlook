@@ -57,9 +57,10 @@ public sealed class PstStore : IDisposable
     public IReadOnlyList<MailSummary> GetMessages(MailFolder folder)
     {
         Dictionary<uint, MailSummary> byNid = [];
+        TableContext? table = null;
         try
         {
-            var table = TableContext.TryLoad(_ndb, folder.Nid | (uint)NidType.ContentsTable);
+            table = TableContext.TryLoad(_ndb, folder.Nid | (uint)NidType.ContentsTable);
             if (table != null)
             {
                 foreach (var row in table.Rows)
@@ -74,25 +75,41 @@ public sealed class PstStore : IDisposable
         catch
         {
             byNid = [];
+            table = null;
         }
 
-        var list = new List<MailSummary>();
-        foreach (var node in _ndb.Nodes)
+        // A folder with a Contents table shows exactly its rows - Outlook's own rule. The NBT parent
+        // scan is only the fallback for stores whose folders have no readable table, because a Phase B
+        // delete unlinks the row while the message node stays under the folder until some future GC;
+        // unioning both views would resurrect every deleted message.
+        List<MailSummary> list;
+        if (table != null)
         {
-            if (node.Nid.Type != NidType.NormalMessage) continue;
-            if (node.Parent.Value != folder.Nid) continue;
-            if (byNid.TryGetValue(node.Nid.Value, out var cached))
+            list = new List<MailSummary>(byNid.Values);
+            foreach (var node in _ndb.Nodes)
             {
-                if (cached.Size <= 0)
+                if (node.Nid.Type != NidType.NormalMessage || node.Parent.Value != folder.Nid) continue;
+                if (byNid.TryGetValue(node.Nid.Value, out var cached) && cached.Size <= 0)
                     cached.Size = MessageSizeFromNode(node);
-                list.Add(cached);
             }
-            else
-                list.Add(SummaryFromNode(folder.Nid, node));
         }
-
-        if (list.Count == 0 && byNid.Count > 0)
-            list.AddRange(byNid.Values);
+        else
+        {
+            list = new List<MailSummary>();
+            foreach (var node in _ndb.Nodes)
+            {
+                if (node.Nid.Type != NidType.NormalMessage) continue;
+                if (node.Parent.Value != folder.Nid) continue;
+                if (byNid.TryGetValue(node.Nid.Value, out var cached))
+                {
+                    if (cached.Size <= 0)
+                        cached.Size = MessageSizeFromNode(node);
+                    list.Add(cached);
+                }
+                else
+                    list.Add(SummaryFromNode(folder.Nid, node));
+            }
+        }
 
         return list
             .OrderByDescending(m => m.Received == DateTime.MinValue ? m.Sent : m.Received)
@@ -380,23 +397,62 @@ public sealed class PstStore : IDisposable
         if (wasRead != read) AdjustFolderUnread(message.FolderNid, read ? -1 : +1);
     }
 
-    /// <summary>Keeps the folder's unread badge honest after a flag write. A failure here never fails
-    /// the caller's edit: the message itself persisted, and Outlook recomputes badges on its own.</summary>
-    private void AdjustFolderUnread(uint folderNid, int delta)
+    /// <summary>Removes a message from its folder for real (Phase B delete): unlinks the TCROWID record
+    /// from the folder's Contents Row-ID BTree through the proven same-size block rewrite, then orphans
+    /// everything the row pointed at - matrix slot, item property context, recipients, attachments.
+    /// Nothing is freed and the archive never shrinks; that is spec-legal garbage that Outlook itself
+    /// produces for deleted mail until a manual cleanup. The folder's cached ContentCount/UnreadCount
+    /// are adjusted best-effort (they are calculated properties; Outlook recomputes them anyway).
+    /// A failed attempt writes nothing: the unlink is dry-run validated first.</summary>
+    public void DeleteMessage(MailSummary message)
     {
-        if (delta == 0 || !_folders.TryGetValue(folderNid, out var folder)) return;
+        EnsureWritable();
+        var table = TableContext.TryLoad(_ndb, message.FolderNid | (uint)NidType.ContentsTable)
+            ?? throw new PstException("This folder has no readable contents table; nothing was changed.");
+        if (!table.TryUnlinkRow(message.Nid, dryRun: true))
+            throw new PstException(
+                "Could not locate this message's row in the folder contents table (or its storage is not rewritable); nothing was changed.");
+        var wasUnread = !message.IsRead;
+        if (!table.TryUnlinkRow(message.Nid))
+            throw new PstException("The message row disappeared while deleting; nothing further was changed.");
+        AdjustFolderCounts(message.FolderNid, -1, wasUnread ? -1 : 0);
+    }
+
+    /// <summary>Keeps the folder's badges honest after edits. A failure here never fails the caller's
+    /// edit: the message itself persisted, and Outlook recomputes these counts on its own.</summary>
+    private void AdjustFolderCounts(uint folderNid, int contentDelta, int unreadDelta)
+    {
+        if (contentDelta == 0 && unreadDelta == 0) return;
+        if (!_folders.TryGetValue(folderNid, out var folder)) return;
         try
         {
             var node = _ndb.GetNode(folder.Nid);
             var heap = HeapOnNode.Load(_ndb, node);
-            var current = PropertyContext.Read(heap).GetInt(Pid.ContentUnread);
-            if (current < 0) return;
-            var updated = (uint)Math.Max(0, current + delta);
-            if (PropertyContext.TryPatchFixedUInt32(heap, Pid.ContentUnread, updated))
-                folder.UnreadCount = (int)updated;
+            if (contentDelta != 0)
+            {
+                var current = PropertyContext.Read(heap).GetInt(Pid.ContentCount);
+                if (current >= 0)
+                {
+                    var updated = (uint)Math.Max(0, current + contentDelta);
+                    if (PropertyContext.TryPatchFixedUInt32(heap, Pid.ContentCount, updated))
+                        folder.ContentCount = (int)updated;
+                }
+            }
+            if (unreadDelta != 0)
+            {
+                var current = PropertyContext.Read(heap).GetInt(Pid.ContentUnread);
+                if (current >= 0)
+                {
+                    var updated = (uint)Math.Max(0, current + unreadDelta);
+                    if (PropertyContext.TryPatchFixedUInt32(heap, Pid.ContentUnread, updated))
+                        folder.UnreadCount = (int)updated;
+                }
+            }
         }
         catch (PstException) { /* badge drift is tolerable */ }
     }
+
+    private void AdjustFolderUnread(uint folderNid, int delta) => AdjustFolderCounts(folderNid, 0, delta);
 
     /// <summary>Full-file consistency check: every B-tree page CRC and every block trailer.</summary>
     public IReadOnlyList<string> VerifyIntegrity() => _ndb.VerifyIntegrity();

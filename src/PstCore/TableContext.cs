@@ -25,17 +25,19 @@ internal sealed class TableContext
 
     private readonly HeapOnNode _heap;
     private readonly uint _hnidRows;
+    private readonly uint _hidRowIndex;
     private readonly int _rowSize;
     private readonly int _tci1;
     private readonly Dictionary<uint, uint> _rowIdToIndex;
 
     private TableContext(IReadOnlyList<TableColumn> columns, IReadOnlyList<TableRow> rows,
-        HeapOnNode heap, uint hnidRows, int rowSize, int tci1, Dictionary<uint, uint> rowIdToIndex)
+        HeapOnNode heap, uint hnidRows, uint hidRowIndex, int rowSize, int tci1, Dictionary<uint, uint> rowIdToIndex)
     {
         Columns = columns;
         Rows = rows;
         _heap = heap;
         _hnidRows = hnidRows;
+        _hidRowIndex = hidRowIndex;
         _rowSize = rowSize;
         _tci1 = tci1;
         _rowIdToIndex = rowIdToIndex;
@@ -89,17 +91,18 @@ internal sealed class TableContext
         {
             if (rec.Length < 8) continue;
             var rowId = BinaryUtil.ReadU32(rec, 0);
+            if (rowId == 0) continue; // zeroed trailing slot left by a Phase B delete - not a row
             var rowIndex = BinaryUtil.ReadU32(rec, 4);
             rowIdToIndex[rowId] = rowIndex;
         }
 
         var rows = new List<TableRow>();
         if (hnidRows == 0 || tciBm == 0)
-            return new TableContext(columns, rows, heap, hnidRows, tciBm, tci1, rowIdToIndex);
+            return new TableContext(columns, rows, heap, hnidRows, hidRowIndex, tciBm, tci1, rowIdToIndex);
 
         var matrix = heap.GetItem(hnidRows);
         var rowSize = tciBm;
-        if (rowSize <= 0) return new TableContext(columns, rows, heap, hnidRows, tciBm, tci1, rowIdToIndex);
+        if (rowSize <= 0) return new TableContext(columns, rows, heap, hnidRows, hidRowIndex, tciBm, tci1, rowIdToIndex);
 
         var trailer = heap.Ndb.Unicode ? 16 : 12;
         var blockData = 8192 - trailer;
@@ -137,7 +140,7 @@ internal sealed class TableContext
             rows.Add(new TableRow { RowId = rowId, Cells = cells });
         }
 
-        return new TableContext(columns, rows, heap, hnidRows, tciBm, tci1, rowIdToIndex);
+        return new TableContext(columns, rows, heap, hnidRows, hidRowIndex, tciBm, tci1, rowIdToIndex);
     }
 
     /// <summary>Overwrite a fixed-size cell in one row of the matrix, in place on disk (or validate
@@ -170,6 +173,21 @@ internal sealed class TableContext
         if ((matrix[offset + existByte] & (1 << (col.IBit & 7))) == 0) return false;
 
         return _heap.TryPatchSubNodeBytes(_hnidRows, offset + col.IbData, value, dryRun);
+    }
+
+    /// <summary>Phase B delete: unlinks this row's record from the Row-ID BTree (dryRun validates only).
+    /// On success the in-memory Rows/index drop the row too, so the live store reflects the delete without
+    /// a reload. The matrix slot and the message item itself are deliberately orphaned, never rewritten.</summary>
+    internal bool TryUnlinkRow(uint rowId, bool dryRun = false)
+    {
+        if (_hidRowIndex == 0 || rowId == 0) return false;
+        if (!_heap.TryUnlinkBthRecord(_hidRowIndex, rowId, dryRun)) return false;
+        if (!dryRun)
+        {
+            _rowIdToIndex.Remove(rowId);
+            if (Rows is List<TableRow> mutable) mutable.RemoveAll(r => r.RowId == rowId);
+        }
+        return true;
     }
 
     private static byte[]? ReadCell(HeapOnNode heap, TableColumn col, ReadOnlySpan<byte> row)

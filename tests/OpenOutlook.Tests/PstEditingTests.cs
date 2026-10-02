@@ -153,6 +153,141 @@ public sealed class PstEditingTests
         finally { Cleanup(tmp, tmp + ".bak"); }
     }
 
+    // ---- Phase B: real message deletion (Row-ID BTH unlink, no allocator) ----
+
+    private static List<(uint Nid, string Subject)> Snapshot(PstStore store, uint folderNid)
+    {
+        var folder = store.AllFolders().First(f => f.Nid == folderNid);
+        return store.GetMessages(folder).Select(m => (m.Nid, m.Subject)).ToList();
+    }
+
+    private static MailSummary GetByNid(PstStore store, uint folderNid, uint messageNid)
+    {
+        var folder = store.AllFolders().First(f => f.Nid == folderNid);
+        return store.GetMessages(folder).First(m => m.Nid == messageNid);
+    }
+
+    [Fact]
+    public void DeleteRemovesTheMessageAndKeepsEveryOtherRowIntact()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            uint folderNid;
+            List<(uint Nid, string Subject)> before;
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var folder = session.Store.AllFolders()
+                    .First(f => session.Store.GetMessages(f).Count >= 5);
+                folderNid = folder.Nid;
+                before = Snapshot(session.Store, folderNid);
+                var target = GetByNid(session.Store, folderNid, before[0].Nid);
+                session.Store.DeleteMessage(target);
+                // Live store must reflect the delete without a reload.
+                Assert.DoesNotContain(before[0].Nid, Snapshot(session.Store, folderNid).Select(m => m.Nid));
+                session.Commit();
+            }
+
+            using (var reopened = PstStore.Open(tmp, writable: false))
+            {
+                var after = Snapshot(reopened, folderNid);
+                Assert.Equal(before.Skip(1).ToList(), after); // exact order and subjects survive
+                Assert.Empty(reopened.VerifyIntegrity());
+            }
+        }
+            finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
+    [Fact]
+    public void SequentialDeletesStayConsistentAcrossReopen()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            uint folderNid;
+            List<(uint Nid, string Subject)> before;
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var folder = session.Store.AllFolders()
+                    .First(f => session.Store.GetMessages(f).Count >= 6);
+                folderNid = folder.Nid;
+                before = Snapshot(session.Store, folderNid);
+                for (var i = 0; i < 4; i++)
+                {
+                    var current = Snapshot(session.Store, folderNid);
+                    session.Store.DeleteMessage(GetByNid(session.Store, folderNid, current[0].Nid));
+                }
+                session.Commit();
+            }
+
+            using (var reopened = PstStore.Open(tmp, writable: false))
+            {
+                var after = Snapshot(reopened, folderNid);
+                Assert.Equal(before.Count - 4, after.Count);
+                Assert.Equal(before.Skip(4).ToList(), after); // survivors untouched by the shifting
+                Assert.Empty(reopened.VerifyIntegrity());
+            }
+        }
+            finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
+    [Fact]
+    public void UncommittedDeleteRestoresTheOriginalBytes()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var folder = session.Store.AllFolders().First(f => session.Store.GetMessages(f).Any());
+                var message = session.Store.GetMessages(folder).First();
+                session.Store.DeleteMessage(message); // real write...
+            } // ...no Commit -> Dispose restores every byte
+            Assert.Equal(HashAll(tmp), HashAll(src));
+        }
+            finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
+    [Fact]
+    public void DeleteUpdatesFolderCountsAcrossReopen()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            uint folderNid;
+            int contentBefore, unreadBefore;
+            bool wasUnread;
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var folder = session.Store.AllFolders()
+                    .First(f => session.Store.GetMessages(f).Count >= 2);
+                folderNid = folder.Nid;
+                contentBefore = folder.ContentCount;
+                unreadBefore = folder.UnreadCount;
+                var message = session.Store.GetMessages(folder).First();
+                wasUnread = !message.IsRead;
+                session.Store.DeleteMessage(message);
+                session.Commit();
+            }
+            using (var reopened = PstStore.Open(tmp, writable: false))
+            {
+                var folder = reopened.AllFolders().First(f => f.Nid == folderNid);
+                if (contentBefore >= 0)
+                    Assert.Equal(Math.Max(0, contentBefore - 1), folder.ContentCount);
+                Assert.Equal(Math.Max(0, unreadBefore - (wasUnread ? 1 : 0)), folder.UnreadCount);
+            }
+        }
+            finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
     private static string HashAll(string path)
     {
         using var sha = System.Security.Cryptography.SHA256.Create();

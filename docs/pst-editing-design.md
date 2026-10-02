@@ -177,3 +177,18 @@ Delete key -> Deleted Items), all through the same validate-then-write disciplin
 
 Process note: an earlier copy of this spec was lost when tracked files were reset while it sat
 uncommitted - research notes get committed the round they are written from now on.
+
+## Phase B SHIPPED (delete via TCROWID unlink)
+- TryUnlinkBthRecord: shift-down inside the leaf NOD's byte range + zeroed trailing slot, persisted
+  through the same-size RewriteExternalBlock. This parser (and libpff) derive BT record counts from
+  the allocated item length - there is no stored per-node count to decrement; the shift keeps
+  length == count x recSize exactly. cbKey!=4, internal-block, and size-mismatch shapes refuse.
+- GetMessages fidelity change (required): folders WITH a readable Contents table now show exactly
+  their rows - Outlook's own rule. The old NBT-union fallback would have resurrected every deleted
+  message (nodes stay parented until some future GC). NBT scan remains the fallback only for
+  folders with no readable table.
+- PstStore.DeleteMessage: dry-run validated before any write; orphans matrix slot + PC/subnodes by
+  design; best-effort ContentCount/UnreadCount patch.
+- Pending hardware check (documented, low risk): Outlook's tolerance of the inert key-0 trailing
+  slot in a Row-ID BTH leaf. Our reader skips zero keys; worst known case is a scanpst advisory or
+  phantom row on real Outlook - verify when the owner next opens an edited archive.

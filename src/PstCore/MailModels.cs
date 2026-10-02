@@ -7,7 +7,7 @@ public sealed class MailFolder
     public required uint Nid { get; init; }
     public required string Name { get; init; }
     public required uint ParentNid { get; init; }
-    public int ContentCount { get; init; }
+    public int ContentCount { get; set; }
     public int UnreadCount { get; set; }
     public bool HasSubfolders { get; init; }
     public List<MailFolder> Children { get; } = [];

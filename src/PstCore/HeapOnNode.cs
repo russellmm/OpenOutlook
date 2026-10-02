@@ -215,6 +215,46 @@ internal sealed class HeapOnNode
         return true;
     }
 
+    /// <summary>
+    /// Phase B delete: removes one record from a keyed BTree (the Contents-TC Row-ID index) by shifting
+    /// the records after it down inside the leaf NOD's own byte range and zeroing the vacated trailing
+    /// slot. The item keeps its exact allocation size, so persistence rides the proven same-size
+    /// external-block rewrite - no allocator, nothing is ever freed or moved between blocks. This
+    /// parser derives a NOD's entry count from its allocation length (verified empirically: leaf items
+    /// hold pure records from offset 0 with length == count * recordSize), so an all-zero trailing slot
+    /// reads as no record; TableContext additionally skips zero-key rows defensively. Descends any
+    /// depth to locate the record, but refuses (false, nothing written) when the key is absent, the
+    /// block is internal/unrewritable, or the item size is not an exact multiple of the record size.
+    /// </summary>
+    public bool TryUnlinkBthRecord(uint hidBth, uint key, bool dryRun = false)
+    {
+        var header = GetItem(hidBth);
+        if (header.Length < 8) return false;
+        var cbKey = header[1];
+        var cbEnt = header[2];
+        var hidRoot = BinaryUtil.ReadU32(header, 4);
+        // u32 keys only - the TC Row-ID index (cbKey=4). Anything else is out of scope; never guess.
+        if (hidRoot == 0 || cbKey != 4 || cbEnt == 0) return false;
+        var recSize = cbKey + cbEnt;
+
+        foreach (var (walkKey, _, leafHid, recordOffset) in WalkBth(hidBth))
+        {
+            if (walkKey != key) continue;
+            var (block, start, length) = LocateHid(leafHid);
+            if (!block.CanRewrite) return false;
+            if (length % recSize != 0) return false;
+            if (recordOffset < 0 || recordOffset + recSize > length) return false;
+            if (dryRun) return true;
+            var data = block.Data;
+            var tail = length - recordOffset - recSize;
+            if (tail > 0) Array.Copy(data, start + recordOffset + recSize, data, start + recordOffset, tail);
+            Array.Clear(data, start + length - recSize, recSize);
+            _ndb.RewriteExternalBlock(block.Bid, data);
+            return true;
+        }
+        return false; // key not present in this BTree
+    }
+
     /// <summary>Patch bytes inside a heap sub-node's data tree at an item-relative offset (used for
     /// table row matrices). Resolves which leaf block holds the range; the write keeps every block
     /// size identical so parent indirection stays valid. dryRun only checks that the target resolves.</summary>

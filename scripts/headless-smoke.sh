@@ -173,6 +173,23 @@ for step in ${OO_SMOKE_CLICKS:-}; do
             DISPLAY="$display" xdotool key "${step#key:}"
             sleep 2
             ;;
+        # dblclick:x,y - two quick presses, which TreeView rows treat as expand/collapse.
+        dblclick:*)
+            coords="${step#dblclick:}"; coords="${coords%%:*}"
+            DISPLAY="$display" xdotool mousemove "${coords%,*}" "${coords#*,}" click --repeat 2 --delay 120 1
+            ;;
+        # typew:<window-name-regex>|<text> types straight into the newest window whose title
+        # matches, bypassing X input focus entirely (there is no window manager under Xvfb).
+        typew:*)
+            spec="${step#typew:}"; win="${spec%%|*}"; text="${spec#*|}"
+            wid="$(DISPLAY="$display" xdotool search --name "$win" | tail -1)"
+            if [ -n "$wid" ]; then
+                # XTEST (no --window: Avalonia ignores XSendEvent) after moving server focus.
+                DISPLAY="$display" xdotool windowfocus --sync "$wid" 2>/dev/null || true
+                DISPLAY="$display" xdotool type --clearmodifiers "${text//+/ }" 2>/dev/null || true
+            fi
+            sleep 2
+            ;;
         # type:<text> types into whatever has focus; '+' stands for a space, since steps are
         # word-split and a literal space would end the step.
         type:*)

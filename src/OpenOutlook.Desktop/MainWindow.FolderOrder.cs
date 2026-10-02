@@ -138,6 +138,13 @@ public partial class MainWindow
         down.Click += (_, _) => MoveFolderNodeBy(item, +1);
         top.Click += (_, _) => MoveFolderNode(item, 0);
         var items = new List<object> { up, down, top };
+        if (item.Tag is FolderSelection anySel)
+        {
+            var newFolder = new MenuItem { Header = "New Folder\u2026" };
+            newFolder.Click += (_, _) => _ = NewFolderAsync(anySel);
+            items.Add(new Separator());
+            items.Add(newFolder);
+        }
         if (item.Tag is FolderSelection sel &&
             string.Equals(sel.Folder.Name, "Deleted Items", StringComparison.OrdinalIgnoreCase))
         {

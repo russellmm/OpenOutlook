@@ -283,6 +283,12 @@ the probe matches our reader: cEnt byte @488, cbEnt byte @490, cLevel byte @491 
   matrix above. Remaining follow-ups are listed once, at the top, under Outstanding follow-ups.
 
 ## Folder creation - implementation blueprint (grounded in reader code, 2026-10-03)
+
+**STATUS: SHIPPED (this section is now the as-built record).** Right-click any archive folder ->
+New Folder... -> name dialog -> spec-shaped descriptor + cloned empty contents table -> NBT
+rightmost append -> parent Subfolders flag -> full verification; live-proven end-to-end (created
+"ZZ Test Folder" under treasurydirect with zero editing-mode steps, status "created - verified",
+persists across fresh-profile reopen with zero integrity problems).
 Reader requirements (LoadFolders, PstStore.cs ~L940): a folder IS just an NBT entry with
 Nid.Type==NormalFolder whose dataBid resolves to an LTP heap readable by PropertyContext.Read;
 name=PR_DISPLAY_NAME(0x3001), counts from Pid.ContentCount/ContentUnread, HasSubfolders from

@@ -192,3 +192,12 @@ uncommitted - research notes get committed the round they are written from now o
 - Pending hardware check (documented, low risk): Outlook's tolerance of the inert key-0 trailing
   slot in a Row-ID BTH leaf. Our reader skips zero keys; worst known case is a scanpst advisory or
   phantom row on real Outlook - verify when the owner next opens an edited archive.
+
+### BBT/NBT leaf free-room probe (all three real archives, read-only)
+Free entry slots in BT leaves (capacity 488/cbEnt minus used; no-split design needs these):
+- rmarrash_2.pst: BBT 78 free (16 leaves/242 entries), NBT 39 free (7 leaves/66 entries)
+- rmarrash_1.pst: BBT 26,258 free (7,532 leaves/124,382), NBT 237 free (210 leaves/2,913)
+- rmarrash_3.pst: BBT 191,994 free (33,181 leaves/471,626), NBT 1,522 free (1,012 leaves/13,658)
+Conclusion: the Phase C no-split guard will not refuse ordinary move/delete batches on any of the
+owner's archives - every tree has headroom for thousands of new entries. Page header layout used by
+the probe matches our reader: cEnt byte @488, cbEnt byte @490, cLevel byte @491 (unicode).

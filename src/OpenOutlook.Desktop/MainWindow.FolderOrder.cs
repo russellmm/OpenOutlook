@@ -148,6 +148,16 @@ public partial class MainWindow
             items.Add(new Separator());
             items.Add(edit);
         }
+        if (item.Tag is FolderSelection sel &&
+            string.Equals(sel.Folder.Name, "Deleted Items", StringComparison.OrdinalIgnoreCase))
+        {
+            var purge = new MenuItem { Header = "Empty Deleted Items" };
+            purge.Click += (_, _) => _ = EmptyDeletedItemsAsync(sel);
+            menuOpeningExtras.Add(() => purge.IsEnabled =
+                _stores.TryGetValue(sel.Path, out var s) && s.CanWrite);
+            items.Add(new Separator());
+            items.Add(purge);
+        }
         var menu = new MenuFlyout();
         foreach (var entry in items) menu.Items.Add(entry);
         menu.Opening += (_, _) =>

@@ -238,6 +238,51 @@ public partial class MainWindow
         return await dialog.ShowDialog<bool>(this);
     }
 
+    /// <summary>Purge: empties a writable archive's Deleted Items folder - every message in it goes
+    /// through the same validated Phase B delete. Runs under the reader gate so no read can observe
+    /// the folder half-emptied, and only after an explicit confirmation.</summary>
+    private async Task EmptyDeletedItemsAsync(FolderSelection sel)
+    {
+        if (!_stores.TryGetValue(sel.Path, out var store) || !store.CanWrite)
+        {
+            StatusText.Text = "This archive is opened read-only - turn on Editing Mode to empty Deleted Items.";
+            return;
+        }
+        int done = 0;
+        string? firstError = null;
+        try
+        {
+            await _readerGate.WaitAsync();
+            try
+            {
+                var messages = await Task.Run(() => store.GetMessages(sel.Folder));
+                if (messages.Count == 0)
+                {
+                    StatusText.Text = "Deleted Items is already empty.";
+                    return;
+                }
+                if (!await ConfirmPstDeleteAsync(messages.Count, Path.GetFileName(sel.Path))) return;
+                foreach (var message in messages)
+                {
+                    try { store.DeleteMessage(message); done++; }
+                    catch (Exception ex) when (ex is PstException or IOException) { firstError ??= ex.Message; }
+                }
+            }
+            finally { _readerGate.Release(); }
+        }
+        catch (Exception ex) when (ex is PstException or IOException or ObjectDisposedException)
+        {
+            StatusText.Text = $"Could not empty Deleted Items: {ex.Message}";
+            return;
+        }
+        if (_activePath == sel.Path && _activeFolder?.Nid == sel.Folder.Nid)
+            _ = RefreshActivePstFolderAsync(sel.Path);
+        StatusText.Text = done > 0
+            ? $"Emptied {done} message{(done == 1 ? "" : "s")} from Deleted Items in {Path.GetFileName(sel.Path)} · turn off Editing Mode to verify and seal the archive" +
+              (firstError is null ? "" : $" · some could not be removed: {firstError}")
+            : $"Could not empty Deleted Items: {firstError ?? "unknown reason"}";
+    }
+
     /// <summary>Called from the shutdown path: an open editing session is committed with verification,
     /// or rolled back when verification fails - never left half-written.</summary>
     internal void FinalizeEditSessionsForShutdown()

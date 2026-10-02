@@ -4,6 +4,42 @@ Goal: move messages between folders, delete (Deleted Items + purge), persistent 
 archives, without ever risking data loss. Owner archives: rmarrash_1.pst (909MB), _2 (779KB, the
 disposable test fixture — never write to 1/3 in tests), _3 (2.6GB).
 
+## SHIPPED STATE (2026-10-02) - complete feature matrix
+
+All editing happens inside Editing Mode (archive-root context menu). Every session: .bak backup
+first, writable open, edits applied live, Finish = full block-CRC verification or auto-restore;
+window close commits-or-rolls-back. Nothing is ever freed; the file never shrinks; orphaned data is
+spec-legal garbage (docs above explain why this is the safe posture).
+
+| Capability | Entry points | Engine | Commit |
+|---|---|---|---|
+| Read/unread + flag edits | ribbon, shortcuts, reading-pane auto-mark | dual-copy PR_MESSAGE_FLAGS + item props + unread badge, dry-run validated | 57fa0ee / 42dd8cf |
+| Delete -> Deleted Items | Delete key, ribbon Delete (classic Outlook semantics) | MoveMessage re-link into the store's own trash | 74d5182 |
+| Permanent delete | Shift+Delete anywhere; plain Delete inside Deleted Items; confirmation dialog | TCROWID unlink; matrix slots + PC/subnodes orphaned | fadc84f / 74d5182 |
+| Purge (Empty Deleted Items) | Deleted Items folder context menu, enabled only while editing | per-message validated unlink under the reader gate | cd604ac |
+| Move between folders | drag rows onto any visible tree folder; message right-click -> "Move to Folder..." dialog (system folders filtered with the tree's own presentation rule) | full re-link: dest row from source cells, heap rebuild copy-on-write, BTH regrow, matrix extend/reuse, atomic NBT flip, source unlink, nidParent repoint | d0b39b7 / 9e97c4e |
+| Integrity seal | Finish Editing Mode / window close | VerifyIntegrity: every BT page CRC + every block trailer (sig, payload CRC, bid echo) | 57fa0ee |
+| Pre/post damage triage | opt-in OPENOUTLOOK_BASELINE_PST test | same verifier, read-only; baselines captured for all three owner archives | 74e837a |
+
+Live headless proofs: every row of this table was driven through the real app on fixture copies
+(screenshots verified), including restart persistence and rollback-observed-working-for-real.
+Tests: 399/399 with and without the fixture; rmarrash_1/2/3 md5-identical throughout; published
+binary smoke-tested (see BUILD_STATUS.md for sha).
+
+### Deliberate scope decisions (v1)
+- Unicode PST only; ANSI archives stay read-only forever. OST out of scope.
+- No block allocator growth path and no B/NBT page splits: allocation uses existing free slots
+  (probed: thousands available in every real archive); full trees refuse with a clear message.
+- Nothing is freed or compacted; scanpst/Outlook cleanup reclaims orphans eventually.
+- SMQ search-update queues not maintained (both reference writers omit them; scanpst advisory only).
+- Folder create/rename/delete (Phase E) NOT implemented - see plan below, unchanged.
+
+### Outstanding follow-ups
+1. Hardware check on real Windows Outlook: tolerance of the inert zeroed TCROWID trailing slot left
+   by deletes (worst known case: scanpst advisory or phantom row; our reader skips zero keys).
+2. Editing rmarrash_1.pst creates a ~909 MB .bak beside it - intentional; manual cleanup per session.
+3. Phase E (folder create/rename/delete) remains planned, untouched.
+
 ## Verified inventory of what already exists (read from source, 2026-10-01)
 
 | Capability | State | Where |
@@ -58,7 +94,7 @@ document bloat tradeoff. Update folder ContentCount/UnreadCount. Attachment BTre
 Properties subnode under FAIPSubtree: v1 leave attached to item (they're keyed by FID=itemID; orphans).
 Risk: page free-list vs shift choice — research brief decides.
 
-### C — row INSERT (enables real move)
+### C — row INSERT (enables real move) (SHIPPED - see matrix above)
 Insert = new RID in destination Contents BTH (RIDLAST++ on the BTree? research: per-BTree next-RID
 from max RID + 1 with collision care), record {RID, itemID NID} + copy/clone of source row LTP heap.
 Space problem: leaf page must have room → reuse page free space (Outlook's ibFreelistStart) else split
@@ -67,7 +103,7 @@ research brief; fallback "destination folder page full, cannot move" honest erro
 Also on move: rewrite PR_FOLDERS_PATH/PR_PARENT_DISPLAY(_W) in the item's props (variable-size — may
 need local-props stream append or accept stale value? research), keep ConversationIndex unchanged.
 
-### D — delete UX + purge
+### D — delete UX + purge (SHIPPED - see matrix above)
 Delete key / ribbon Delete → move row to Deleted Items folder (B+C). "Empty Deleted Items" → batch B.
 Recycle-bin semantics: restore = reverse move.
 
@@ -231,5 +267,10 @@ the probe matches our reader: cEnt byte @488, cbEnt byte @490, cLevel byte @491 
 - History note: cd604ac accidentally included worker WIP via staged-index sweep; history rewritten
   honestly (d892b0d + 9b87538). Lesson: git checkout <tree> -- paths STAGES; verify staged set before
   every commit.
-- Remaining: drag message rows onto arbitrary folders (same engine), publish refresh, hardware check
-  of zeroed-slot tolerance on real Outlook.
+- 9e97c4e SHIPPED move UI: drag-and-drop onto tree folders (XDND cannot be exercised under Xvfb -
+  no window manager - so the same engine is also exposed as the right-click "Move to Folder..."
+  dialog, which IS headless-provable and was: select -> menu -> pick Deleted Items -> Move ->
+  "Moved 1 message to Deleted Items" live. Dialog filters MAPI system folders using the folder
+  pane's own VisibleRoots presentation rule. Smoke script gained drag:<x1,y1>x2,y2> for desktop use.
+- f88827c docs + published binary refreshed (sha in BUILD_STATUS.md); goal closed with the full
+  matrix above. Remaining follow-ups are listed once, at the top, under Outstanding follow-ups.

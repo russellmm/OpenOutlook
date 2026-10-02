@@ -41,6 +41,33 @@ public partial class MainWindow
         StatusText.Text = $"Folder \"{created.Name}\" created in {Path.GetFileName(sel.Path)} · verified";
     }
 
+    /// <summary>New Folder on the archive root node: parent is the store's root folder.</summary>
+    private async Task NewFolderAtRootAsync(string archivePath)
+    {
+        var store = EnsureWritableStore(archivePath);
+        if (store is null) return;
+        var name = await PromptForFolderNameAsync(store.DisplayName);
+        if (string.IsNullOrWhiteSpace(name)) return;
+        MailFolder created;
+        try { created = await Task.Run(() => store.CreateFolder(store.Root.Nid, name)); }
+        catch (Exception ex) when (ex is PstException or IOException)
+        {
+            StatusText.Text = $"Could not create folder: {ex.Message}";
+            return;
+        }
+        if (!await VerifyOperationAsync(archivePath)) return;
+        InvalidateFolderCache(archivePath);
+        var archiveNode = FolderTree.Items.OfType<TreeViewItem>()
+            .FirstOrDefault(n => n.Tag is string p && p == archivePath);
+        if (archiveNode is not null)
+        {
+            AddChildren(archiveNode, created, archivePath, new HashSet<uint>());
+            ApplyFolderOrder(archiveNode);
+            archiveNode.IsExpanded = true;
+        }
+        StatusText.Text = $"Folder \"{created.Name}\" created in {Path.GetFileName(archivePath)} \u00b7 verified";
+    }
+
     private static TreeViewItem? FindFolderNode(System.Collections.IEnumerable items, uint nid)
     {
         foreach (var obj in items)

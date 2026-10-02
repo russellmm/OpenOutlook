@@ -325,3 +325,27 @@ Tests: create -> reopen sees it; move message into new folder -> reopen keeps it
 hnidRows==0 mint path); create x N until leaf-full refusal; integrity 0 problems; all archives.
 Open question to resolve first: exact WalkBth header byte expectations for property-context BTHs
 (Read BTHHDR parse in HeapOnNode.WalkBth before building item [0]).
+
+## Owner field report 2026-10-02 (v2 binary) - diagnosis + plans
+1. MOVE fails on real archives: engine probe over ALL folder pairs of an rmarrash_1 copy shows moves
+   succeed until a DESTINATION table's last heap block fills; RebuildBlockWithAppends then returns
+   null -> "shape this editor will not guess" refusal (writes nothing; status shows the reason).
+   FIX PLAN (next round): when tail rebuild fails on a multi-block (BREF) destination heap, build a
+   continuation block (items + fresh allocation map, no HNHDR; hid BlockIndex = new ordinal - the
+   reader already walks multi-block heaps this way), allocate it in the same batch, and grow the
+   BREF payload by one 8-byte bid entry. BREF lives in an internal page whose item cannot grow
+   in place -> rewrite that internal block via RebuildBlockWithAppends(hasHnhdr:false)-style item
+   replacement (append enlarged BREF item, repoint node dataBid) BEFORE the atomic visibility flip.
+2. "Item deleted from source but never appears" - NOT reproduced engine-side (refusals write
+   nothing; every successful pair round-tripped with integrity 0). If it recurs after fix 1 lands,
+   capture ~/.local/share/OpenOutlook/logs/openoutlook.log immediately after the failed move.
+3. COPY to folder (owner-requested safety path): CopyMessage = MoveOrCopy(deleteSource:false) -
+   allocate a fresh NID handle for the copy {same bidData/bidSub as source, parent=dest} via
+   AppendNbtEntry (sharing data bids is native PST semantics, cRef>1); write the destination row
+   with the COPY's nid at TCROWID.dwId; skip src unlink, skip RewriteNidParent on the original,
+   adjust only destination counts. UI: "Copy to Folder..." beside Move. Then move = copy + verify
+   copy visible + unlink source (make MoveMessage itself follow this order so a failed move can
+   never lose the original).
+4. SHIPPED: New Folder... now also on the archive ROOT node (NewFolderAtRootAsync, parent=store.Root;
+   live-proven headless "created - verified"). Create-failure visibility: refusals land in the status
+   bar verbatim ("no empty message table to model a new folder on", duplicate names, etc.).

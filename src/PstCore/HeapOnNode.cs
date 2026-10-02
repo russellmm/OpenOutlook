@@ -280,6 +280,90 @@ internal sealed class HeapOnNode
     }
 
     public static bool IsHid(uint hnid) => (hnid & 0x1F) == 0;
+
+    /// <summary>
+    /// Phase C growth primitive: produce a COPY of a single-block heap page with new items appended
+    /// at the end of the item region (copy-on-write - the original block is never modified, which is
+    /// essential because table template heaps are shared between folders with BBT cRef up to 6).
+    /// Existing allocations keep byte-identical offsets, so every existing HID stays valid; new items
+    /// get fresh sequential allocation indices (HNPAGEMAP rgibAlloc tiles contiguously, so appending
+    /// a boundary extends the last item's end and each new item chains after it). The page map moves
+    /// to the new block end; HNHDR.ibHnpm is updated. Verified against real files: heaps are packed
+    /// flush (mapEnd == blockLength), which this requires. Returns null for any shape it does not
+    /// fully understand - callers must refuse rather than guess.
+    /// </summary>
+    internal static byte[]? RebuildBlockWithAppends(byte[] old, IReadOnlyList<byte[]> items, int blockIndex, out uint[] newHnids)
+    {
+        newHnids = [];
+        if (old.Length < 12 || old[2] != 0xEC) return null;
+        var mapOff = BinaryUtil.ReadU16(old, 0);
+        if (mapOff + 4 > old.Length) return null;
+        var cAlloc = BinaryUtil.ReadU16(old, mapOff);
+        var mapSize = 4 + (cAlloc + 1) * 2;
+        if (mapOff + mapSize != old.Length) return null; // only packed-flush heaps (empirically all of them)
+
+        var bounds = new int[cAlloc + 1];
+        for (var i = 0; i <= cAlloc; i++) bounds[i] = BinaryUtil.ReadU16(old, mapOff + 4 + i * 2);
+        if (bounds[0] < 12) return null; // HNHDR is 12 bytes (incl. rgbFillLevel)
+        for (var i = 1; i <= cAlloc; i++)
+            if (bounds[i] < bounds[i - 1] || bounds[i] > mapOff) return null;
+        var dataEnd = bounds[cAlloc];
+        if (dataEnd != mapOff) return null; // packed flush: last allocation ends exactly at the map
+
+        var totalNew = 0;
+        foreach (var it in items)
+        {
+            if (it.Length == 0 || it.Length > 60_000) return null;
+            totalNew += it.Length;
+        }
+        var cAllocNew = cAlloc + items.Count;
+        if (cAllocNew > 1023) return null; // HID index field is 11 bits
+        var newMapSize = 4 + (cAllocNew + 1) * 2;
+        var newLen = dataEnd + totalNew + newMapSize;
+        if (newLen > 8176) return null; // must fit one external block
+
+        var outBuf = new byte[newLen];
+        Buffer.BlockCopy(old, 0, outBuf, 0, dataEnd); // item region byte-identical: old HIDs all valid
+        BinaryUtil.WriteU16(outBuf, 0, (ushort)(newLen - newMapSize)); // ibHnpm
+
+        var pos = dataEnd;
+        var hnids = new uint[items.Count];
+        var newBounds = new int[cAllocNew + 1];
+        Array.Copy(bounds, newBounds, cAlloc + 1);
+        for (var i = 0; i < items.Count; i++)
+        {
+            items[i].CopyTo(outBuf.AsSpan(pos));
+            newBounds[cAlloc + 1 + i] = pos + items[i].Length;
+            hnids[i] = ((uint)blockIndex << 16) | (uint)((cAlloc + 1 + i) << 5);
+            pos += items[i].Length;
+        }
+
+        var newMapOff = newLen - newMapSize;
+        BinaryUtil.WriteU16(outBuf, newMapOff, (ushort)cAllocNew);
+        BinaryUtil.WriteU16(outBuf, newMapOff + 2, 0);
+        for (var i = 0; i <= cAllocNew; i++)
+            BinaryUtil.WriteU16(outBuf, newMapOff + 4 + i * 2, (ushort)newBounds[i]);
+
+        newHnids = hnids;
+        return outBuf;
+    }
+
+    /// <summary>Patch a uint32 at an absolute offset inside the block's item region of a planned
+    /// rebuild buffer (used to repoint BTINFO.hidRoot / TCINFO.hnidRows inside the copied heap).</summary>
+    internal static void PatchBytesInPlace(byte[] buffer, int offset, ReadOnlySpan<byte> value) =>
+        value.CopyTo(buffer.AsSpan(offset));
+
+    /// <summary>Absolute item offset for an allocation index in a packed heap block (bounds table).</summary>
+    internal static bool TryGetAllocStart(byte[] block, int allocIndex, out int start)
+    {
+        start = 0;
+        var mapOff = BinaryUtil.ReadU16(block, 0);
+        if (allocIndex < 1 || mapOff + 4 > block.Length) return false;
+        var cAlloc = BinaryUtil.ReadU16(block, mapOff);
+        if (allocIndex > cAlloc) return false;
+        start = BinaryUtil.ReadU16(block, mapOff + 4 + (allocIndex - 1) * 2);
+        return true;
+    }
 }
 
 internal static class PropType

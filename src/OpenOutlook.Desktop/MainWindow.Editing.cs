@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -169,6 +173,69 @@ public partial class MainWindow
             ? $"{what} written to {Path.GetFileName(path)} · turn off Editing Mode to verify and seal the archive"
             : $"{what} saved locally (archive is opened read-only)";
         return true;
+    }
+
+    /// <summary>Handles Delete for PST rows before the Microsoft-account logic. Read-only archives get
+    /// a pointer to Editing Mode instead of the mailbox popup; writable archives confirm and then
+    /// unlink the rows for real (Phase B delete). The list is reloaded from the file afterwards so
+    /// what the user sees is exactly what the archive now contains.</summary>
+    private async Task<bool> TryHandlePstDeleteAsync(string action)
+    {
+        if (action != "delete") return false;
+        var rows = MessageList.SelectedItems.OfType<MessageListRow>()
+            .Concat(MessageList.SelectedItem is MessageListRow single ? [single] : Array.Empty<MessageListRow>())
+            .Distinct().ToList();
+        if (rows.Count == 0) return false;
+        if (_activePath is not { } path || !_stores.TryGetValue(path, out var store))
+        {
+            StatusText.Text = "The archive for this selection is no longer open.";
+            return true;
+        }
+        if (!store.CanWrite)
+        {
+            StatusText.Text = "This archive is opened read-only - right-click the archive in the folder pane and turn on Editing Mode to delete messages.";
+            return true;
+        }
+        if (!await ConfirmPstDeleteAsync(rows.Count, Path.GetFileName(path))) return true;
+        var done = 0;
+        string? firstError = null;
+        foreach (var row in rows)
+        {
+            try { store.DeleteMessage(row.Summary); done++; }
+            catch (Exception ex) when (ex is PstException or IOException) { firstError ??= ex.Message; }
+        }
+        _ = RefreshActivePstFolderAsync(path);
+        StatusText.Text = done > 0
+            ? $"Deleted {done} message{(done == 1 ? "" : "s")} from {Path.GetFileName(path)} · turn off Editing Mode to verify and seal the archive" +
+              (firstError is null || done == rows.Count ? "" : $" · {rows.Count - done} not deleted: {firstError}")
+            : $"Could not delete: {firstError ?? "unknown reason"}";
+        return true;
+    }
+
+    private async Task<bool> ConfirmPstDeleteAsync(int count, string archiveName)
+    {
+        var dialog = new Window
+        {
+            Title = count == 1 ? "Delete message from archive?" : "Delete messages from archive?",
+            Width = 460, Height = 200, WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var delete = new Button { Content = "Delete from archive" };
+        var cancel = new Button { Content = "Cancel" };
+        delete.Click += (_, _) => dialog.Close(true);
+        cancel.Click += (_, _) => dialog.Close(false);
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(18), Spacing = 14, Children =
+            {
+                new TextBlock
+                {
+                    Text = $"Remove {(count == 1 ? "this message" : $"{count} messages")} from {archiveName}? The archive's backup copy keeps everything as it was when Editing Mode began.",
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { delete, cancel } }
+            }
+        };
+        return await dialog.ShowDialog<bool>(this);
     }
 
     /// <summary>Called from the shutdown path: an open editing session is committed with verification,

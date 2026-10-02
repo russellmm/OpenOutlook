@@ -7,8 +7,8 @@ namespace PstCore;
 internal sealed class NbtEntry
 {
     public required Nid Nid { get; init; }
-    public required Bid Data { get; init; }
-    public required Bid Sub { get; init; }
+    public required Bid Data { get; set; }
+    public required Bid Sub { get; set; }
     public Nid Parent { get; set; }
     public ulong PageOffset { get; init; }
     public int EntryOffset { get; init; }
@@ -217,6 +217,275 @@ internal sealed class Ndb : IDisposable
         PstCrypto.Encode(encoded, Header.CryptMethod, bid.CyclicKey);
         var crc = PstCrypto.ComputeCrc(encoded);
         WriteBlockBytes(entry, encoded, crc);
+    }
+
+    /// <summary>Same-size rewrite of an external block WITHOUT crypt encoding. Sub-node (SLB) trees
+    /// are demonstrably stored unencrypted in real archives (this reader never decodes them), so
+    /// patches to them must round-trip the same way.</summary>
+    internal void RewriteRawExternalBlock(Bid bid, byte[] payload)
+    {
+        if (!_bbt.TryGetValue(bid.LookupKey, out var entry))
+            throw new PstException($"Block 0x{bid.Value:X} was not found.");
+        if (payload.Length != entry.Size)
+            throw new PstException("In-place edits must keep the original block size.");
+        WriteBlockBytes(entry, payload, PstCrypto.ComputeCrc(payload));
+    }
+
+    // ---- Phase C append allocator (docs/pst-editing-design.md "Phase C allocator specification") ----
+
+    private const int AMapSpan = 253_952;      // one AMap page per span; grid origin 0x4400
+    private const int FirstAMapPage = 0x4400;
+    private const long ReservedDListIb = 0x4200;
+
+    /// <summary>State for one validate-then-write allocation batch. The caller must have pre-checked
+    /// everything it is going to do (dry-run) before calling Begin(); allocations then proceed
+    /// without surprises, and Commit() finishes the header bookkeeping including fAMapValid=VALID.</summary>
+    internal sealed class AllocationBatch
+    {
+        internal readonly List<(Bid Bid, ulong Ib, int Slots)> Allocated = [];
+        internal long FreeSlotsConsumed;
+    }
+
+    internal bool CanAllocate => Unicode && _stream.CanWrite && ReadHeaderByte() == 0x02;
+
+    private byte ReadHeaderByte()
+    {
+        var buf = new byte[564];
+        lock (_io)
+        {
+            _stream.Seek(0, SeekOrigin.Begin);
+            if (_stream.Read(buf, 0, buf.Length) < 512) return 0;
+        }
+        return Unicode ? buf[0xB4 + 68] : buf[0xA4 + 36];
+    }
+
+    private ulong ReadBidNextB()
+    {
+        var buf = new byte[564];
+        lock (_io)
+        {
+            _stream.Seek(0, SeekOrigin.Begin);
+            if (_stream.Read(buf, 0, buf.Length) < 512) return 0;
+        }
+        return BinaryUtil.ReadU64(buf, 0x204);
+    }
+
+    /// <summary>Every 64-byte slot covered by an existing BBT entry. Empirically (rmarrash_2 probe)
+    /// real Outlook files contain live blocks whose AMap bits are not set, so the BBT - not the
+    /// bitmap - is the authoritative occupancy source; bitmap bits are only written best-effort.</summary>
+    private HashSet<long> BuildOccupiedSlots()
+    {
+        var occupied = new HashSet<long>();
+        foreach (var e in _bbt.Values)
+        {
+            long slots = e.Size == 512 && e.Offset % 512 == 0
+                ? 8 // B-tree page: exactly one 512-byte page, no separate trailer block
+                : ((e.Size + 16 + 63) / 64);
+            var start = (long)(e.Offset / 64);
+            for (var s = start; s < start + slots; s++) occupied.Add(s);
+        }
+        return occupied;
+    }
+
+    private static bool IsReservedSlot(long slot)
+    {
+        var ib = slot * 64L;
+        if (ib >= ReservedDListIb && ib < ReservedDListIb + 512) return true;   // DList page
+        if (ib < FirstAMapPage) return true;                                    // header region
+        var d = ib - FirstAMapPage;
+        if (d % AMapSpan < 512) return true;                                    // AMap pages
+        var spanStart = ib / AMapSpan * (long)AMapSpan;
+        if (ib >= spanStart + 0x600 && ib < spanStart + 0x600 + 512 && ib % 2_031_616L < 512 + 512) return true; // PMap pages (conservative)
+        return false;
+    }
+
+    internal AllocationBatch BeginAllocations()
+    {
+        if (!Unicode) throw new PstException("Writing is only supported for Unicode archives.");
+        if (!_stream.CanWrite) throw new PstException("The archive was not opened writable.");
+        if (ReadHeaderByte() != 0x02)
+            throw new PstException("The archive's allocation map is flagged invalid; open it in Outlook once to rebuild it, then retry.");
+        // fAMapValid = INVALID before any allocation work: a crash mid-batch then leaves Outlook
+        // doing its slow-but-safe AMap rebuild instead of trusting possibly-stale bitmaps.
+        PatchHeader(h => h[0xB4 + 68] = 0x01, finalizeCrcs: true);
+        return new AllocationBatch();
+    }
+
+    /// <summary>Allocate one data block (payload &lt;= 8176 B) at a free slot and write it. Slots come
+    /// from the region below EOF that no BBT entry covers, skipping reserved page positions; the
+    /// file never grows in v1 (real archives carry thousands of unused slots - see design doc).
+    /// The new BBT entry lands appended to the rightmost leaf, which is correct because new bids
+    /// exceed every bid in use, and requires no page splits.</summary>
+    internal Bid AllocateAndWrite(AllocationBatch batch, byte[] payload, bool encrypt)
+    {
+        if (payload.Length < 16 || payload.Length > 8176)
+            throw new PstException("Allocated payloads must fit between 16 and 8176 bytes.");
+        var occupied = BuildOccupiedSlots();
+        long eof = (long)Header.FileEof;
+        long chosenSlot = -1;
+        for (long slot = FirstAMapPage / 64; slot * 64 + ((payload.Length + 16 + 63) / 64) * 64 <= eof; slot++)
+        {
+            if (IsReservedSlot(slot) || occupied.Contains(slot)) continue;
+            var slots = (payload.Length + 16 + 63) / 64;
+            var fits = true;
+            for (var s = slot + 1; s < slot + slots; s++)
+                if (IsReservedSlot(s) || occupied.Contains(s)) { fits = false; break; }
+            if (!fits) continue;
+            chosenSlot = slot;
+            break;
+        }
+        if (chosenSlot < 0)
+            throw new PstException("The archive has no free space for this operation.");
+
+        var ib = (ulong)(chosenSlot * 64);
+        var bidValue = ReadBidNextB();
+        while (bidValue == 0 || (bidValue & 3) != 0 || _bbt.ContainsKey(bidValue & ~1UL)) bidValue += 4;
+        var bid = new Bid(bidValue);
+        var entry = new BbtEntry { Bid = bid, Offset = ib, Size = (ushort)payload.Length, RefCount = 2 };
+
+        var bytes = payload.ToArray();
+        if (encrypt) PstCrypto.Encode(bytes, Header.CryptMethod, bid.CyclicKey);
+        WriteBlockBytes(entry, bytes, PstCrypto.ComputeCrc(bytes));
+        InsertBbtEntryAppended(bid, ib, (ushort)payload.Length, 2);
+        _bbt[bid.LookupKey] = entry;
+
+        var slotCount = (payload.Length + 16 + 63) / 64;
+        for (var s = chosenSlot; s < chosenSlot + slotCount; s++) occupied.Add(s);
+        batch.Allocated.Add((bid, ib, slotCount));
+        batch.FreeSlotsConsumed += slotCount;
+        return bid;
+    }
+
+    private void InsertBbtEntryAppended(Bid bid, ulong ib, ushort cb, ushort cref)
+    {
+        // Descend to the rightmost leaf (last child at every level): new bids exceed all used bids.
+        var ibPage = Header.BbtRootIb;
+        while (true)
+        {
+            var page = ReadPage(ibPage);
+            var cEnt = page[488];
+            var cbEnt = page[490];
+            var cLevel = page[491];
+            if (cLevel == 0)
+            {
+                var cap = 488 / Math.Max(1, (int)cbEnt);
+                if (cbEnt != 24 || cEnt >= cap || cEnt >= 255)
+                    throw new PstException("The block BTree has no room for a new entry (v1 never splits pages).");
+                var o = cEnt * cbEnt;
+                BinaryUtil.WriteU64(page, o, bid.Value);
+                BinaryUtil.WriteU64(page, o + 8, ib);
+                BinaryUtil.WriteU16(page, o + 16, cb);
+                BinaryUtil.WriteU16(page, o + 18, cref);
+                BinaryUtil.WriteU16(page, o + 20, 0);
+                page[488] = (byte)(cEnt + 1);
+                var crc = PstCrypto.ComputeCrc(page.AsSpan(0, 496));
+                BinaryUtil.WriteU32(page, 500, crc);
+                lock (_io)
+                {
+                    _stream.Seek((long)ibPage, SeekOrigin.Begin);
+                    _stream.Write(page, 0, page.Length);
+                    _stream.Flush();
+                }
+                return;
+            }
+            ibPage = BinaryUtil.ReadU64(page.AsSpan((cEnt - 1) * cbEnt), 16);
+        }
+    }
+
+    /// <summary>Finish the batch: set AMap bits best-effort, then update bidNextB / cbAMapFree /
+    /// dwUnique, recompute both header CRCs, and restore fAMapValid = VALID as the LAST step.</summary>
+    internal void CommitAllocations(AllocationBatch batch)
+    {
+        foreach (var (_, ibPage, slots) in batch.Allocated)
+            SetAmapBits((long)ibPage, slots);
+
+        var lastBid = batch.Allocated.Count > 0 ? batch.Allocated[^1].Bid.Value : 0UL;
+        PatchHeader(h =>
+        {
+            if (lastBid != 0) BinaryUtil.WriteU64(h, 0x204, lastBid + 4);
+            var free = BinaryUtil.ReadU64(h, 0xB4 + 20);
+            var consumed = (ulong)(batch.FreeSlotsConsumed * 64);
+            BinaryUtil.WriteU64(h, 0xB4 + 20, free > consumed ? free - consumed : 0);
+            h[0xB4 + 68] = 0x02; // VALID last
+        }, finalizeCrcs: true);
+    }
+
+    private void SetAmapBits(long ib, int slots)
+    {
+        // Spec/libpff mapping: page k (stored at 0x4400 + k*span) covers slots [k*span, (k+1)*span).
+        var spanIndex = ib / AMapSpan;
+        var pageIb = FirstAMapPage + spanIndex * AMapSpan;
+        if (pageIb + 512 > (long)Header.FileEof) return;
+        var page = ReadPage((ulong)pageIb);
+        var firstSlot = (int)((ib - spanIndex * (long)AMapSpan) / 64);
+        for (var i = 0; i < slots && firstSlot + i < 3968; i++)
+            page[(firstSlot + i) / 8] |= (byte)(1 << ((firstSlot + i) % 8));
+        var crc = PstCrypto.ComputeCrc(page.AsSpan(0, 496));
+        BinaryUtil.WriteU32(page, 500, crc);
+        lock (_io)
+        {
+            _stream.Seek(pageIb, SeekOrigin.Begin);
+            _stream.Write(page, 0, page.Length);
+            _stream.Flush();
+        }
+    }
+
+    /// <summary>Rewrite the 564-byte header: apply a patch to the raw bytes, bump dwUnique, recompute
+    /// dwCRCPartial (471 B from offset 8) and dwCRCFull (516 B from offset 8), write it back.</summary>
+    private void PatchHeader(Action<byte[]> patch, bool finalizeCrcs)
+    {
+        var buf = new byte[564];
+        lock (_io)
+        {
+            _stream.Seek(0, SeekOrigin.Begin);
+            if (_stream.Read(buf, 0, buf.Length) < 512)
+                throw new PstException("Cannot read the archive header for update.");
+            patch(buf);
+            if (finalizeCrcs)
+            {
+                var unique = BinaryUtil.ReadU32(buf, 0x28);
+                BinaryUtil.WriteU32(buf, 0x28, unique + 1);
+                var partial = PstCrypto.ComputeCrc(buf.AsSpan(8, 471));
+                var full = PstCrypto.ComputeCrc(buf.AsSpan(8, 516));
+                BinaryUtil.WriteU32(buf, 4, partial);
+                BinaryUtil.WriteU32(buf, 0x20C, full);
+            }
+            _stream.Seek(0, SeekOrigin.Begin);
+            _stream.Write(buf, 0, buf.Length);
+            _stream.Flush();
+        }
+    }
+
+    /// <summary>Point an NBT entry's bidData at a new block (copy-on-write node rebuild), updating
+    /// the NBT page in place with its CRC recomputed - the same proven pattern as RewriteNidParent.</summary>
+    internal void RewriteNbtDataBid(NbtEntry node, Bid newBid)
+    {
+        var page = ReadPage(node.PageOffset);
+        BinaryUtil.WriteU64(page, node.EntryOffset + 8, newBid.Value);
+        var crc = PstCrypto.ComputeCrc(page.AsSpan(0, 496));
+        BinaryUtil.WriteU32(page, 500, crc);
+        lock (_io)
+        {
+            _stream.Seek((long)node.PageOffset, SeekOrigin.Begin);
+            _stream.Write(page, 0, page.Length);
+            _stream.Flush();
+        }
+        node.Data = newBid;
+    }
+
+    internal void RewriteNbtSubBid(NbtEntry node, Bid newBid)
+    {
+        var page = ReadPage(node.PageOffset);
+        BinaryUtil.WriteU64(page, node.EntryOffset + 16, newBid.Value);
+        var crc = PstCrypto.ComputeCrc(page.AsSpan(0, 496));
+        BinaryUtil.WriteU32(page, 500, crc);
+        lock (_io)
+        {
+            _stream.Seek((long)node.PageOffset, SeekOrigin.Begin);
+            _stream.Write(page, 0, page.Length);
+            _stream.Flush();
+        }
+        node.Sub = newBid;
     }
 
     /// <summary>Full-file integrity pass: verifies every B-tree page CRC and every block trailer
@@ -478,6 +747,13 @@ internal sealed class Ndb : IDisposable
                 throw new PstException($"Failed to read block 0x{bid.Value:X}.");
         }
         return data;
+    }
+
+    /// <summary>Raw (unencrypted) block bytes for write-planning; null when the bid resolves nowhere.</summary>
+    internal byte[]? ReadRawBlockForWrite(Bid bid)
+    {
+        try { return ReadRawBlock(bid); }
+        catch (PstException) { return null; }
     }
 
     private byte[] ReadExternalBlock(Bid bid)

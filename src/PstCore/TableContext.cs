@@ -190,6 +190,56 @@ internal sealed class TableContext
         return true;
     }
 
+    // ---- Phase C move support: geometry accessors mirroring Load's exact offset math ----
+
+    internal HeapOnNode Heap => _heap;
+    internal uint HidRowIndex => _hidRowIndex;
+    internal uint HnidRows => _hnidRows;
+    internal int RowSize => _rowSize;
+    internal int Tci1 => _tci1;
+    internal IReadOnlyDictionary<uint, uint> RowIndexMap => _rowIdToIndex;
+
+    /// <summary>Raw matrix record bytes for one row (the on-disk cell layout), or null if the row or
+    /// its slot cannot be located. Uses exactly Load's offset arithmetic.</summary>
+    internal byte[]? GetRowRaw(uint rowId)
+    {
+        if (_hnidRows == 0 || _rowSize <= 0) return null;
+        if (!_rowIdToIndex.TryGetValue(rowId, out var rowIndex)) return null;
+        var matrix = _heap.GetItem(_hnidRows);
+        int offset;
+        if (matrix.Length >= (rowIndex + 1) * (long)_rowSize && matrix.Length % _rowSize == 0)
+            offset = (int)(rowIndex * (long)_rowSize);
+        else
+        {
+            var trailer = _heap.Ndb.Unicode ? 16 : 12;
+            var blockData = 8192 - trailer;
+            var rowsPerBlock = Math.Max(1, blockData / _rowSize);
+            offset = (int)(rowIndex / rowsPerBlock) * blockData + (int)(rowIndex % rowsPerBlock) * _rowSize;
+        }
+        if (offset < 0 || offset + _rowSize > matrix.Length) return null;
+        return matrix.AsSpan(offset, _rowSize).ToArray();
+    }
+
+    /// <summary>True when this table's row matrix is a single contiguous leaf (matrix length a multiple
+    /// of the row size) - the only shape Phase C insert supports growing. Empty tables count.</summary>
+    internal bool MatrixIsSingleContiguousLeaf()
+    {
+        if (_hnidRows == 0) return true;
+        var blocks = _heap.SubNodes.TryGetValue(_hnidRows, out var sub)
+            ? _heap.Ndb.ReadDataTreeBlocks(sub.Data)
+            : null;
+        if (blocks == null || blocks.Count != 1) return false;
+        return _rowSize > 0 && blocks[0].Data.Length % _rowSize == 0;
+    }
+
+    internal int MaxRowIndex()
+    {
+        var max = -1;
+        foreach (var idx in _rowIdToIndex.Values)
+            if (idx > max) max = (int)idx;
+        return max;
+    }
+
     private static byte[]? ReadCell(HeapOnNode heap, TableColumn col, ReadOnlySpan<byte> row)
     {
         var ib = col.IbData;

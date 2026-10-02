@@ -454,6 +454,317 @@ public sealed class PstStore : IDisposable
 
     private void AdjustFolderUnread(uint folderNid, int delta) => AdjustFolderCounts(folderNid, 0, delta);
 
+    /// <summary>
+    /// Phase C move: re-links a message into another folder of the same archive without ever copying
+    /// the item itself (MS-PST §2.6.3.2.8). Steps, all dry-run validated before any byte is written:
+    /// build a destination matrix record from the source row's cells (fixed cells copied verbatim,
+    /// variable cell values appended as fresh heap items in the destination table's heap), grow the
+    /// Row-ID BTree leaf with {rowID = message NID, row-index = new matrix slot}, extend or create the
+    /// row matrix, switch the table node to the rebuilt heap (copy-on-write: shared template heaps are
+    /// never modified in place - real archives share them with BBT cRef up to 6), unlink the source
+    /// row (Phase B primitive), and repoint the message's NBT parent. Allocation follows the append-only
+    /// design: free slots from the block map, rightmost-leaf BBT appends, no splits, file never grows;
+    /// fAMapValid goes INVALID before the batch and VALID last, so a crash mid-move leaves Outlook's
+    /// safe rebuild path rather than silent corruption. Unsupported shapes (multi-block table heaps,
+    /// multi-leaf matrices, multi-level Row-ID BTrees, oversized cells) refuse with nothing written.
+    /// Callers must use this inside a PstEditSession so a failure can roll back from the backup.
+    /// </summary>
+    public void MoveMessage(MailSummary message, MailFolder destFolder)
+    {
+        EnsureWritable();
+        if (!_ndb.CanAllocate)
+            throw new PstException("This archive cannot be written into (ANSI format or invalid allocation map); nothing was changed.");
+        if (destFolder.Nid == message.FolderNid)
+            throw new PstException("The message is already in that folder.");
+
+        var srcTable = TableContext.TryLoad(_ndb, message.FolderNid | (uint)NidType.ContentsTable)
+            ?? throw new PstException("The source folder has no readable contents table; nothing was changed.");
+        if (!srcTable.TryUnlinkRow(message.Nid, dryRun: true))
+            throw new PstException("Could not locate this message's row in the source folder; nothing was changed.");
+
+        var dstNode = _ndb.TryGetNode(destFolder.Nid | (uint)NidType.ContentsTable, out var tn) ? tn
+            : throw new PstException("The destination folder has no contents table; nothing was changed.");
+        var dstTable = TableContext.TryLoad(_ndb, dstNode.Nid.Value)
+            ?? throw new PstException("The destination contents table could not be parsed; nothing was changed.");
+        if (dstTable.RowIndexMap.ContainsKey(message.Nid))
+            throw new PstException("The destination folder already contains this message.");
+        if (dstTable.Heap.Blocks.Count != 1)
+            throw new PstException("The destination table heap spans multiple blocks; moving into large folders is not supported yet.");
+        if (!dstTable.MatrixIsSingleContiguousLeaf())
+            throw new PstException("The destination row matrix is fragmented across blocks; not supported yet.");
+
+        var srcRow = srcTable.Rows.FirstOrDefault(r => r.RowId == message.Nid)
+            ?? throw new PstException("The source row could not be read; nothing was changed.");
+        var srcRaw = srcTable.GetRowRaw(message.Nid)!;
+
+        // ---- plan: destination matrix record ----
+        var rec = new byte[dstTable.RowSize];
+        var appended = new List<byte[]>();
+        var variableCellTargets = new List<(int AppendedIndex, TableColumn Col)>();
+        foreach (var col in dstTable.Columns)
+        {
+            if (col.IbData + col.CbData > rec.Length) continue;
+            byte[]? value = null;
+            if (col.Id == Pid.LtpRowId)
+            {
+                value = BitConverter.GetBytes(message.Nid);
+            }
+            else
+            {
+                var srcCol = srcTable.Columns.FirstOrDefault(c => c.Id == col.Id);
+                if (srcCol != null && srcCol.Type == col.Type && srcCol.CbData == col.CbData
+                    && srcRow.Cells.ContainsKey(col.Id))
+                {
+                    if (!PropType.IsVariable(col.Type) && PropType.FixedSize(col.Type) is > 0 and <= 8)
+                    {
+                        value = new byte[col.CbData];
+                        Array.Copy(srcRaw, srcCol.IbData, value, 0, col.CbData); // verbatim fixed cell bytes
+                    }
+                    else if (PropType.IsVariable(col.Type))
+                    {
+                        var hnid = col.CbData >= 4
+                            ? BinaryUtil.ReadU32(srcRaw, srcCol.IbData)
+                            : (col.CbData == 2 ? BinaryUtil.ReadU16(srcRaw, srcCol.IbData) : 0u);
+                        if (hnid != 0)
+                        {
+                            byte[] payload;
+                            try { payload = srcTable.Heap.GetItem(hnid); }
+                            catch (PstException) { payload = []; }
+                            if (payload.Length > 3580)
+                                throw new PstException(
+                                    "This message has an oversized field in its folder row; moving it is not supported yet.");
+                            variableCellTargets.Add((appended.Count, col));
+                            appended.Add(payload);
+                        }
+                    }
+                }
+            }
+            if (value == null) continue;
+            if (value.Length != col.CbData) continue; // never write a wrong-width cell
+            value.CopyTo(rec.AsSpan(col.IbData));
+            var existByte = dstTable.Tci1 + (col.IBit >> 3);
+            if (existByte < rec.Length)
+                rec[existByte] |= (byte)(1 << (col.IBit & 7));
+        }
+
+        // ---- plan: Row-ID BTree growth (+ its new leaf becomes one appended heap item) ----
+        var bthHdr = dstTable.Heap.GetItem(dstTable.HidRowIndex);
+        if (bthHdr.Length < 8 || bthHdr[1] != 4 || bthHdr[3] != 0)
+            throw new PstException("The destination Row-ID index has an unsupported shape; nothing was changed.");
+        var oldRootHid = BinaryUtil.ReadU32(bthHdr, 4);
+        var oldLeaf = oldRootHid == 0 ? [] : dstTable.Heap.GetItem(oldRootHid);
+        if (oldLeaf.Length % 8 != 0)
+            throw new PstException("The destination Row-ID leaf is misaligned; nothing was changed.");
+        var newRowIndex = dstTable.MaxRowIndex() + 1;
+        var liveRecords = new List<byte[]>();
+        for (var o = 0; o + 8 <= oldLeaf.Length; o += 8)
+        {
+            if (oldLeaf[o] == 0 && oldLeaf[o + 1] == 0 && oldLeaf[o + 2] == 0 && oldLeaf[o + 3] == 0) continue; // zeroed slot from a delete
+            liveRecords.Add(oldLeaf.AsSpan(o, 8).ToArray());
+        }
+        var newLeaf = new byte[(liveRecords.Count + 1) * 8];
+        var lo = 0;
+        foreach (var r in liveRecords) { r.CopyTo(newLeaf.AsSpan(lo)); lo += 8; }
+        BinaryUtil.WriteU32(newLeaf, lo, message.Nid);
+        BinaryUtil.WriteU32(newLeaf, lo + 4, (uint)newRowIndex);
+
+        // Appended heap items: [0] = new BTH leaf, then variable cell payloads in order.
+        appended.Insert(0, newLeaf);
+
+        // ---- plan: matrix bytes (grow case) or in-place slot (reuse case) ----
+        byte[]? matrixBytes = null;
+        uint matrixSubNid = dstTable.HnidRows;
+        var needNewMatrixBlock = false;
+        if (dstTable.HnidRows == 0)
+        {
+            matrixBytes = new byte[dstTable.RowSize]; // slot 0 only
+            rec.CopyTo(matrixBytes, 0);
+            needNewMatrixBlock = true;
+        }
+        else
+        {
+            var oldMatrix = dstTable.Heap.GetItem(dstTable.HnidRows);
+            var needed = (newRowIndex + 1) * dstTable.RowSize;
+            if (needed <= oldMatrix.Length)
+            {
+                // slot already exists inside the current matrix leaf - same-size in-place write, no allocation
+            }
+            else
+            {
+                matrixBytes = new byte[needed];
+                oldMatrix.CopyTo(matrixBytes, 0);
+                rec.CopyTo(matrixBytes.AsSpan(newRowIndex * dstTable.RowSize));
+                needNewMatrixBlock = true;
+            }
+        }
+
+        // New subnode NID for the empty-table case: next free index in this node's sub-node space.
+        if (matrixSubNid == 0)
+        {
+            var maxIdx = 0;
+            foreach (var sn in _ndb.ReadSubNodes(dstNode).Values)
+            {
+                var idx = (int)(sn.Nid.Value >> 5);
+                if (idx > maxIdx) maxIdx = idx;
+            }
+            matrixSubNid = (uint)((maxIdx + 1) << 5) | (uint)NidType.Ltp;
+        }
+
+        // ---- plan: rebuilt heap with appended items + repointed BTINFO.hidRoot / TCINFO.hnidRows ----
+        var rebuilt = HeapOnNode.RebuildBlockWithAppends(dstTable.Heap.Blocks[0].Data, appended, 0, out var newHnids)
+            ?? throw new PstException("The destination table heap has a shape this editor will not guess; nothing was changed.");
+        if (!HeapOnNode.TryGetAllocStart(rebuilt, (int)(dstTable.HidRowIndex >> 5), out var btinfoOff) || btinfoOff + 8 > rebuilt.Length)
+            throw new PstException("The destination table's Row-ID header could not be located; nothing was changed.");
+        HeapOnNode.PatchBytesInPlace(rebuilt, btinfoOff + 4, BitConverter.GetBytes(newHnids[0])); // BTINFO.hidRoot -> grown leaf
+        if (dstTable.HnidRows == 0)
+        {
+            if (!HeapOnNode.TryGetAllocStart(rebuilt, (int)(dstTable.Heap.UserRoot >> 5), out var tcinfoOff) || tcinfoOff + 18 > rebuilt.Length)
+                throw new PstException("The destination table's context header could not be located; nothing was changed.");
+            HeapOnNode.PatchBytesInPlace(rebuilt, tcinfoOff + 14, BitConverter.GetBytes(matrixSubNid)); // TCINFO.hnidRows
+        }
+
+        // ---- plan: sub-node list entry for the matrix (patch in place, or create/extend the SLB) ----
+        List<byte[]>? slbPayload = null; // non-null => need a new raw SLB block
+        byte[]? patchedSlb = null;       // same-size in-place patch of the existing SLB leaf
+        Bid slbOldBid = default;
+        if (needNewMatrixBlock)
+        {
+            if (dstNode.Sub.Value == 0)
+            {
+                var entries = _ndb.ReadSubNodes(dstNode).Values.ToList();
+                if (entries.Count >= 20)
+                    throw new PstException("The destination folder has too many sub-nodes to extend safely.");
+                slbPayload = [BuildSlbLeaf(entries, matrixSubNid, pendingMatrix: true)];
+            }
+            else
+            {
+                var raw = _ndb.ReadRawBlockForWrite(dstNode.Sub);
+                if (raw == null || raw.Length < 8 || raw[0] != 2 || raw[1] != 0)
+                    throw new PstException("The destination folder's sub-node tree is multi-level; not supported yet.");
+                var cEnt = BinaryUtil.ReadU16(raw, 2);
+                if (raw.Length != 8 + cEnt * 24)
+                    throw new PstException("The destination folder's sub-node tree has an unexpected size; nothing was changed.");
+                var found = false;
+                var copy = raw.ToArray();
+                for (var i = 0; i < cEnt; i++)
+                {
+                    if (BinaryUtil.ReadU32(copy, 8 + i * 24) != matrixSubNid) continue;
+                    BinaryUtil.WriteU64(copy, 8 + i * 24 + 8, 0); // placeholder; real bid filled during execute
+                    found = true;
+                    break;
+                }
+                if (!found)
+                {
+                    if (cEnt >= 20) throw new PstException("The destination folder's sub-node list is full.");
+                    var grown = new byte[raw.Length + 24];
+                    raw.CopyTo(grown, 0);
+                    BinaryUtil.WriteU16(grown, 2, (ushort)(cEnt + 1));
+                    BinaryUtil.WriteU32(grown, 8 + cEnt * 24, matrixSubNid);
+                    BinaryUtil.WriteU64(grown, 8 + cEnt * 24 + 8, 0); // placeholder
+                    slbPayload = [grown];
+                }
+                else
+                {
+                    patchedSlb = copy;
+                    slbOldBid = dstNode.Sub;
+                }
+            }
+        }
+
+        // ---- execute (order chosen so the folder view flips atomically at the NBT repoint) ----
+        var batch = _ndb.BeginAllocations();
+        try
+        {
+            Bid newMatrixBid = default;
+            if (needNewMatrixBlock)
+                newMatrixBid = _ndb.AllocateAndWrite(batch, matrixBytes!, encrypt: true);
+
+            if (slbPayload != null)
+            {
+                var entries2 = dstNode.Sub.Value == 0
+                    ? _ndb.ReadSubNodes(dstNode).Values.ToList()
+                    : ReadSlbEntries(_ndb.ReadRawBlockForWrite(dstNode.Sub)!)
+                        .Select(t => new SubNodeEntry { Nid = new Nid(t.Nid), Data = t.Data, Sub = t.Sub })
+                        .ToList();
+                slbPayload[0] = BuildSlbLeaf(entries2, matrixSubNid, pendingMatrix: false, newMatrixBid);
+                var slbBid = _ndb.AllocateAndWrite(batch, slbPayload[0], encrypt: false);
+                _ndb.RewriteNbtSubBid(dstNode, slbBid);
+            }
+            else if (patchedSlb != null)
+            {
+                BinaryUtil.WriteU64(patchedSlb, FindSlbEntryOffset(patchedSlb, matrixSubNid) + 8, newMatrixBid.Value);
+                _ndb.RewriteRawExternalBlock(slbOldBid, patchedSlb);
+            }
+            else if (!needNewMatrixBlock && dstTable.HnidRows != 0)
+            {
+                // Reuse case: the slot for newRowIndex already lives inside the current matrix leaf.
+                if (!dstTable.Heap.TryPatchSubNodeBytes(dstTable.HnidRows,
+                        (long)newRowIndex * dstTable.RowSize, rec))
+                    throw new PstException("Could not write the moved message's row into the destination matrix.");
+            }
+
+            var newHeapBid = _ndb.AllocateAndWrite(batch, rebuilt, encrypt: true);
+            _ndb.RewriteNbtDataBid(dstNode, newHeapBid); // atomic flip to the grown table (row appears here)
+
+            srcTable.TryUnlinkRow(message.Nid);
+            var msgNode = _ndb.GetNode(message.Nid);
+            _ndb.RewriteNidParent(msgNode, new Nid(destFolder.Nid));
+
+            _ndb.CommitAllocations(batch);
+        }
+        catch
+        {
+            // The batch may be half-applied on failure; the editing session's backup/rollback is the
+            // safety net (docs/pst-editing-design.md). Do not attempt speculative repairs here.
+            throw;
+        }
+
+        var unread = message.IsRead ? 0 : 1;
+        AdjustFolderCounts(message.FolderNid, -1, -unread);
+        AdjustFolderCounts(destFolder.Nid, +1, +unread);
+        message.FolderNid = destFolder.Nid;
+    }
+
+    private static List<(uint Nid, Bid Data, Bid Sub)> ReadSlbEntries(byte[] raw)
+    {
+        var list = new List<(uint, Bid, Bid)>();
+        var cEnt = BinaryUtil.ReadU16(raw, 2);
+        for (var i = 0; i < cEnt && 8 + i * 24 + 24 <= raw.Length; i++)
+            list.Add((BinaryUtil.ReadU32(raw, 8 + i * 24),
+                      new Bid(BinaryUtil.ReadU64(raw, 8 + i * 24 + 8)),
+                      new Bid(BinaryUtil.ReadU64(raw, 8 + i * 24 + 16))));
+        return list;
+    }
+
+    private static int FindSlbEntryOffset(byte[] raw, uint nid)
+    {
+        var cEnt = BinaryUtil.ReadU16(raw, 2);
+        for (var i = 0; i < cEnt; i++)
+            if (BinaryUtil.ReadU32(raw, 8 + i * 24) == nid) return 8 + i * 24;
+        throw new PstException("Sub-node entry vanished during the move.");
+    }
+
+    private static byte[] BuildSlbLeaf(List<SubNodeEntry> existing, uint matrixNid, bool pendingMatrix, Bid matrixBid = default)
+    {
+        var entries = existing.Where(e => e.Nid.Value != matrixNid).ToList();
+        var count = entries.Count + 1;
+        var buf = new byte[8 + count * 24];
+        buf[0] = 2; // SLB
+        BinaryUtil.WriteU16(buf, 2, (ushort)count);
+        var o = 8;
+        foreach (var e in entries)
+        {
+            BinaryUtil.WriteU32(buf, o, e.Nid.Value);
+            BinaryUtil.WriteU64(buf, o + 8, e.Data.Value);
+            BinaryUtil.WriteU64(buf, o + 16, e.Sub.Value);
+            o += 24;
+        }
+        BinaryUtil.WriteU32(buf, o, matrixNid);
+        BinaryUtil.WriteU64(buf, o + 8, pendingMatrix ? 0UL : matrixBid.Value); // placeholder until allocated
+        return buf;
+    }
+
+
     /// <summary>Full-file consistency check: every B-tree page CRC and every block trailer.</summary>
     public IReadOnlyList<string> VerifyIntegrity() => _ndb.VerifyIntegrity();
 
@@ -470,16 +781,6 @@ public sealed class PstStore : IDisposable
         table?.TryPatchCell(message.Nid, Pid.FlagStatus, BitConverter.GetBytes(flagged ? 2u : 0u));
         PropertyContext.TryPatchFixedUInt32(heap, Pid.FlagStatus, flagged ? 2u : 0u);
         message.Flagged = flagged;
-    }
-
-    [Obsolete("Not a real move: it only rewrites the NID parent while the row stays in the source folder's Contents BTree. Replaced by true contents-row moves (see docs/pst-editing-design.md Phase C).")]
-    public void MoveMessage(MailSummary message, MailFolder destination)
-    {
-        EnsureWritable();
-        if (message.FolderNid == destination.Nid) return;
-        var node = _ndb.GetNode(message.Nid);
-        _ndb.RewriteNidParent(node, new Nid(destination.Nid));
-        message.FolderNid = destination.Nid;
     }
 
     public MailFolder? DeletedItemsFolder()

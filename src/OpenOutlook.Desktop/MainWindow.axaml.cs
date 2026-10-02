@@ -519,6 +519,7 @@ public sealed partial class MainWindow : Window
         if (!visited.Add(folder.Nid)) return;
         var item = new TreeViewItem { Header = FolderHeader(folder.Name, folder.UnreadCount), Tag = new FolderSelection(path, folder), IsExpanded = folder.ParentNid == 0 };
         EnableFolderReordering(item);
+        EnableMoveDrops(item);
         parent.Items.Add(item);
         foreach (var child in folder.Children) AddChildren(item, child, path, visited);
         ApplyFolderOrder(item);
@@ -862,6 +863,7 @@ public sealed partial class MainWindow : Window
 
     private void ShowMessages(IReadOnlyList<MailSummary> messages)
     {
+        InitMessageDrag();
         _currentMessages = messages;
         if (_activePath is { } archivePath)
             foreach (var message in messages)

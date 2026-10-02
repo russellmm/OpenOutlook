@@ -155,6 +155,19 @@ for step in ${OO_SMOKE_CLICKS:-}; do
             done
             sleep 3
             ;;
+        # drag:x1,y1>x2,y2 presses at the first point, moves in steps to the second, releases -
+        # enough for Avalonia's drag threshold and XDND drop delivery under Xvfb.
+        drag:*)
+            pair="${step#drag:}"; from="${pair%%>*}"; to="${pair##*>}"
+            DISPLAY="$display" xdotool mousemove "${from%,*}" "${from#*,}" mousedown 1
+            sleep 1
+            DISPLAY="$display" xdotool mousemove_relative -- 40 20
+            sleep 1
+            DISPLAY="$display" xdotool mousemove "${to%,*}" "${to#*,}"
+            sleep 1
+            DISPLAY="$display" xdotool mouseup 1
+            sleep 3
+            ;;
         # key:<xdotool-key> presses one key (e.g. key:Delete) into whatever has focus.
         key:*)
             DISPLAY="$display" xdotool key "${step#key:}"

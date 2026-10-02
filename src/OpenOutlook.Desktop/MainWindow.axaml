@@ -458,8 +458,8 @@
             <GridSplitter Grid.Column="3" Background="Transparent" ResizeDirection="Columns" Width="5" />
 
             <!-- Reading pane -->
-            <Grid Name="ReaderPane" Grid.Column="4" RowDefinitions="Auto,Auto,Auto,Auto,*">
-              <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="20,16,16,4">
+            <Grid Name="ReaderPane" Grid.Column="4" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
+              <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="20,8,16,4">
                 <TextBlock Name="SubjectText" Text="Select a folder to begin" FontSize="20" FontWeight="Normal" Foreground="{DynamicResource OlText}" TextWrapping="Wrap" VerticalAlignment="Center" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
                   <Button Name="ReaderReplyButton" Classes="olReaderAction" Tag="reply" Click="MailActionClicked" IsVisible="False">
@@ -474,7 +474,7 @@
                 </StackPanel>
               </Grid>
 
-              <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="20,6,16,8">
+              <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" Margin="20,6,16,8">
                 <Border Name="ReaderAvatar" Width="40" Height="40" CornerRadius="20" Background="#C75B12" VerticalAlignment="Top" IsVisible="False">
                   <TextBlock Name="ReaderAvatarInitials" Text="" FontSize="15" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
@@ -486,15 +486,16 @@
                 <TextBlock Grid.Column="2" Name="MessageDateText" Text="" FontSize="12.5" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="8,2,0,0" />
               </Grid>
 
-              <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6" Margin="20,0,16,6">
+              <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6" Margin="20,0,16,6">
                 <ContentControl Template="{StaticResource OlIconInfo}" Width="14" Height="14" VerticalAlignment="Center"
                         IsVisible="{Binding #HtmlStatusText.IsVisible}" />
                 <TextBlock Name="HtmlStatusText" IsVisible="False" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" MaxWidth="900" />
               </StackPanel>
 
-              <Border Grid.Row="3" Height="1" Background="{DynamicResource OlHairline}" Margin="20,0,16,0" />
+              <Border Grid.Row="4" Height="1" Background="{DynamicResource OlHairline}" Margin="20,0,16,0" />
 
-              <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="6" Margin="20,8,16,0">
+              <!-- Action chips live in a toolbar strip above the message, level with the list's "By date" row. -->
+              <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="10,8,10,4" MinHeight="30">
                 <Button Name="BodyViewButton" Classes="olChip" Content="View plain text" IsVisible="False" Click="ToggleBodyViewClicked" />
                 <Button Name="ReaderModeButton" Classes="olChip" Content="Use alternate reader" IsVisible="False" Click="ReaderModeClicked" />
                 <Button Name="ViewOriginalButton" Classes="olChip" Content="View original here (trusted mail)" IsVisible="False" Click="ToggleOriginalClicked" />

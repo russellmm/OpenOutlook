@@ -39,6 +39,8 @@ public partial class MainWindow
         DragDrop.SetAllowDrop(FolderTree, true);
         FolderTree.AddHandler(PointerPressedEvent, FolderDragPointerPressed, RoutingStrategies.Tunnel);
         FolderTree.AddHandler(PointerMovedEvent, FolderDragPointerMoved, RoutingStrategies.Tunnel);
+        FolderTree.AddHandler(PointerReleasedEvent, (_, _) => _dragCandidate = null, RoutingStrategies.Tunnel);
+        FolderTree.AddHandler(PointerCaptureLostEvent, (_, _) => _dragCandidate = null, RoutingStrategies.Bubble);
         FolderTree.AddHandler(DragDrop.DragOverEvent, FolderDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
         FolderTree.AddHandler(DragDrop.DropEvent, FolderDrop, RoutingStrategies.Bubble, handledEventsToo: true);
     }
@@ -160,6 +162,14 @@ public partial class MainWindow
     private async void FolderDragPointerMoved(object? sender, PointerEventArgs e)
     {
         if (_dragCandidate is not { } item) return;
+        // Hovering must never start a drag: only a still-held left button counts. Without this check,
+        // the candidate left behind by an earlier folder click launched DoDragDrop on a plain
+        // mouse-over, putting the whole window in drag mode with a no-drop cursor over the list.
+        if (!e.GetCurrentPoint(FolderTree).Properties.IsLeftButtonPressed)
+        {
+            _dragCandidate = null;
+            return;
+        }
         var position = e.GetPosition(FolderTree);
         if (Math.Abs(position.X - _dragCandidateStart.X) + Math.Abs(position.Y - _dragCandidateStart.Y) < 8) return;
         _dragCandidate = null;

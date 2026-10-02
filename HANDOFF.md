@@ -1,7 +1,7 @@
 # Session handoff (2026-09-30, later in the day; updated 2026-10-01)
 
-Binary: publish/OpenOutlook.Desktop sha256 f84dcd3921044d2da0c2e6e7417d1f36eb14d103d6c7a002e7527c099144a452,
-built 2026-10-01 11:52 local. 386/386 tests pass (scripts/dev-check.sh). HEAD is pushed to
+Binary: publish/OpenOutlook.Desktop sha256 0fad12cea27c501ee2eee66a734306443ce504f39d6c7379d7cdaefc79f2a3e6,
+built 2026-10-01 19:06 local. 386/386 tests pass (scripts/dev-check.sh). HEAD is pushed to
 github.com/russellmm/OpenOutlook main.
 
 Shipped since the last note: archived (PST) HTML mail defaults to the snapshot reader like connected
@@ -15,7 +15,7 @@ And File > Options is now the classic dialog: Mail page rebuilt section-by-secti
 the Editor Options (Proofing) and Reading Pane sub-dialogs, everything persisted to options.json and proven
 across a restart; the twelve unbuilt categories are named placeholders, and stored settings are consumed by
 features as they land rather than all being wired at once. Theme accent is now classic Outlook blue (#0F6CBD).
-The Reading Pane settings are the first to be wired for real: selecting mail marks it read after the
+Two owner-reported hardware bugs fixed since: hover no longer starts a phantom folder-drag (the X cursor), and the reader action chips moved to a toolbar strip above the message aligned with "By date" so HTML content can never cover them. The Reading Pane settings are the first to be wired for real: selecting mail marks it read after the
 configured delay (or when the selection moves, per the checkbox), remembered in read-state.json since
 archives stay read-only; proven headless including across a restart.
 

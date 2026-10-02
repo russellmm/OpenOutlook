@@ -82,7 +82,10 @@ out of scope (read-only remains).
   row, insert destination TC row with a fresh RowID, set nidParent on the message NBT entry (we
   already have that primitive), update folder PCs. No PR_Folder_Path to patch - it does not exist;
   conversation topic/index live in the PC and travel untouched.
-- There is NO persisted RID counter (TCINFO has none) -> destination RowID = max(existing)+1.
+- There is NO persisted RID counter (TCINFO has none). Spec says any unique RowID works, but our
+  reader resolves rows as byNid[row.RowId] and real Outlook files set dwRowID == message NID - so for
+  MOVES the inserted destination row MUST carry dwRowID = message.Nid (worker-confirmed empirically);
+  max+1 would break GetMessages. Fresh inserts of new messages (later phases) need their own NIDs.
 - Counts (ContentCount/UnreadCount) are CALCULATED properties; cached copies are nice-to-have,
   Outlook recomputes. Our badge updates stay best-effort.
 - GC/space reuse is never required: append-only + orphaning is spec-legal and exactly what both
@@ -160,8 +163,18 @@ Move op composition (§2.6.3.2.8 re-link semantics):
 5. best-effort count updates both folders; 6. Commit = full VerifyIntegrity as today.
 SMQ SUD append deliberately skipped (both reference writers ship without it; scanpst advisory only).
 
-UI wiring after that: drag message rows onto folder tree items (same-store, non-Deleted targets +
-Delete key -> Deleted Items), all through the same validate-then-write discipline.
+UI wiring after that: drag message rows onto folder tree items (same-store targets), all through the
+same validate-then-write discipline.
+
+## UI shipped on top of phases A/B (commits 23afa62, cd604ac)
+- Delete for archives: ribbon Delete + shortcut -> confirmation dialog -> Phase B unlink per selected
+  row -> list reloads from file. Read-only archives get an Editing Mode pointer instead of the old
+  mailbox popup. Live-proven end to end incl. finish-editing verification and restart persistence
+  (deleted message stays gone in a fresh profile). Quitting mid-edit auto-restored a deleted message
+  byte-for-byte - the rollback design observed working for real.
+- Empty Deleted Items (purge): context menu on writable archives' Deleted Items folder, dynamically
+  enabled only while editing, gated by reader lock + confirmation; same validated delete per message.
+- Smoke script gained key:<xdotool-key> steps.
 
 ### AMap empirical validation (2026-10-01, read-only probe of rmarrash_2.pst)
 - fAMapValid == 0x02 on the real archive: Phase C precondition holds; no rebuild path needed for v1.

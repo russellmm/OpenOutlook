@@ -127,17 +127,32 @@ public partial class MainWindow
 
     /// <summary>Right-click menu for one tree row. Enabled state is recomputed every time the menu opens,
     /// because siblings come and go while the window lives.</summary>
+    private bool IsEditingArchive(string archivePath) => _editSessions.ContainsKey(archivePath);
+
     private void EnableFolderReordering(TreeViewItem item)
     {
+        var menuOpeningExtras = new List<Action>();
         var up = new MenuItem { Header = "Move Up" };
         var down = new MenuItem { Header = "Move Down" };
         var top = new MenuItem { Header = "Move to Top" };
         up.Click += (_, _) => MoveFolderNodeBy(item, -1);
         down.Click += (_, _) => MoveFolderNodeBy(item, +1);
         top.Click += (_, _) => MoveFolderNode(item, 0);
-        var menu = new MenuFlyout { Items = { up, down, top } };
+        var items = new List<object> { up, down, top };
+        if (item.Tag is string archivePath)
+        {
+            var edit = new MenuItem();
+            edit.Click += (_, _) => ToggleArchiveEditing(archivePath);
+            menuOpeningExtras.Add(() => edit.Header = IsEditingArchive(archivePath)
+                ? "Finish Editing Mode (verify + save)" : "Turn On Editing Mode…");
+            items.Add(new Separator());
+            items.Add(edit);
+        }
+        var menu = new MenuFlyout();
+        foreach (var entry in items) menu.Items.Add(entry);
         menu.Opening += (_, _) =>
         {
+            foreach (var update in menuOpeningExtras) update();
             var host = OwnerOf(item);
             var index = host?.Items.IndexOf(item) ?? -1;
             up.IsEnabled = index > 0;

@@ -200,6 +200,7 @@ public sealed partial class MainWindow : Window
 
     private async Task ExecuteMailActionAsync(string action)
     {
+        if (TryHandlePstFlagAction(action)) return;
         ConnectedAccount? account = _activeMicrosoftAccount;
         if (account is null && action == "new")
         {
@@ -467,6 +468,7 @@ public sealed partial class MainWindow : Window
         await _readerGate.WaitAsync();
         try
         {
+            FinalizeEditSessionsForShutdown();
             foreach (var store in _stores.Values) store.Dispose();
             _stores.Clear();
         }
@@ -568,7 +570,7 @@ public sealed partial class MainWindow : Window
         if (_folderCache.TryGetValue(cacheKey, out var cached))
         {
             ShowMessages(cached);
-            StatusText.Text = $"{cached.Count} messages · {store.DisplayName} · read-only";
+            StatusText.Text = $"{cached.Count} messages · {store.DisplayName} · {(store.CanWrite ? "EDITING" : "read-only")}";
             return;
         }
         StatusText.Text = $"Loading {selection.Folder.Name}…";
@@ -586,7 +588,7 @@ public sealed partial class MainWindow : Window
             if (version != _folderVersion) return;
             CacheFolder(cacheKey, messages);
             ShowMessages(messages);
-            StatusText.Text = $"{messages.Count} messages · {store.DisplayName} · read-only";
+            StatusText.Text = $"{messages.Count} messages · {store.DisplayName} · {(store.CanWrite ? "EDITING" : "read-only")}";
         }
         catch (Exception ex) { if (version == _folderVersion) StatusText.Text = $"Could not read folder: {ex.Message}"; }
     }

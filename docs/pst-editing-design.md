@@ -76,11 +76,41 @@ Create/rename/delete folder (Folder Information Tree LTP edits + Children BTree 
 rename via fixed/variable patch, OST out of scope forever, ANSI (97-2002) write support explicitly
 out of scope (read-only remains).
 
-## Decisions waiting on MS-PST research brief (subagent running)
-- delete: shift-and-compaction vs ibFreelistStart free-list entry; RIDLAST location for insert;
-- whether shared bRef (BBAT refcount++) is safe for move-without-copy of large bodies;
-- exact BT header fields our writer must maintain (ibFreelistStart@? cbKey/cbEnt consistency);
-- scanpst-cleanliness bar for orphaned blocks.
+## Research outcomes (MS-PST rev 11.2 + two Outlook-verified writers: imap2pst, PST-Builder)
+
+- Move is RE-LINK, not copy (§2.6.3.2.8): same message NID everywhere; delete source Contents-TC
+  row, insert destination TC row with a fresh RowID, set nidParent on the message NBT entry (we
+  already have that primitive), update folder PCs. No PR_Folder_Path to patch - it does not exist;
+  conversation topic/index live in the PC and travel untouched.
+- There is NO persisted RID counter (TCINFO has none) -> destination RowID = max(existing)+1.
+- Counts (ContentCount/UnreadCount) are CALCULATED properties; cached copies are nice-to-have,
+  Outlook recomputes. Our badge updates stay best-effort.
+- GC/space reuse is never required: append-only + orphaning is spec-legal and exactly what both
+  verified writers ship. "Clean" = trees resolve, sigs/CRCs correct, AMaps truthful, EOF on span -
+  NOT zero orphans. v1 never frees anything.
+- Corrected earlier speculation: "FAIPSubtree / 0x0190/0x1D0" exist in no public revision; the real
+  per-folder message-local properties are Contents-TC columns (which is exactly why flag writes had
+  to update both the item PC and the TC row - confirmed empirically in Phase A).
+- Landmines for the allocator work (Phase C): pages must sit at 512-multiple ib (Outlook fail-fast
+  0x80040813); BBT/NBT page trailers carry a COUNTER bid while AMap/PMap carry absolute ib; EOF must
+  land on an AMap span boundary (253,952 B); fAMapValid=INVALID before alloc work, 0x02 last; header
+  CRC pair + dwUnique bump on every header write.
+
+### Phase B design decision (delete without an allocator)
+Deleting a row = remove its TCROWID record from the Row-ID BTH (byte shift within the HN block +
+count fix, same-size rewrite - no allocation). The matrix record itself is left as unreferenced
+garbage: every surviving TCROWID still points at its own dwRowIndex slot, so readers cannot tell.
+(Doing half of "shift matrix + fixup indices" IS corruption - landmine #8; doing neither consistently
+is legal orphaning.) Message PC/recipients/attachments subnodes orphan too - the same state Outlook
+itself produces for deleted mail until a manual cleanup.
 
 ## Status log
-- 2026-10-01: inventory done above. Research brief requested. Phase A starting.
+- 2026-10-01: inventory done. Research brief received and incorporated (above).
+- 2026-10-01 Phase A SHIPPED (57fa0ee core + Editing Mode UI same day): PstEditSession
+  backup/verify/rollback, VerifyIntegrity full-CRC pass, dual-copy flag writes with dry-run
+  validation, Editing Mode context menu on archive roots, ribbon Unread/Read + shortcuts intercepted
+  for PST rows (native when editing, sidecar overlay otherwise), reading-pane auto-mark writes
+  natively in editing mode, shutdown finalizes sessions. Live-proven headless end-to-end: turn on ->
+  mark unread via ribbon -> row bolds -> finish editing ("verified against every block CRC") ->
+  fresh restart -> still bold; .bak kept.
+- Next: Phase B (TCROWID unlink = real delete), then Phase C (append allocator + TC insert = move).

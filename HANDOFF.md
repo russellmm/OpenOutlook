@@ -1,7 +1,7 @@
 # Session handoff (2026-09-30, later in the day; updated 2026-10-01)
 
-Binary: publish/OpenOutlook.Desktop sha256 0fad12cea27c501ee2eee66a734306443ce504f39d6c7379d7cdaefc79f2a3e6,
-built 2026-10-01 19:06 local. 386/386 tests pass (scripts/dev-check.sh). HEAD is pushed to
+Binary: publish/OpenOutlook.Desktop sha256 d53db9fdae7907c2a16c44d3cf094dde7c3718727348b60777c7480f8f7bb64d,
+built 2026-10-01 22:57 local. 390/390 tests pass (scripts/dev-check.sh). HEAD is pushed to
 github.com/russellmm/OpenOutlook main.
 
 Shipped since the last note: archived (PST) HTML mail defaults to the snapshot reader like connected

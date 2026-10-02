@@ -22,6 +22,7 @@ public partial class MainWindow
     private DispatcherTimer? _markReadTimer;
     private string? _readingKey;
     private Action<bool>? _readingApply;
+    private Action? _readingNativePersist;
 
     public static string PstMessageKey(string archivePath, uint nid) =>
         "pst:" + archivePath + "|" + nid.ToString("X8");
@@ -55,21 +56,26 @@ public partial class MainWindow
     {
         var previousKey = _readingKey;
         var previousApply = _readingApply;
+        var previousNative = _readingNativePersist;
         _readingKey = null;
         _readingApply = null;
+        _readingNativePersist = null;
         _markReadTimer?.Stop();
 
         if (previousKey is not null && previousApply is not null && _options.ReadPaneMarkOnSelectionChange)
-            MarkItemRead(previousKey, previousApply);
+            MarkItemRead(previousKey, previousApply, previousNative);
 
         string? key = null;
         Action<bool>? apply = null;
+        Action? nativePersist = null;
         bool alreadyRead = false;
         if (MessageList.SelectedItem is MessageListRow pstRow && _activePath is { } archivePath)
         {
             key = PstMessageKey(archivePath, pstRow.Summary.Nid);
             alreadyRead = pstRow.IsRead;
             apply = read => pstRow.SetRead(read);
+            if (_stores.TryGetValue(archivePath, out var store) && store.CanWrite)
+                nativePersist = () => store.SetReadState(pstRow.Summary, true);
         }
         else if (MessageList.SelectedItem is GraphMessageListRow graphRow && _activeMicrosoftAccount is { } account)
         {
@@ -81,10 +87,11 @@ public partial class MainWindow
 
         _readingKey = key;
         _readingApply = apply;
+        _readingNativePersist = nativePersist;
         if (alreadyRead || !_options.ReadPaneMarkOnView) return;
 
         var seconds = Math.Clamp(_options.ReadPaneWaitSeconds, 0, 300);
-        if (seconds == 0) { MarkItemRead(key, apply); return; }
+        if (seconds == 0) { MarkItemRead(key, apply, nativePersist); return; }
         _markReadTimer ??= CreateMarkReadTimer();
         _markReadTimer.Interval = TimeSpan.FromSeconds(seconds);
         _markReadTimer.Start();
@@ -96,19 +103,35 @@ public partial class MainWindow
         timer.Tick += (_, _) =>
         {
             timer.Stop();
-            if (_readingKey is { } key && _readingApply is { } apply) MarkItemRead(key, apply);
+            if (_readingKey is { } key && _readingApply is { } apply) MarkItemRead(key, apply, _readingNativePersist);
         };
         return timer;
     }
 
-    private void MarkItemRead(string key, Action<bool> apply)
+    private void MarkItemRead(string key, Action<bool> apply, Action? nativePersist = null)
     {
         _readingApply = null;
         _readingKey = null;
+        _readingNativePersist = null;
         if (OverrideFor(key) == true) return;
         try { apply(true); }
         catch (Exception exception) when (exception is ObjectDisposedException or InvalidOperationException)
         { /* The row's store closed underneath us; the persisted override below still stands. */ }
+        // Editing mode: write the flag into the archive itself and drop the sidecar override so the
+        // native value is authoritative from now on. Any failure falls back to the overlay silently -
+        // the user-visible state is already correct either way.
+        if (nativePersist is not null)
+        {
+            try
+            {
+                nativePersist();
+                _readOverrides.Remove(key);
+                PersistReadState();
+                return;
+            }
+            catch (Exception exception) when (exception is PstCore.PstException or IOException or ObjectDisposedException or InvalidOperationException)
+            { AppLog.Error("pst-edit", exception, "native mark-read failed; using local overlay instead"); }
+        }
         _readOverrides[key] = true;
         PersistReadState();
     }

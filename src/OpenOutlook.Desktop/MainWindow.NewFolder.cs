@@ -68,6 +68,51 @@ public partial class MainWindow
         StatusText.Text = $"Folder \"{created.Name}\" created in {Path.GetFileName(archivePath)} \u00b7 verified";
     }
 
+    /// <summary>Delete Folder... with an Outlook-style confirmation; empty folders only (the engine
+    /// refuses anything containing messages or subfolders), then verify-or-rollback as always.</summary>
+    private async Task DeleteFolderWithConfirmAsync(FolderSelection sel)
+    {
+        var yes = await ConfirmAsync($"Delete the empty folder \"{sel.Folder.Name}\"?",
+            "Messages inside must be moved out first. The archive backup keeps a safety copy.");
+        if (!yes) return;
+        var store = EnsureWritableStore(sel.Path);
+        if (store is null) return;
+        try { await Task.Run(() => store.DeleteFolder(sel.Folder.Nid)); }
+        catch (Exception ex) when (ex is PstException or IOException)
+        {
+            StatusText.Text = $"Could not delete folder: {ex.Message}";
+            return;
+        }
+        if (!await VerifyOperationAsync(sel.Path)) return;
+        InvalidateFolderCache(sel.Path);
+        var node = FindFolderNode(FolderTree.Items.OfType<object>(), sel.Folder.Nid);
+        if (node?.Parent is ItemsControl host) host.Items.Remove(node);
+        else if (node is not null) FolderTree.Items.Remove(node);
+        StatusText.Text = $"Folder \"{sel.Folder.Name}\" deleted from {Path.GetFileName(sel.Path)} \u00b7 verified";
+    }
+
+    private async Task<bool> ConfirmAsync(string question, string detail)
+    {
+        var dialog = new Window
+        {
+            Title = "Confirm", Width = 440, Height = 190, WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false
+        };
+        var yes = new Button { Content = "Delete", IsDefault = true };
+        var no = new Button { Content = "Cancel", IsCancel = true };
+        yes.Click += (_, _) => dialog.Close(true);
+        no.Click += (_, _) => dialog.Close(false);
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(16), Spacing = 10, Children =
+            {
+                new TextBlock { Text = question, FontWeight = Avalonia.Media.FontWeight.SemiBold, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                new TextBlock { Text = detail, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { yes, no } }
+            }
+        };
+        return await dialog.ShowDialog<bool>(this);
+    }
+
     private static TreeViewItem? FindFolderNode(System.Collections.IEnumerable items, uint nid)
     {
         foreach (var obj in items)

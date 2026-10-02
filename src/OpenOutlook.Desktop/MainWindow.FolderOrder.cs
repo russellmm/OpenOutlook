@@ -145,6 +145,13 @@ public partial class MainWindow
             items.Add(new Separator());
             items.Add(newFolder);
         }
+        if (item.Tag is FolderSelection delSel && !delSel.Folder.Name.Equals("Deleted Items", StringComparison.OrdinalIgnoreCase)
+            && !delSel.Folder.Name.Equals("Trash", StringComparison.OrdinalIgnoreCase))
+        {
+            var delFolder = new MenuItem { Header = "Delete Folder\u2026" };
+            delFolder.Click += (_, _) => _ = DeleteFolderWithConfirmAsync(delSel);
+            items.Add(delFolder);
+        }
         if (item.Tag is string rootArchivePath)
         {
             var newRootFolder = new MenuItem { Header = "New Folder\u2026" };

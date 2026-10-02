@@ -471,7 +471,15 @@ public sealed class PstStore : IDisposable
     /// </summary>
     internal Ndb NdbForProbe => _ndb;
 
-    public void MoveMessage(MailSummary message, MailFolder destFolder)
+    public void MoveMessage(MailSummary message, MailFolder destFolder) => MoveOrCopy(message, destFolder, isCopy: false);
+
+    /// <summary>Duplicate a message into another folder while the original stays exactly where it
+    /// is. The copy gets a fresh NODE_B handle sharing the source's data blocks (native PST
+    /// duplication semantics - real archives share block bids with BBT cRef above 1) and its own
+    /// row in the destination table carrying the copy's NID; nothing about the original is touched.</summary>
+    public void CopyMessage(MailSummary message, MailFolder destFolder) => MoveOrCopy(message, destFolder, isCopy: true);
+
+    private void MoveOrCopy(MailSummary message, MailFolder destFolder, bool isCopy)
     {
         EnsureWritable();
         if (!_ndb.CanAllocate)
@@ -516,6 +524,18 @@ public sealed class PstStore : IDisposable
             ?? throw new PstException("The source row could not be read; nothing was changed.");
         var srcRaw = srcTable.GetRowRaw(message.Nid)!;
 
+        // Copies need their own NID; a fresh global-max index (same type bits as the original) is
+        // the same allocation rule folder creation uses and cannot collide with anything present.
+        uint rowNid = message.Nid;
+        if (isCopy)
+        {
+            uint maxIdx = 0;
+            foreach (var n in _ndb.Nodes) { var i = n.Nid.Value >> 5; if (i > maxIdx) maxIdx = i; }
+            rowNid = ((maxIdx + 1) << 5) | (message.Nid & 0x1Fu);
+            if (_ndb.TryGetNode(rowNid, out _))
+                throw new PstException("NID collision detected; nothing was changed.");
+        }
+
         // ---- plan: destination matrix record ----
         var rec = new byte[dstTable.RowSize];
         var appended = new List<byte[]>();
@@ -526,7 +546,7 @@ public sealed class PstStore : IDisposable
             byte[]? value = null;
             if (col.Id == Pid.LtpRowId)
             {
-                value = BitConverter.GetBytes(message.Nid);
+                value = BitConverter.GetBytes(rowNid);
             }
             else
             {
@@ -848,9 +868,14 @@ public sealed class PstStore : IDisposable
                 _ndb.RewriteInternalBlockSameSize(dstNode.Data, bref); // one page write flips every entry (row appears here)
             }
 
-            srcTable.TryUnlinkRow(message.Nid);
             var msgNode = _ndb.GetNode(message.Nid);
-            _ndb.RewriteNidParent(msgNode, new Nid(destFolder.Nid));
+            if (isCopy)
+                _ndb.AppendNbtEntry(rowNid, msgNode.Data, msgNode.Sub, destFolder.Nid); // duplicate handle; data bids shared like Outlook duplicates
+            else
+            {
+                srcTable.TryUnlinkRow(message.Nid);
+                _ndb.RewriteNidParent(msgNode, new Nid(destFolder.Nid));
+            }
 
             _ndb.CommitAllocations(batch);
         }
@@ -862,9 +887,49 @@ public sealed class PstStore : IDisposable
         }
 
         var unread = message.IsRead ? 0 : 1;
-        AdjustFolderCounts(message.FolderNid, -1, -unread);
+        if (!isCopy) AdjustFolderCounts(message.FolderNid, -1, -unread);
         AdjustFolderCounts(destFolder.Nid, +1, +unread);
-        message.FolderNid = destFolder.Nid;
+        if (!isCopy) message.FolderNid = destFolder.Nid;
+    }
+
+    /// <summary>Remove an empty folder (no messages, no subfolders): its NODE_B handle and its
+    /// contents-table handle are unlinked from the folder BTree leaf pages (entries shift left,
+    /// cEnt decrements, page CRC recomputed - same-size atomic page writes). Nothing is freed;
+    /// the NIDs stay retired. Non-empty folders are refused outright so no message can be orphaned.</summary>
+    public void DeleteFolder(uint folderNid)
+    {
+        EnsureWritable();
+        if (folderNid == Root.Nid) throw new PstException("The root of an archive cannot be deleted.");
+        if (!_folders.TryGetValue(folderNid, out var folder))
+            throw new PstException("That folder is no longer present; nothing was changed.");
+        if (folder.Name.Equals("Deleted Items", StringComparison.OrdinalIgnoreCase) ||
+            folder.Name.Equals("Trash", StringComparison.OrdinalIgnoreCase))
+            throw new PstException("Outlook protects the Deleted Items folder from deletion.");
+        if (folder.Children.Count > 0)
+            throw new PstException($"\"{folder.Name}\" still has subfolders; move or delete them first.");
+        int count;
+        try { count = GetMessages(folder).Count; }
+        catch (PstException) { count = 0; }
+        if (count > 0)
+            throw new PstException($"\"{folder.Name}\" still has {count} message{(count == 1 ? "" : "s")}; empty it first.");
+
+        _ndb.DeleteNbtEntry(folderNid | (uint)NidType.ContentsTable);
+        _ndb.DeleteNbtEntry(folderNid);
+
+        if (_folders.TryGetValue(folder.ParentNid, out var parent))
+        {
+            parent.Children.Remove(folder);
+            if (parent.Children.Count == 0)
+            {
+                try
+                {
+                    var ph = HeapOnNode.Load(_ndb, _ndb.GetNode(parent.Nid));
+                    PropertyContext.TryPatchFixedUInt32(ph, Pid.Subfolders, 0);
+                }
+                catch (PstException) { /* cosmetic */ }
+            }
+        }
+        _folders.Remove(folderNid);
     }
 
     /// <summary>

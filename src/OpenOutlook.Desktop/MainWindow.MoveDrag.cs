@@ -44,13 +44,16 @@ public partial class MainWindow
     {
         if (MessageList.ContextFlyout is not null) return;
         var moveItem = new MenuItem { Header = "Move to Folder\u2026" };
-        moveItem.Click += async (_, _) => await MoveViaDialogAsync();
+        moveItem.Click += async (_, _) => await MoveViaDialogAsync(copy: false);
+        var copyItem = new MenuItem { Header = "Copy to Folder\u2026" };
+        copyItem.Click += async (_, _) => await MoveViaDialogAsync(copy: true);
         var flyout = new MenuFlyout();
         flyout.Items.Add(moveItem);
+        flyout.Items.Add(copyItem);
         MessageList.ContextFlyout = flyout;
     }
 
-    private async Task MoveViaDialogAsync()
+    private async Task MoveViaDialogAsync(bool copy)
     {
         InitMessageContextMenu();
         if (_activePath is not { } path || _activeFolder is not { } folder)
@@ -77,12 +80,12 @@ public partial class MainWindow
 
         var dialog = new Window
         {
-            Title = $"Move {(nids.Length == 1 ? "message" : $"{nids.Length} messages")} to folder",
+            Title = $"{(copy ? "Copy" : "Move")} {(nids.Length == 1 ? "message" : $"{nids.Length} messages")} to folder",
             Width = 420, Height = 380, WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
         var list = new ListBox();
         foreach (var f in candidates) list.Items.Add(new ListBoxItem { Content = f.Name, Tag = f });
-        var ok = new Button { Content = "Move", IsEnabled = false };
+        var ok = new Button { Content = copy ? "Copy" : "Move", IsEnabled = false };
         var cancel = new Button { Content = "Cancel" };
         list.SelectionChanged += (_, _) => ok.IsEnabled = list.SelectedItem is not null;
         ok.Click += (_, _) => dialog.Close(true);
@@ -96,7 +99,7 @@ public partial class MainWindow
             }
         };
         if (await dialog.ShowDialog<bool>(this) && list.SelectedItem is ListBoxItem { Tag: MailFolder dest })
-            await MoveRowsToFolderAsync(path, folder.Nid, nids, dest);
+            await MoveRowsToFolderAsync(path, folder.Nid, nids, dest, copy);
     }
 
     private void MessageListDragPressed(object? sender, PointerPressedEventArgs e)
@@ -184,7 +187,7 @@ public partial class MainWindow
         return true;
     }
 
-    private async Task MoveRowsToFolderAsync(string path, uint sourceFolderNid, uint[] nids, MailFolder destFolder)
+    private async Task MoveRowsToFolderAsync(string path, uint sourceFolderNid, uint[] nids, MailFolder destFolder, bool copy = false)
     {
         var store = EnsureWritableStore(path);
         if (store is null) return;
@@ -206,7 +209,7 @@ public partial class MainWindow
         {
             var summary = sourceMessages.FirstOrDefault(m => m.Nid == nid);
             if (summary is null) continue;
-            try { store.MoveMessage(summary, destFolder); moved++; }
+            try { if (copy) store.CopyMessage(summary, destFolder); else store.MoveMessage(summary, destFolder); moved++; }
             catch (Exception ex) when (ex is PstException or IOException) { firstError ??= ex.Message; }
         }
         if (_activePath == path && _activeFolder?.Nid == sourceFolderNid)
@@ -214,7 +217,7 @@ public partial class MainWindow
         InvalidateFolderCache(path); // badges/counts refresh on next folder render
         if (moved > 0 && !await VerifyOperationAsync(path)) return;
         StatusText.Text = moved > 0
-            ? $"Moved {moved} message{(moved == 1 ? "" : "s")} to {destFolder.Name} in {Path.GetFileName(path)}" +
+            ? $"{(copy ? "Copied" : "Moved")} {moved} message{(moved == 1 ? "" : "s")} to {destFolder.Name} in {Path.GetFileName(path)}" +
               (firstError is null || moved == nids.Length ? " \u00b7 verified" : $" \u00b7 {nids.Length - moved} not moved: {firstError}")
             : $"Could not move: {firstError ?? "the dragged rows are no longer in the source folder"}";
     }

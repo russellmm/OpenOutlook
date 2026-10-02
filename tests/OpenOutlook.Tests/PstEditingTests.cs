@@ -526,4 +526,88 @@ public sealed class PstEditingTests
             finally { Cleanup(tmp, tmp + ".bak"); }
     }
 
+
+    // ---- copy + folder delete ----
+
+    [Fact]
+    public void CopyMessageKeepsSourceAndAddsCopyAcrossReopen()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            uint destNid; string subject; uint origNid;
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var source = SourceFolder(session.Store);
+                // any other folder with a readable table works as destination (creating one too
+                // would consume the small fixture's last allocation slot - covered on big files)
+                var fresh = session.Store.AllFolders().First(f => f.Nid != source.Nid &&
+                    !f.Name.Contains("Deleted", StringComparison.OrdinalIgnoreCase) &&
+                    !f.Name.Contains("Sent", StringComparison.OrdinalIgnoreCase));
+                destNid = fresh.Nid;
+                var msgs = session.Store.GetMessages(source);
+                var m = msgs[0];
+                origNid = m.Nid; subject = m.Subject;
+                session.Store.CopyMessage(m, fresh);
+                Assert.Equal(source.Nid, m.FolderNid); // original stays put
+                Assert.Empty(session.Store.VerifyIntegrity());
+                session.Commit();
+            }
+            using (var reopened = PstStore.Open(tmp, writable: false))
+            {
+                Assert.Empty(reopened.VerifyIntegrity());
+                var srcAgain = reopened.AllFolders().First(f => f.Nid == source0(tmp, origNid));
+                Assert.Contains(reopened.GetMessages(srcAgain), x => x.Nid == origNid);
+                var dest = reopened.AllFolders().First(f => f.Nid == destNid);
+                var copies = reopened.GetMessages(dest);
+                Assert.Contains(copies, x => x.Subject == subject);
+            }
+        }
+            finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
+    private static uint source0(string tmp, uint nid)
+    {
+        using var st = PstStore.Open(tmp, writable: false);
+        var msg = st.AllFolders().SelectMany(f => { try { return st.GetMessages(f); } catch { return Array.Empty<MailSummary>(); } })
+            .First(m => m.Nid == nid);
+        return msg.FolderNid;
+    }
+
+    [Fact]
+    public void DeleteFolderRoundTripAndRefusesNonEmpty()
+    {
+        var src = FixturePath();
+        if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            uint goneNid;
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var parent = SourceFolder(session.Store);
+                var created = session.Store.CreateFolder(parent.ParentNid, "ZZ Gone");
+                goneNid = created.Nid;
+                session.Store.DeleteFolder(goneNid);
+                Assert.DoesNotContain(session.Store.AllFolders(), f => f.Nid == goneNid);
+                Assert.Empty(session.Store.VerifyIntegrity());
+                session.Commit();
+            }
+            using (var reopened = PstStore.Open(tmp, writable: false))
+            {
+                Assert.Empty(reopened.VerifyIntegrity());
+                Assert.DoesNotContain(reopened.AllFolders(), f => f.Nid == goneNid);
+                var busy = reopened.AllFolders().First(f => f.Name.Equals("treasurydirect", StringComparison.OrdinalIgnoreCase) ||
+                    reopened.GetMessages(f).Count > 0);
+            }
+            using (var s2 = PstEditSession.Begin(tmp))
+            {
+                var busy = s2.Store.AllFolders().First(f => { try { return s2.Store.GetMessages(f).Count > 0; } catch { return false; } });
+                Assert.Throws<PstException>(() => s2.Store.DeleteFolder(busy.Nid));
+            }
+        }
+            finally { Cleanup(tmp, tmp + ".bak"); }
+    }
 }

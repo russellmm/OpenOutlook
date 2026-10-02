@@ -11,7 +11,7 @@ internal sealed class NbtEntry
     public required Bid Sub { get; set; }
     public Nid Parent { get; set; }
     public ulong PageOffset { get; init; }
-    public int EntryOffset { get; init; }
+    public int EntryOffset { get; set; }
 }
 
 internal sealed class BbtEntry
@@ -497,6 +497,36 @@ internal sealed class Ndb : IDisposable
             _stream.Flush();
         }
         node.Data = newBid;
+    }
+
+    /// <summary>Unlink a NODE_B handle from its NBT leaf page: later entries shift left over it,
+    /// cEnt decrements, the vacated slot zeroes, and the page is rewritten same-size with a fresh
+    /// CRC. Sorted-key order survives; nothing is freed. In-memory offsets on the same page are
+    /// adjusted so back-to-back deletions in one leaf stay correct.</summary>
+    internal void DeleteNbtEntry(uint nid)
+    {
+        if (!_nbt.TryGetValue(nid, out var e)) return;
+        var page = ReadPage(e.PageOffset);
+        int cE = page[488], cbE = page[490];
+        if (cbE != 32 || e.EntryOffset % cbE != 0) throw new PstException("Unsupported NBT entry layout.");
+        var idx = e.EntryOffset / cbE;
+        if (idx >= cE) throw new PstException($"NBT entry for 0x{nid:X} is outside the page count; refusing to touch it.");
+        for (var i = idx; i < cE - 1; i++)
+            Array.Copy(page, (i + 1) * cbE, page, i * cbE, cbE);
+        Array.Clear(page, (cE - 1) * cbE, cbE);
+        page[488] = (byte)(cE - 1);
+        var crc = PstCrypto.ComputeCrc(page.AsSpan(0, 496));
+        BinaryUtil.WriteU32(page, 500, crc);
+        lock (_io)
+        {
+            _stream.Seek((long)e.PageOffset, SeekOrigin.Begin);
+            _stream.Write(page, 0, page.Length);
+            _stream.Flush();
+        }
+        _nbt.Remove(nid);
+        foreach (var other in _nbt.Values)
+            if (other.PageOffset == e.PageOffset && other.EntryOffset > e.EntryOffset)
+                other.EntryOffset -= cbE;
     }
 
     /// <summary>Append one NODE_B handle to the rightmost NBT leaf page (MS-PST 2.4.3: entries are

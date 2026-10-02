@@ -335,6 +335,8 @@ internal sealed class Ndb : IDisposable
         return new AllocationBatch();
     }
 
+    internal IEnumerable<BbtEntry> AllEntriesForProbe => _bbt.Values;
+
     /// <summary>Allocate one data block (payload &lt;= 8176 B) at a free slot and write it. Slots come
     /// from the region below EOF that no BBT entry covers, skipping reserved page positions; the
     /// file never grows in v1 (real archives carry thousands of unused slots - see design doc).

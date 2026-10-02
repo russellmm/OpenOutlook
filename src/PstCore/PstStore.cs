@@ -650,6 +650,9 @@ public sealed class PstStore : IDisposable
         }
 
         // ---- plan: matrix bytes (grow case) or in-place slot (reuse case) ----
+        long matrixReuseOffset = -1;
+        byte[]? matrixGrownTail = null;
+        Bid matrixChainBidPlan = default;
         byte[]? matrixBytes = null;
         uint matrixSubNid = dstTable.HnidRows;
         var needNewMatrixBlock = false;
@@ -662,15 +665,62 @@ public sealed class PstStore : IDisposable
         else
         {
             var oldMatrix = dstTable.Heap.GetItem(dstTable.HnidRows);
-            var needed = (newRowIndex + 1) * dstTable.RowSize;
-            if (needed <= oldMatrix.Length)
+            // Slot placement must mirror the reader's addressing exactly (TableContext.Load): when the
+            // matrix length is a multiple of rowSize it is contiguous; otherwise rows live in logical
+            // full-block tiles with padding between physical fragments, and a fragmented chain's true
+            // capacity is smaller than totalLen/rowSize. Reuse only when the reader would find the
+            // slot inside the current bytes; otherwise grow by normalizing the whole matrix to one
+            // contiguous block (which the reader then addresses flat).
+            var trailerB = _ndb.Unicode ? 16 : 12;
+            var blockDataB = 8192 - trailerB;
+            long SlotOffset(long rowIndex) =>
+                oldMatrix.Length >= (rowIndex + 1) * dstTable.RowSize && oldMatrix.Length % dstTable.RowSize == 0
+                    ? rowIndex * dstTable.RowSize
+                    : rowIndex / (blockDataB / dstTable.RowSize) * blockDataB +
+                      rowIndex % (blockDataB / dstTable.RowSize) * dstTable.RowSize;
+            var reuseOffset = SlotOffset(newRowIndex);
+            if (reuseOffset >= 0 && reuseOffset + dstTable.RowSize <= oldMatrix.Length &&
+                dstTable.Heap.TryPatchSubNodeBytes(dstTable.HnidRows, reuseOffset, rec, dryRun: true))
             {
-                // slot already exists inside the current matrix leaf - same-size in-place write, no allocation
+                matrixReuseOffset = reuseOffset; // same-size in-place write at the reader-consistent slot
+            }
+            else if (oldMatrix.Length % dstTable.RowSize != 0 &&
+                     dstTable.Heap.TryGetSubDataBid(dstTable.HnidRows, out var mChainBid) && mChainBid.IsInternal &&
+                     newRowIndex / (blockDataB / dstTable.RowSize) == _ndb.ReadDataTreeBlocks(mChainBid).Count - 1 &&
+                     _ndb.ReadDataTreeBlocks(mChainBid).Count > 1)
+            {
+                // Fragmented chain, slot beyond current bytes: grow the LAST fragment to its full
+                // tile capacity (rows-per-block x rowSize, capped at Outlook's observed 8176 max) and
+                // swap that one BREF entry. Existing rows keep byte-identical positions inside the
+                // tail, so every other slot offset stays valid; ≤8176 keeps output Outlook-typical.
+                var chain = _ndb.ReadDataTreeBlocks(mChainBid);
+                var tail = chain[chain.Count - 1].Data;
+                var rowsPerBlock = blockDataB / dstTable.RowSize;
+                var tileBytes = rowsPerBlock * dstTable.RowSize;
+                var newTailLen = Math.Min(Math.Max(tileBytes, (int)(newRowIndex % (uint)rowsPerBlock + 1) * dstTable.RowSize), 8176);
+                if ((long)newTailLen * chain.Count < (newRowIndex + 1 - chain.Count) * dstTable.RowSize) newTailLen = Math.Min(newTailLen, 8176);
+                if (newTailLen <= tail.Length)
+                    throw new PstException("The destination folder's row matrix is full; not supported yet.");
+                var grownTail = new byte[newTailLen];
+                tail.CopyTo(grownTail, 0);
+                var inTile = (int)(newRowIndex % (uint)rowsPerBlock);
+                rec.CopyTo(grownTail.AsSpan(inTile * dstTable.RowSize));
+                matrixGrownTail = grownTail;
+                matrixChainBidPlan = mChainBid;
             }
             else
             {
+                var needed = (newRowIndex + 1) * dstTable.RowSize;
+                if (needed > 8176)
+                    throw new PstException("The destination folder's row matrix cannot be extended further safely; nothing was changed.");
                 matrixBytes = new byte[needed];
-                oldMatrix.CopyTo(matrixBytes, 0);
+                foreach (var existingIdx in dstTable.RowIndexMap.Values)
+                {
+                    if (existingIdx >= newRowIndex) continue;
+                    var srcOff = SlotOffset(existingIdx);
+                    if (srcOff < 0 || srcOff + dstTable.RowSize > oldMatrix.Length) continue;
+                    oldMatrix.AsSpan((int)srcOff, dstTable.RowSize).CopyTo(matrixBytes.AsSpan((int)existingIdx * dstTable.RowSize));
+                }
                 rec.CopyTo(matrixBytes.AsSpan(newRowIndex * dstTable.RowSize));
                 needNewMatrixBlock = true;
             }
@@ -741,6 +791,7 @@ public sealed class PstStore : IDisposable
         }
 
         // ---- execute (order chosen so the folder view flips atomically at the NBT repoint) ----
+        byte[]? matrixBrefSwap = null;
         var batch = _ndb.BeginAllocations();
         try
         {
@@ -764,17 +815,25 @@ public sealed class PstStore : IDisposable
                 BinaryUtil.WriteU64(patchedSlb, FindSlbEntryOffset(patchedSlb, matrixSubNid) + 8, newMatrixBid.Value);
                 _ndb.RewriteRawExternalBlock(slbOldBid, patchedSlb);
             }
-            else if (!needNewMatrixBlock && dstTable.HnidRows != 0)
+            else if (!needNewMatrixBlock && matrixGrownTail == null && dstTable.HnidRows != 0)
             {
                 // Reuse case: the slot for newRowIndex already lives inside the current matrix leaf.
                 if (!dstTable.Heap.TryPatchSubNodeBytes(dstTable.HnidRows,
-                        (long)newRowIndex * dstTable.RowSize, rec))
+                        matrixReuseOffset, rec))
                     throw new PstException("Could not write the moved message's row into the destination matrix.");
             }
 
+            if (matrixGrownTail != null)
+            {
+                var newTailBid = _ndb.AllocateAndWrite(batch, matrixGrownTail, encrypt: true);
+                var chainBref = _ndb.ReadRawBlockForWrite(matrixChainBidPlan)!;
+                BinaryUtil.WriteU64(chainBref, chainBref.Length - 8, newTailBid.Value); // last entry
+                matrixBrefSwap = chainBref; // written just before the heap flip below
+            }
             if (brefPlan == null)
             {
                 var newHeapBid = _ndb.AllocateAndWrite(batch, modified[0], encrypt: true);
+                if (matrixBrefSwap != null) _ndb.RewriteInternalBlockSameSize(matrixChainBidPlan, matrixBrefSwap);
                 _ndb.RewriteNbtDataBid(dstNode, newHeapBid); // atomic flip to the grown table (row appears here)
             }
             else
@@ -785,6 +844,7 @@ public sealed class PstStore : IDisposable
                     var nb = _ndb.AllocateAndWrite(batch, buf, encrypt: true);
                     BinaryUtil.WriteU64(bref, 8 + idx * 8, nb.Value);
                 }
+                if (matrixBrefSwap != null) _ndb.RewriteInternalBlockSameSize(matrixChainBidPlan, matrixBrefSwap);
                 _ndb.RewriteInternalBlockSameSize(dstNode.Data, bref); // one page write flips every entry (row appears here)
             }
 

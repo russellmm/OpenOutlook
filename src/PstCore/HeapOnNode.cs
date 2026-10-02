@@ -99,6 +99,13 @@ internal sealed class HeapOnNode
         return new HeapOnNode(heapBlocks, userRoot, clientSig, subNodes, ndb);
     }
 
+    internal bool TryGetSubDataBid(uint hnid, out Bid dataBid)
+    {
+        if (_subNodes.TryGetValue(hnid, out var sub) || _subNodes.TryGetValue(hnid & 0xFFFFFFE0, out sub))
+        { dataBid = sub.Data; return true; }
+        dataBid = default; return false;
+    }
+
     public byte[] GetItem(uint hnid)
     {
         if (hnid == 0) return [];

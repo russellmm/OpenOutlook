@@ -37,6 +37,13 @@ binary smoke-tested (see BUILD_STATUS.md for sha).
 ### Outstanding follow-ups
 1. Hardware check on real Windows Outlook: tolerance of the inert zeroed TCROWID trailing slot left
    by deletes (worst known case: scanpst advisory or phantom row; our reader skips zero keys).
+4. Matrix addressing subtlety RESOLVED (2026-10-03): fragmented matrices tile rows by logical 8176-byte
+   blocks with inter-fragment padding, so true capacity < totalLen/rowSize; the reader's dual formula
+   (flat when length%rowSize==0, tiled otherwise) is now mirrored exactly in MoveMessage: reuse only at
+   formula-consistent offsets validated by dry-run chain walk; full fragmented matrices grow by extending
+   the LAST fragment to its tile capacity (<=8176, Outlook's observed max across 397,786 blocks in real
+   files) and swapping that one BREF entry before the visibility flip. All three owner archives now pass
+   399/395->399 including sequential-move round-trips into full fragmented-matrix folders.
 2. Editing rmarrash_1.pst creates a ~909 MB .bak beside it - intentional; manual cleanup per session.
 3. Phase E (folder create/rename/delete) remains planned, untouched.
 

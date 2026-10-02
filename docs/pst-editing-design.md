@@ -361,12 +361,39 @@ Spec facts confirmed against real bytes (rmarrash_2 BBT root @0x8DE00: cEnt=16, 
   {bid u64@0, ib u64@8, cb u16@16, cRef u16@18, pad@20}. NBT leaf: NBTENTRY 32B.
 - **Real rmarrash_2 BBT root is cLevel=1** - multi-level trees are normal; splitting matches native shape.
 
-### BUG found while reading spec (must fix with the split work)
-v1 writes BT page CRC at offset **500**, but dwCRC belongs at **508** - @500..507 is the trailer's bid
-field, which v1 clobbers. My reader never reads that bid back so everything self-verifies, but real
-Outlook/scanpst would see a bogus bid + stale CRC on every page v1 touched. Fix together with splitting:
-write ptype/repeat/wSig/bid/CRC@508; treat stored CRC 0 as "unchecked" when verifying (r2's own root
-carries CRC=0). Pages written by older builds exist only in scratch/test copies - originals are pristine.
+### CRC offset: RESOLVED by direct measurement (earlier alarm was WRONG)
+Measured against real Outlook pages (rmarrash_2 BBT root @0x8DE00 and NBT root @0x90C00):
+ComputeCrc(page[0..496)) EQUALS the u32 at offset **500** on both, with 0 at @508..511. The v1 writer's
+CRC@500 placement is therefore correct and Outlook-compatible; do not "fix" it to 508. Trailer bytes as
+laid down by Outlook: ptype u8@496 (0x80 BBT / 0x81 NBT, same at every level), repeat u8@497,
+two bytes @498..499 (wSig; copy the pattern from an existing page of the same tree when creating pages),
+dwCRC u32@500 over [0,496), remaining 8 bytes zero-ish. New pages must follow exactly this recipe.
+
+### Owner's growth + split rules (from MS-PST, relayed 2026-10-02 - authoritative for the next build)
+1. fAMapValid: writer sets ROOT.fAMapValid=INVALIDAMAP before any allocate/free, restores VALID after;
+   stuck-invalid files MUST NOT be modified without a full AMap rebuild (walk NBT+BBT). v1 implements
+   this protocol already (Ndb batch begin/finalize) - which is exactly why interrupted archives then
+   refuse every write. Testing always starts from fresh copies.
+2. THE ALLOCATION BUG: the allocator scans only to current EOF and reports "full" instead of GROWING.
+   Growth rules: extend by whole AMap spans (~250 KB); initialize every new AMap; create PMap/FMap/FPMap
+   pages at required intervals with valid checksums; update ibFileEof, ibAMapLast, cbAMapFree, cbPMapFree
+   in HEADER.ROOT (+ both header CRCs dwCRCPartial/dwCRCFull). AMap is the authoritative free-space map;
+   DList/FMap/FPMap may be skipped for SEARCH but must exist and checksum.
+3. Splitting: BTPAGE 512B Unicode = entries[488] + cEnt/cEntMax/cbEnt/cLevel + pad + 16B trailer.
+   NBT leaf cbEnt=0x20 (real entry 0x1C, cEntMax 0x0F), BBT leaf cbEnt=0x18 (cEntMax 0x14). ALWAYS
+   advance by cbEnt. Parent btkey = LOWER BOUND of child subtree. Split on overflow; root split adds a
+   level (update header ibBTree + CRCs). Keep pages <90% full where practical.
+4. BID counters: page bids increment by 1, block bids by 4 (low 2 bits are flags); creating a page bumps
+   BOTH bidNextB and bidNextP in the header.
+5. Copy-on-write is the spec's model for B-tree pages (new page + repoint parent + free old, recursive).
+   v1 modifies pages in place with correct CRCs - equivalent to readers, but noted as a deviation; if
+   scanpst/pffinfo ever object, switch split-path pages to COW first.
+6. ORDERING: allocate everything first (pages may need blocks, and allocation itself inserts BBT entries
+   which can trigger another split), THEN update references. Reserve the freed half of a splitting leaf
+   for the new page-blocks' own BBT entries to break the chicken-and-egg.
+7. Debug checklist: fresh copies only (fAMapValid); log AMap index + free-bit counts during allocation;
+   after writes verify header CRCs, page trailer CRCs, and AMap bits vs a BBT walk; cross-check with
+   pffinfo (python-oletools) where available.
 
 ### Split design (next milestone)
 BBT full: extend file with two new BT blocks at EOF; move upper half of rightmost-leaf entries to a

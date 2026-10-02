@@ -155,6 +155,11 @@ for step in ${OO_SMOKE_CLICKS:-}; do
             done
             sleep 3
             ;;
+        # key:<xdotool-key> presses one key (e.g. key:Delete) into whatever has focus.
+        key:*)
+            DISPLAY="$display" xdotool key "${step#key:}"
+            sleep 2
+            ;;
         # type:<text> types into whatever has focus; '+' stands for a space, since steps are
         # word-split and a literal space would end the step.
         type:*)

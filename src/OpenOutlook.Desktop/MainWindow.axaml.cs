@@ -201,6 +201,7 @@ public sealed partial class MainWindow : Window
     private async Task ExecuteMailActionAsync(string action)
     {
         if (TryHandlePstFlagAction(action)) return;
+        if (await TryHandlePstDeleteAsync(action)) return;
         ConnectedAccount? account = _activeMicrosoftAccount;
         if (account is null && action == "new")
         {
@@ -209,7 +210,7 @@ public sealed partial class MainWindow : Window
         }
         if (account is null)
         {
-            await ExplainMailActionAsync("Select a message in a connected Microsoft mailbox to use this action. PST archives are read-only.", null);
+            await ExplainMailActionAsync("Select a message in a connected Microsoft mailbox to use this action. For PST archives, right-click the archive and turn on Editing Mode.", null);
             return;
         }
         if (!account.CanWriteMicrosoftMail || !account.CanSendMicrosoftMail)

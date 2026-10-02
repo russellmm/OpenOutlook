@@ -281,3 +281,41 @@ the probe matches our reader: cEnt byte @488, cbEnt byte @490, cLevel byte @491 
   pane's own VisibleRoots presentation rule. Smoke script gained drag:<x1,y1>x2,y2> for desktop use.
 - f88827c docs + published binary refreshed (sha in BUILD_STATUS.md); goal closed with the full
   matrix above. Remaining follow-ups are listed once, at the top, under Outstanding follow-ups.
+
+## Folder creation - implementation blueprint (grounded in reader code, 2026-10-03)
+Reader requirements (LoadFolders, PstStore.cs ~L940): a folder IS just an NBT entry with
+Nid.Type==NormalFolder whose dataBid resolves to an LTP heap readable by PropertyContext.Read;
+name=PR_DISPLAY_NAME(0x3001), counts from Pid.ContentCount/ContentUnread, HasSubfolders from
+Pid.Subfolders. No hierarchy-table row is needed for OUR reader (Outlook tolerates absent rows
+the same way it tolerates our other orphans; scanpst advisory).
+
+PropertyContext.Read = WalkBth(heap.UserRoot) over 8-byte records {key u32=propId, type u16,
+hnid u32}; fixed <=4-byte values live IN the hnid field (ResolveValue). Variable props are items.
+
+CreateFolder(parentNid, name) plan:
+1. newIdx = (max NID index across _ndb.Nodes)+1; folderNid=newIdx<<5|NormalFolder;
+   contentsNid=newIdx<<5|ContentsTable(0x0E). Global-max keeps BTree key order rightward.
+2. Folder LTP heap, built fresh via the same HNHDR/alloc-map layout as RebuildBlockWithAppends:
+   items = [BTH header (shape per WalkBth parse: verify [1] type byte for property contexts!),
+   leaf with records 0x3001->nameItem(PT_UNICODE), 0x3613->"IPF.Note", fixed props inline:
+   ContentCount=0, ContentUnread=0, Subfolders=0 (+ Pid values the reader reads)], name item utf16.
+   HNHDR.userRoot = BTH header hid. Write via AllocateAndWrite (encrypt:true like other heaps).
+3. Contents table heap: CLONE an existing EMPTY leaf folder's contents heap block when available
+   (byte-identical structure incl. rgtc columns, hnidRows=0; internal hids are heap-local so clones
+   stay consistent); else build minimal TCINFO+BTINFO+empty BTH per TableContext.Load parse rules
+   (MoveMessage already supports moving INTO hnidRows==0 tables - it mints the matrix subnode).
+4. NBT inserts x2: rightmost-leaf append into NBT pages (entries {key8,nid,data,sub,parent};
+   parent=folderNid for contents entry, =parentNid for folder entry). Leaf free slots exist (probe:
+   r1 237, r2 39, r3 1522). Append = write entry at cEnt*stride in the 512B page, cEnt++ (byte@488),
+   recompute page CRC, RewriteInternalBlockSameSize. If rightmost leaf full -> refuse v1 (no splits).
+   VERIFY descent routing for max keys: Ndb.TryGetNode/Nodes walk behavior - test point-lookup of
+   the new NIDs after insert; if internal btKey semantics need a touch-up on the path, mirror what
+   real files show (folder NIDs increase monotonically in owner archives).
+5. Parent's Subfolders prop: set via PropertyContext.TryPatchFixedUInt32 on parent heap (pattern
+   already used for unread badges).
+6. UI: folder-tree context menu "New Folder..." dialog -> store.CreateFolder -> refresh; always-
+   editable session machinery unchanged (EnsureWritableStore + VerifyOperationAsync per op).
+Tests: create -> reopen sees it; move message into new folder -> reopen keeps it (exercises the
+hnidRows==0 mint path); create x N until leaf-full refusal; integrity 0 problems; all archives.
+Open question to resolve first: exact WalkBth header byte expectations for property-context BTHs
+(Read BTHHDR parse in HeapOnNode.WalkBth before building item [0]).

@@ -568,6 +568,38 @@ public sealed class PstEditingTests
             finally { Cleanup(tmp, tmp + ".bak"); }
     }
 
+    [Fact]
+    public void CopyIntoFreshFolderAppearsInBothFoldersAfterReopen()
+    {
+        var src = FixturePath(); if (src is null) return;
+        var tmp = CopyToTemp(src);
+        try
+        {
+            uint origNid; string subject;
+            using (var session = PstEditSession.Begin(tmp))
+            {
+                var folder = SourceFolder(session.Store);
+                var msg = session.Store.GetMessages(folder).First();
+                origNid = msg.Nid; subject = msg.Subject ?? "";
+                var fresh = session.Store.CreateFolder(session.Store.Root.Children
+                    .First(c => c.Name.Equals("Top of Outlook data file", StringComparison.OrdinalIgnoreCase)).Nid, "ZZ Copy Dest");
+                session.Store.CopyMessage(msg, fresh);
+                Assert.Equal(folder.Nid, msg.FolderNid);
+                session.Commit();
+            }
+            using (var store = PstStore.Open(tmp, writable: false))
+            {
+                Assert.Empty(store.VerifyIntegrity());
+                var dest = store.AllFolders().First(f => f.Name == "ZZ Copy Dest");
+                Assert.Contains(store.GetMessages(dest), m => (m.Subject ?? "") == subject);
+                var srcAgain = store.AllFolders().SelectMany(f => store.GetMessages(f))
+                    .Count(m => m.Nid == origNid);
+                Assert.Equal(1, srcAgain);
+            }
+        }
+        finally { Cleanup(tmp, tmp + ".bak"); }
+    }
+
     private static uint source0(string tmp, uint nid)
     {
         using var st = PstStore.Open(tmp, writable: false);

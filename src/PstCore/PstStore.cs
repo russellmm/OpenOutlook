@@ -604,7 +604,7 @@ public sealed class PstStore : IDisposable
         var newLeaf = new byte[(liveRecords.Count + 1) * 8];
         var lo = 0;
         foreach (var r in liveRecords) { r.CopyTo(newLeaf.AsSpan(lo)); lo += 8; }
-        BinaryUtil.WriteU32(newLeaf, lo, message.Nid);
+        BinaryUtil.WriteU32(newLeaf, lo, rowNid); // bRef key must equal the row's own LtpRowId (fresh NID for copies)
         BinaryUtil.WriteU32(newLeaf, lo + 4, (uint)newRowIndex);
 
         // The row's existence bitmap must match what this table's own rows carry: we only OR bits

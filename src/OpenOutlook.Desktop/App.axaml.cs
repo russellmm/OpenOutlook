@@ -14,6 +14,33 @@ public sealed partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        if (Program.SecondInstance)
+        {
+            // A first window already owns this profile; tell the user plainly instead of opening a
+            // second view that would fight the first one over any shared archive.
+            if (ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime lite)
+            {
+                var warn = new Avalonia.Controls.Window
+                {
+                    Title = "OpenOutlook is already running", Width = 460, Height = 170,
+                    CanResize = false, WindowStartupLocation = Avalonia.Controls.WindowStartupLocation.CenterScreen
+                };
+                var ok = new Avalonia.Controls.Button { Content = "OK", MinWidth = 90, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
+                ok.Click += (_, _) => warn.Close();
+                warn.Content = new Avalonia.Controls.StackPanel
+                {
+                    Margin = new Avalonia.Thickness(18), Spacing = 14, Children =
+                    {
+                        new Avalonia.Controls.TextBlock { Text = "Another OpenOutlook window is already open on this computer.\nClose it first, then start OpenOutlook again.", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                        ok
+                    }
+                };
+                warn.Closed += (_, _) => lite.Shutdown();
+                lite.MainWindow = warn;
+            }
+            base.OnFrameworkInitializationCompleted();
+            return;
+        }
         // Handlers are attached before the main window is constructed: a failure during startup is
         // exactly the case where a log line and a visible message matter most.
         AppLog.Start();

@@ -587,6 +587,26 @@ public sealed class PstStore : IDisposable
         BinaryUtil.WriteU32(newLeaf, lo, message.Nid);
         BinaryUtil.WriteU32(newLeaf, lo + 4, (uint)newRowIndex);
 
+        // The row's existence bitmap must match what this table's own rows carry: we only OR bits
+        // for columns we actually fill, and a partial bitmap makes the record unparseable (real
+        // archives skip such rows). Seed from any live row of the destination matrix; empty tables
+        // keep the exact-columns-only bitmap.
+        if (dstTable.HnidRows != 0)
+        {
+            var templateRaw = dstTable.Heap.GetItem(dstTable.HnidRows);
+            foreach (var tIdx in dstTable.RowIndexMap.Values)
+            {
+                long toff = (long)tIdx * dstTable.RowSize;
+                if (toff + dstTable.RowSize > templateRaw.Length || dstTable.RowSize < dstTable.Tci1 + 1) continue;
+                var seed = true;
+                for (var q = 0; q < 4 && toff + q < templateRaw.Length; q++) if (templateRaw[toff + q] != 0) { seed = false; break; }
+                if (seed) continue; // skip zeroed slots left by deletes
+                for (var b = dstTable.Tci1; b < dstTable.RowSize; b++)
+                    rec[b] |= templateRaw[toff + b];
+                break;
+            }
+        }
+
         // Appended heap items: [0] = new BTH leaf, then variable cell payloads in order.
         appended.Insert(0, newLeaf);
 

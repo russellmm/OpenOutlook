@@ -114,3 +114,8 @@ itself produces for deleted mail until a manual cleanup.
   mark unread via ribbon -> row bolds -> finish editing ("verified against every block CRC") ->
   fresh restart -> still bold; .bak kept.
 - Next: Phase B (TCROWID unlink = real delete), then Phase C (append allocator + TC insert = move).
+- 2026-10-01 pre-edit baselines (read-only): rmarrash_1.pst and rmarrash_3.pst both pass full
+  VerifyIntegrity with 0 problems (2.6 GB in 4.8 s). Negative control proven: flipping a byte inside
+  an allocated block is reported by bid; flips in unallocated dead space are correctly ignored.
+  Harness: ArchiveIntegrityBaselineTests (opt-in OPENOUTLOOK_BASELINE_PST). Any future post-edit
+  verification failure is therefore attributable to the edit, not pre-existing damage.

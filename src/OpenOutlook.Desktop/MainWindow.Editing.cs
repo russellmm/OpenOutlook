@@ -179,7 +179,7 @@ public partial class MainWindow
     /// a pointer to Editing Mode instead of the mailbox popup; writable archives confirm and then
     /// unlink the rows for real (Phase B delete). The list is reloaded from the file afterwards so
     /// what the user sees is exactly what the archive now contains.</summary>
-    private async Task<bool> TryHandlePstDeleteAsync(string action)
+    private async Task<bool> TryHandlePstDeleteAsync(string action, bool permanent = false)
     {
         if (action != "delete") return false;
         var rows = MessageList.SelectedItems.OfType<MessageListRow>()
@@ -194,6 +194,33 @@ public partial class MainWindow
         if (!store.CanWrite)
         {
             StatusText.Text = "This archive is opened read-only - right-click the archive in the folder pane and turn on Editing Mode to delete messages.";
+            return true;
+        }
+        // Classic Outlook semantics: Delete moves to Deleted Items; Shift+Delete (or deleting from
+        // inside Deleted Items) removes for real. Both paths confirm first.
+        var inDeletedItems = _activeFolder is not null &&
+            string.Equals(_activeFolder.Name, "Deleted Items", StringComparison.OrdinalIgnoreCase);
+        if (!permanent && !inDeletedItems)
+        {
+            var trash = store.AllFolders().FirstOrDefault(f =>
+                string.Equals(f.Name, "Deleted Items", StringComparison.OrdinalIgnoreCase));
+            if (trash is null)
+            {
+                StatusText.Text = "This archive has no Deleted Items folder - use Shift+Delete to remove messages permanently.";
+                return true;
+            }
+            var moved = 0;
+            string? moveError = null;
+            foreach (var row in rows)
+            {
+                try { store.MoveMessage(row.Summary, trash); moved++; }
+                catch (Exception ex) when (ex is PstException or IOException) { moveError ??= ex.Message; }
+            }
+            _ = RefreshActivePstFolderAsync(path);
+            StatusText.Text = moved > 0
+                ? $"Moved {moved} message{(moved == 1 ? "" : "s")} to Deleted Items in {Path.GetFileName(path)} · turn off Editing Mode to verify and seal the archive" +
+                  (moveError is null || moved == rows.Count ? "" : $" · {rows.Count - moved} not moved: {moveError}")
+                : $"Could not move to Deleted Items: {moveError ?? "unknown reason"}";
             return true;
         }
         if (!await ConfirmPstDeleteAsync(rows.Count, Path.GetFileName(path))) return true;

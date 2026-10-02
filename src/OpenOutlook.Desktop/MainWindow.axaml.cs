@@ -1371,6 +1371,15 @@ public sealed partial class MainWindow : Window
     private async void MessageListShortcutKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Handled || _mailActionBusy) return;
+        // Shift+Delete on archive rows = permanent delete (plain Delete follows the ribbon path:
+        // move to Deleted Items). Done before shortcut matching so the modifier is not lost.
+        if (e.Key == Key.Delete && e.KeyModifiers == KeyModifiers.Shift &&
+            MessageList.SelectedItem is MessageListRow)
+        {
+            e.Handled = true;
+            await TryHandlePstDeleteAsync("delete", permanent: true);
+            return;
+        }
         var shortcut = _shortcuts.Bindings.FirstOrDefault(binding =>
             binding.Key == e.Key && binding.Modifiers == e.KeyModifiers);
         if (shortcut is null) return;

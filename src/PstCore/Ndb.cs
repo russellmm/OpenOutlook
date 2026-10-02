@@ -499,6 +499,49 @@ internal sealed class Ndb : IDisposable
         node.Data = newBid;
     }
 
+    /// <summary>Append one NODE_B handle to the rightmost NBT leaf page (MS-PST 2.4.3: entries are
+    /// ordered by NID, so a fresh global-max NID belongs at the far right). The page write is one
+    /// atomic same-size block with recomputed CRC; refuses when the leaf is full (no splits in v1).</summary>
+    internal void AppendNbtEntry(uint nid, Bid data, Bid sub, uint parentNid)
+    {
+        if (!Unicode) throw new PstException("Folder creation requires a Unicode archive.");
+        if (_nbt.ContainsKey(nid)) throw new PstException($"Node 0x{nid:X} already exists.");
+        var ib = Header.NbtRootIb;
+        var page = ReadPage(ib);
+        while (true)
+        {
+            var cLevel = page[491];
+            var cbEnt = page[490];
+            var cEnt = page[488];
+            if (cLevel == 0) break;
+            ib = BinaryUtil.ReadU64(page, (cEnt - 1) * cbEnt + 16); // rightmost child
+            page = ReadPage(ib);
+        }
+        var cE = page[488];
+        var cbE = page[490];
+        if (cbE != 32) throw new PstException($"Unsupported NBT entry size {cbE}.");
+        if ((cE + 1) * cbE > 488) throw new PstException("The folder index leaf is full; nothing was changed.");
+        var off = cE * cbE;
+        BinaryUtil.WriteU32(page, off, nid);
+        BinaryUtil.WriteU64(page, off + 8, data.Value);
+        BinaryUtil.WriteU64(page, off + 16, sub.Value);
+        BinaryUtil.WriteU32(page, off + 24, parentNid);
+        page[488] = (byte)(cE + 1);
+        var crc = PstCrypto.ComputeCrc(page.AsSpan(0, 496));
+        BinaryUtil.WriteU32(page, 500, crc);
+        lock (_io)
+        {
+            _stream.Seek((long)ib, SeekOrigin.Begin);
+            _stream.Write(page, 0, page.Length);
+            _stream.Flush();
+        }
+        _nbt[nid] = new NbtEntry
+        {
+            Nid = new Nid(nid), Data = data, Sub = sub, Parent = new Nid(parentNid),
+            PageOffset = ib, EntryOffset = off
+        };
+    }
+
     internal void RewriteNbtSubBid(NbtEntry node, Bid newBid)
     {
         var page = ReadPage(node.PageOffset);

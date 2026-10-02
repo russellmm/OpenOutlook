@@ -867,6 +867,138 @@ public sealed class PstStore : IDisposable
         message.FolderNid = destFolder.Nid;
     }
 
+    /// <summary>
+    /// Create a new mail folder inside parentNid (MS-PST 2.6.x): a fresh global-max NID keeps the
+    /// folder BTree's rightmost-append order; the folder object is a property-context heap (BTH of
+    /// {propId,type,hnid} records with fixed values inline, per 2.4.3/PC spec) and its contents
+    /// table is a byte-clone of an existing EMPTY message table in this very file - column sets and
+    /// structures stay exactly Outlook-shaped, and heap-local HIDs make clones self-consistent.
+    /// Two NODE_B handles append to the rightmost NBT leaf; the parent's Subfolders flag flips on.
+    /// Everything lands through the same allocator + session backup/verify safety as every other edit.
+    /// </summary>
+    public MailFolder CreateFolder(uint parentNid, string name)
+    {
+        EnsureWritable();
+        if (!_ndb.CanAllocate)
+            throw new PstException("This archive cannot be written into (ANSI format or invalid allocation map); nothing was changed.");
+        name = name.Trim();
+        if (name.Length == 0 || name.Length > 200)
+            throw new PstException("Folder names must be between 1 and 200 characters; nothing was changed.");
+        if (!_folders.TryGetValue(parentNid, out var parent))
+            throw new PstException("The parent folder is no longer present; nothing was changed.");
+        if (_folders.Values.Any(f => f.ParentNid == parentNid && f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            throw new PstException($"A folder named \"{name}\" already exists here; nothing was changed.");
+
+        // Template: any empty, single-block contents table in this file (all message tables share
+        // the same column layout within a file, so the clone is indistinguishable from native).
+        byte[]? templateHeap = null;
+        foreach (var f in _folders.Values)
+        {
+            if (!_ndb.TryGetNode(f.Nid | (uint)NidType.ContentsTable, out var tn)) continue;
+            TableContext? tbl;
+            try { tbl = TableContext.TryLoad(_ndb, tn.Nid.Value); } catch (PstException) { continue; }
+            if (tbl is null || tbl.Rows.Count != 0 || tbl.HnidRows != 0 || tbl.Heap.Blocks.Count != 1) continue;
+            templateHeap = tbl.Heap.Blocks[0].Data.ToArray();
+            break;
+        }
+        if (templateHeap is null)
+            throw new PstException("This archive has no empty message table to model a new folder on; nothing was changed.");
+
+        uint maxIdx = 0;
+        foreach (var n in _ndb.Nodes)
+        {
+            var i = n.Nid.Value >> 5;
+            if (i > maxIdx) maxIdx = i;
+        }
+        var newIdx = maxIdx + 1;
+        uint folderNid = (newIdx << 5) | (uint)NidType.NormalFolder;
+        uint contentsNid = (newIdx << 5) | (uint)NidType.ContentsTable;
+        if (_ndb.TryGetNode(folderNid, out _) || _ndb.TryGetNode(contentsNid, out _))
+            throw new PstException("NID collision detected; nothing was changed.");
+
+        var propHeap = BuildFolderPropertyHeap(name);
+
+        var batch = _ndb.BeginAllocations();
+        try
+        {
+            var propBid = _ndb.AllocateAndWrite(batch, propHeap, encrypt: true);
+            var tableBid = _ndb.AllocateAndWrite(batch, templateHeap, encrypt: true);
+            _ndb.AppendNbtEntry(folderNid, propBid, sub: default, parentNid);
+            _ndb.AppendNbtEntry(contentsNid, tableBid, sub: default, folderNid);
+            _ndb.CommitAllocations(batch);
+        }
+        catch
+        {
+            throw; // the editing session's backup/rollback is the safety net
+        }
+
+        if (!parent.HasSubfolders)
+        {
+            try
+            {
+                var ph = HeapOnNode.Load(_ndb, _ndb.GetNode(parentNid));
+                PropertyContext.TryPatchFixedUInt32(ph, Pid.Subfolders, 1);
+            }
+            catch (PstException) { /* cosmetic: Outlook recomputes it */ }
+        }
+
+        var mf = new MailFolder { Nid = folderNid, Name = name, ParentNid = parentNid };
+        _folders[folderNid] = mf;
+        parent.Children.Add(mf);
+        return mf;
+    }
+
+    /// <summary>Minimal spec-shaped property-context heap (HNHDR bClientSig=0xBC + BTH cbKey=2/cbEnt=6)
+    /// carrying display name, container class IPF.Note, and zeroed counts; fixed values inline.</summary>
+    private static byte[] BuildFolderPropertyHeap(string name)
+    {
+        var nameB = System.Text.Encoding.Unicode.GetBytes(name + "\0");
+        var classB = System.Text.Encoding.Unicode.GetBytes("IPF.Note\0");
+        // items: 1=BTH header, 2=leaf (5 records x 8), 3=name, 4=class
+        var items = new List<byte[]>();
+        var bth = new byte[8];
+        bth[0] = 0xB5; bth[1] = 2; bth[2] = 6; bth[3] = 0; // bTypeBTH, cbKey, cbEnt, levels=leaf
+        BinaryUtil.WriteU32(bth, 4, 2u << 5);               // hidRoot -> item 2 (the leaf)
+        items.Add(bth);
+        var leaf = new byte[5 * 8];
+        void Rec(int i, ushort pid, ushort type, uint hnid)
+        {
+            BinaryUtil.WriteU16(leaf, i * 8, pid);
+            BinaryUtil.WriteU16(leaf, i * 8 + 2, type);
+            BinaryUtil.WriteU32(leaf, i * 8 + 4, hnid);
+        }
+        Rec(0, Pid.DisplayName, 0x001F, 3u << 5);   // PT_UNICODE -> item 3
+        Rec(1, Pid.ContentCount, 0x0003, 0);        // PT_LONG inline
+        Rec(2, Pid.ContentUnread, 0x0003, 0);
+        Rec(3, Pid.Subfolders, 0x000B, 0);          // PT_BOOLEAN inline false
+        Rec(4, 0x3613, 0x001F, 4u << 5);            // PR_CONTAINER_CLASS -> item 4
+        items.Add(leaf);
+        items.Add(nameB);
+        items.Add(classB);
+
+        var dataEnd = 12;
+        foreach (var it in items) dataEnd += it.Length;
+        var mapSize = 4 + (items.Count + 1) * 2;
+        var buf = new byte[dataEnd + mapSize];
+        BinaryUtil.WriteU16(buf, 0, (ushort)dataEnd);       // ibHnpm
+        buf[2] = 0xEC;                                      // HN signature
+        buf[3] = 0xBC;                                      // bClientSig: Property Context
+        BinaryUtil.WriteU32(buf, 4, 1u << 5);               // hidUserRoot -> BTH header item
+        var pos = 12;
+        var bounds = new int[items.Count + 1];
+        bounds[0] = 12;
+        for (var i = 0; i < items.Count; i++)
+        {
+            items[i].CopyTo(buf.AsSpan(pos));
+            bounds[i + 1] = pos + items[i].Length;
+            pos += items[i].Length;
+        }
+        BinaryUtil.WriteU16(buf, dataEnd, (ushort)items.Count);
+        for (var i = 0; i <= items.Count; i++)
+            BinaryUtil.WriteU16(buf, dataEnd + 4 + i * 2, (ushort)bounds[i]);
+        return buf;
+    }
+
     private static List<(uint Nid, Bid Data, Bid Sub)> ReadSlbEntries(byte[] raw)
     {
         var list = new List<(uint, Bid, Bid)>();

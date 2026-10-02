@@ -119,3 +119,61 @@ itself produces for deleted mail until a manual cleanup.
   an allocated block is reported by bid; flips in unallocated dead space are correctly ignored.
   Harness: ArchiveIntegrityBaselineTests (opt-in OPENOUTLOOK_BASELINE_PST). Any future post-edit
   verification failure is therefore attributable to the edit, not pre-existing damage.
+
+## Phase C allocator specification (append-only; no page splits in v1)
+
+Every mutation that needs NEW space (TC row matrix extension, new subnode NIDs for moved items)
+goes through ONE primitive: `Ndb.AllocateBlock(ushort payloadSize) -> Bid`, append-only.
+
+Preconditions checked before ANY allocation in a session (fail closed, nothing written):
+1. Header re-read; fAMapValid == 0x02 (VALID). If INVALID, refuse editing until Outlook rebuilds it.
+2. Allocation must skip reserved page positions: DList@0x4200, AMap every 253,952 B from 0x4400,
+   PMap every 2,031,616 B from 0x4600 (bid%4==3 slots are pages - never allocate those).
+3. Enough free leaf room in BBT and NBT for the WHOLE batch counted up front (a BT leaf with
+   cEnt < cEntMax has room; each move needs ~2-6 entries). No room -> refuse with a clear error.
+   NO page allocation, NO splits, NO root growth in v1.
+
+AllocateBlock steps (payload <= 8176 B):
+a. bid = header.bidNextB (bid%4 != 3; pages are never allocated by us).
+b. Prefer an already-free slot from the AMap bitmaps below ibAMapLast+span (2041 free slots exist in
+   a typical real file - growth is rare). Only when none fit: extend at EOF rounded up to 64, and
+   grow the file in whole spans from the grid that starts at 0x4400, writing the new AMap page.
+c. Write payload with crypt encoding for that bid; trailer {cb, sig(ib,bid), crc(data+trailer with
+   crc zeroed), bid}. cRef = 2 (BBT entry itself + one holder).
+d. Insert BBT entry {bid, ib, cb, cRef} into a pre-validated leaf page: shift entries right, bump
+   cEnt @488, recompute page CRC with crc field zeroed, keep bid sort order.
+e. Set the AMap bit for every 64-byte slot consumed; decrement cbAMapFree.
+
+Session bookkeeping (PstEditSession.Commit order): fAMapValid=INVALID before first alloc -> all
+writes -> ibFileEof/ibAMapLast/bidNextB/bidNextP updated -> rgnid[32] raised for new NID indexes ->
+header dwCRCPartial(471 B @8) + dwCRCFull(516 B @8) recomputed, dwUnique++ -> fAMapValid=0x02 LAST.
+A crash before the last step leaves INVALID = Outlook's safe slow rebuild, never silent collisions.
+
+Move op composition (§2.6.3.2.8 re-link semantics):
+1. dry-run validate everything (source row unlinkable, dest leaf room, NBT parent writable);
+2. insert destination TC row: new RowID = max(dest RowIDs)+1; copy the "Copied?=Y" template columns
+   from the message PC into a fresh matrix record (append at matrix end; allocate + extend hnidRows
+   chain if the last block lacks room); TCROWID insert into dest BTH (shift-in within HN block;
+   same no-split guard on LTP BTH leaves);
+3. delete source row (Phase B unlink primitive);
+4. RewriteNidParent(message NID -> destination folder NID) [existing primitive];
+5. best-effort count updates both folders; 6. Commit = full VerifyIntegrity as today.
+SMQ SUD append deliberately skipped (both reference writers ship without it; scanpst advisory only).
+
+UI wiring after that: drag message rows onto folder tree items (same-store, non-Deleted targets +
+Delete key -> Deleted Items), all through the same validate-then-write discipline.
+
+### AMap empirical validation (2026-10-01, read-only probe of rmarrash_2.pst)
+- fAMapValid == 0x02 on the real archive: Phase C precondition holds; no rebuild path needed for v1.
+- AMap page = ONE 512-byte page per span: bitmap bytes 0..495 (3968 slots x 64 B), trailer with
+  ptype byte at 496 == 0x84, CRC at 500, bid at 504 == ABSOLUTE ib of the page (confirms the
+  counter-vs-absolute landmine empirically; BBT/NBT use the same footer positions with a counter bid).
+- Span grid starts at 0x4400, NOT at 0: EOF lands on 0x4400 + n*253952 (779264 = 0x4400 + 3 spans);
+  the "EOF on span boundary" rule is relative to that grid.
+- Arithmetic closes exactly: allocated(9863) + free(2041) slots == pages x 3968, and free bytes match
+  header cbAMapFree (130,624 B) to the byte -> AMaps truthful, model correct.
+- Consequence: most edits allocate inside EXISTING spans using already-free slots - no file growth,
+  no new AMap pages, in the common case.
+
+Process note: an earlier copy of this spec was lost when tracked files were reset while it sat
+uncommitted - research notes get committed the round they are written from now on.

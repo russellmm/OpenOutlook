@@ -214,3 +214,22 @@ Free entry slots in BT leaves (capacity 488/cbEnt minus used; no-split design ne
 Conclusion: the Phase C no-split guard will not refuse ordinary move/delete batches on any of the
 owner's archives - every tree has headroom for thousands of new entries. Page header layout used by
 the probe matches our reader: cEnt byte @488, cbEnt byte @490, cLevel byte @491 (unicode).
+
+## Phase C SHIPPED (move via re-link) + classic delete semantics
+- MoveMessage (d0b39b7, reviewed line-by-line in the main thread): dest row from source cells,
+  variable payloads re-appended as fresh heap items, Row-ID BTH grows by new leaf item + BTINFO
+  repoint (no in-item growth), matrix extend-or-reuse, atomic NBT bidData flip to the rebuilt heap
+  (template heaps shared cRef<=6 are never patched in place), source unlink, nidParent repoint.
+  dwRowID = message Nid per reader convention.
+- Allocator as specced: BBT-authoritative occupancy (real files have live blocks with unset AMap
+  bits - bitmap best-effort), reserved-page skip, rightmost-leaf BBT append with hard no-split
+  guard, fAMapValid INVALID->VALID bracketing, header CRC pair + dwUnique per write, file never
+  grows in v1.
+- UI (74d5182): Delete = move to Deleted Items (visible there immediately); Shift+Delete or deleting
+  inside Deleted Items = permanent with confirmation. Live-proven full story headless incl. finish-
+  editing CRC verification after move+purge sequences.
+- History note: cd604ac accidentally included worker WIP via staged-index sweep; history rewritten
+  honestly (d892b0d + 9b87538). Lesson: git checkout <tree> -- paths STAGES; verify staged set before
+  every commit.
+- Remaining: drag message rows onto arbitrary folders (same engine), publish refresh, hardware check
+  of zeroed-slot tolerance on real Outlook.

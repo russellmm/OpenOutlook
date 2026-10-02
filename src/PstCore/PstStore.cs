@@ -483,7 +483,7 @@ public sealed class PstStore : IDisposable
     {
         EnsureWritable();
         if (!_ndb.CanAllocate)
-            throw new PstException("This archive cannot be written into (ANSI format or invalid allocation map); nothing was changed.");
+            throw new PstException(_ndb.WriteBlocker ?? "this archive cannot be written into; nothing was changed.");
         if (destFolder.Nid == message.FolderNid)
             throw new PstException("The message is already in that folder.");
 
@@ -945,7 +945,7 @@ public sealed class PstStore : IDisposable
     {
         EnsureWritable();
         if (!_ndb.CanAllocate)
-            throw new PstException("This archive cannot be written into (ANSI format or invalid allocation map); nothing was changed.");
+            throw new PstException(_ndb.WriteBlocker ?? "this archive cannot be written into; nothing was changed.");
         name = name.Trim();
         if (name.Length == 0 || name.Length > 200)
             throw new PstException("Folder names must be between 1 and 200 characters; nothing was changed.");

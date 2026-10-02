@@ -262,7 +262,22 @@ internal sealed class Ndb : IDisposable
         internal long FreeSlotsConsumed;
     }
 
-    internal bool CanAllocate => Unicode && _stream.CanWrite && ReadHeaderByte() == 0x02;
+    internal bool CanAllocate => WriteBlocker is null;
+
+    /// <summary>Why writing is refused right now, or null when it is possible. Distinct causes get
+    /// distinct advice: ANSI files are a format limit, a read-only handle means this window fell
+    /// back after an earlier failure and needs the archive reopened, and anything else points at
+    /// the allocation map itself.</summary>
+    internal string? WriteBlocker
+    {
+        get
+        {
+            if (!Unicode) return "ANSI (non-Unicode) PST files can be read but not yet edited; nothing was changed.";
+            if (!_stream.CanWrite) return "this window is viewing the archive read-only after an earlier operation failed - close the data file (or restart OpenOutlook) and open it again to resume editing; nothing was changed.";
+            if (ReadHeaderByte() != 0x02) return "the allocation map header is in an unexpected state; nothing was changed.";
+            return null;
+        }
+    }
 
     private byte ReadHeaderByte()
     {

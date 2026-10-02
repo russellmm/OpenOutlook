@@ -349,3 +349,28 @@ Open question to resolve first: exact WalkBth header byte expectations for prope
 4. SHIPPED: New Folder... now also on the archive ROOT node (NewFolderAtRootAsync, parent=store.Root;
    live-proven headless "created - verified"). Create-failure visibility: refusals land in the status
    bar verbatim ("no empty message table to model a new folder on", duplicate names, etc.).
+
+
+## Spec-confirmed BT page anatomy (2026-10-02, from ms-pst.odt §2.2.2.7 + byte dump of rmarrash_2)
+Owner hit the v1 append-only ceiling ("block BTree has no room", "folder index leaf is full").
+Spec facts confirmed against real bytes (rmarrash_2 BBT root @0x8DE00: cEnt=16, cbEnt=24, cLevel=1):
+- Unicode BT page: rgentries[0..487], cEnt u8@488, cEntMax u8@489, cbEnt u8@490, cLevel u8@491.
+- PAGETRAILER 16B @496: ptype u8@496 (0x80 BBT / 0x81 NBT - SAME at every level), ptypeRepeat u8@497,
+  wSig u16@498, bid u64@500 (the page's own BID; internal bids carry bit63), dwCRC u32@508.
+- Internal entries (cLevel>0): BTENTRY 24B = {bid-key u64@0, ib child u64@16}. BBT leaf: BBTENTRY 24B
+  {bid u64@0, ib u64@8, cb u16@16, cRef u16@18, pad@20}. NBT leaf: NBTENTRY 32B.
+- **Real rmarrash_2 BBT root is cLevel=1** - multi-level trees are normal; splitting matches native shape.
+
+### BUG found while reading spec (must fix with the split work)
+v1 writes BT page CRC at offset **500**, but dwCRC belongs at **508** - @500..507 is the trailer's bid
+field, which v1 clobbers. My reader never reads that bid back so everything self-verifies, but real
+Outlook/scanpst would see a bogus bid + stale CRC on every page v1 touched. Fix together with splitting:
+write ptype/repeat/wSig/bid/CRC@508; treat stored CRC 0 as "unchecked" when verifying (r2's own root
+carries CRC=0). Pages written by older builds exist only in scratch/test copies - originals are pristine.
+
+### Split design (next milestone)
+BBT full: extend file with two new BT blocks at EOF; move upper half of rightmost-leaf entries to a
+new sibling leaf; insert parent entry one level up (creating a new cLevel+1 root when the parent is
+the root, updating header ibBTree + header CRC); give both new page-blocks BBT entries in the freed
+slots. NBT identical skeleton with 32B entries keyed by NID and child ib@16. All through the existing
+session backup + full-verify-or-rollback safety net; heavy tests on copies of all three archives first.

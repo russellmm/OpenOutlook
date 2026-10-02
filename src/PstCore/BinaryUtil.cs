@@ -27,6 +27,7 @@ internal static class BinaryUtil
 
     public static void WriteU16(Span<byte> s, int o, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(s[o..], v);
     public static void WriteU32(Span<byte> s, int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(s[o..], v);
+    public static void WriteU64(Span<byte> s, int o, ulong v) => BinaryPrimitives.WriteUInt64LittleEndian(s[o..], v);
 
     public static ulong ReadBid(ReadOnlySpan<byte> s, int o, bool unicode) =>
         unicode ? ReadU64(s, o) : ReadU32(s, o);

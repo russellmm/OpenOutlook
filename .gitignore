@@ -54,3 +54,7 @@ TestResults/
 .DS_Store
 Thumbs.db
 test-archive.pst
+
+# Native build output
+native/**/build-*/
+src/OpenOutlook.Desktop/runtimes/

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RootNamespace>OpenPst</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Native library built by scripts/build-native.*; flows to every referencing app/test output. -->
+  <ItemGroup>
+    <Content Include="..\OpenOutlook.Desktop\runtimes\**\native\*"
+             Link="runtimes\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -2,7 +2,7 @@ using System.Text;
 
 namespace PstCore;
 
-public sealed class PstStore : IDisposable
+public sealed class PstStore : IPstEngine
 {
     private readonly Ndb _ndb;
     private readonly Encoding _ansi;

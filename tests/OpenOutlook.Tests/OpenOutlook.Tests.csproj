@@ -18,6 +18,7 @@
     </PackageReference>
     <ProjectReference Include="../../src/OpenOutlook.JunkCleaner/OpenOutlook.JunkCleaner.csproj" />
     <ProjectReference Include="../../src/PstCore/PstCore.csproj" />
+    <ProjectReference Include="../../src/OpenOutlook.PstNative/OpenOutlook.PstNative.csproj" />
     <ProjectReference Include="../../src/OpenOutlook.Domain/OpenOutlook.Domain.csproj" />
     <ProjectReference Include="../../src/OpenOutlook.Providers.Microsoft/OpenOutlook.Providers.Microsoft.csproj" />
     <ProjectReference Include="../../src/OpenOutlook.Providers.Google/OpenOutlook.Providers.Google.csproj" />

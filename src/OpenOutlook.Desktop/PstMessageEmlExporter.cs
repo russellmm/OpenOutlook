@@ -13,7 +13,7 @@ public static class PstMessageEmlExporter
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     /// <summary>Use this overload with a PST opened read-only; the caller obtains the MailMessage with OpenMessage.</summary>
-    public static Task ExportAsync(PstStore store, MailMessage message, string destination,
+    public static Task ExportAsync(IPstEngine store, MailMessage message, string destination,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(store);

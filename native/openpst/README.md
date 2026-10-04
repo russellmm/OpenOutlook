@@ -154,7 +154,7 @@ handles are independent). Close messages before closing the file.
 
 ## Using it from C# (.NET 8 / Avalonia)
 
-`bindings/csharp/OpenPst.cs` is a ready-made P/Invoke wrapper (`PstFile`, `PstMessage`, plain records for folders,
+`src/OpenOutlook.PstNative/OpenPst.cs` (OpenOutlook repo) is a ready-made P/Invoke wrapper (`PstFile`, `PstMessage`, plain records for folders,
 rows, recipients and attachments). Put `openpst.dll` / `libopenpst.so` next to the executable:
 
     using var pst = new OpenPst.PstFile(path);
@@ -189,7 +189,7 @@ recipients, attachments, `Search`, `Text()`, `Html()`, `PstText`). Search from C
                              op_foldtab.inc / op_htmlent.inc: generated tables (tools/gen_foldtab.py, tools/gen_htmlent.py)
     tools/openpst_cli.c      CLI + example;   tools/amalgamate.py   single-file builder
     tests/                   test_basic.c, test_write.c, test_ctypes.py, fuzz_rtf.c; pydump.py, pyrtf.py, pysearch.py, pyops.py, pydamage.py (Python references)
-    bindings/csharp/         OpenPst.cs
+    (the C# wrapper lives in OpenOutlook: src/OpenOutlook.PstNative/OpenPst.cs)
     dist/                    generated single-file build
 
 ## Next stages

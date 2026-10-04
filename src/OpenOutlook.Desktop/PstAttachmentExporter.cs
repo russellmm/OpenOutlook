@@ -8,7 +8,7 @@ public static class PstAttachmentExporter
     public const long DefaultMaximumBytes = 64L * 1024 * 1024;
 
     /// <summary>Read the attachment from a store opened with <c>PstStore.Open(path)</c> (read-only).</summary>
-    public static Task ExportAsync(PstStore store, MailSummary message, MailAttachment attachment,
+    public static Task ExportAsync(IPstEngine store, MailSummary message, MailAttachment attachment,
         string selectedOutputPath, long maximumBytes = DefaultMaximumBytes,
         CancellationToken cancellationToken = default)
     {

@@ -16,13 +16,14 @@ using System.Collections.ObjectModel;
 using OpenOutlook.Auth;
 using OpenOutlook.JunkCleaner;
 using OpenOutlook.Providers.Microsoft;
+using OpenOutlook.PstNative;
 using PstCore;
 
 namespace OpenOutlook.Desktop;
 
 public sealed partial class MainWindow : Window
 {
-    private readonly Dictionary<string, PstStore> _stores = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IPstEngine> _stores = new(StringComparer.Ordinal);
     private readonly Dictionary<(string Path, uint FolderNid), IReadOnlyList<MailSummary>> _folderCache = new();
     private readonly Queue<(string Path, uint FolderNid)> _folderCacheOrder = new();
     private readonly SemaphoreSlim _readerGate = new(1, 1);
@@ -439,8 +440,13 @@ public sealed partial class MainWindow : Window
         {
             // Serialize reader use: NDB protects individual reads, not whole operations.
             await _readerGate.WaitAsync();
-            PstStore store;
-            try { store = await Task.Run(() => PstStore.Open(path, writable: false)); }
+            IPstEngine store;
+            try
+            {
+                string? fallback = null;
+                store = await Task.Run(() => PstEngineFactory.Open(path, writable: false, out fallback));
+                AppLog.Note("pst-engine", $"{Path.GetFileName(path)} opened with the {(store is PstStore ? "managed" : "native")} engine" + (fallback is null ? "" : $" ({fallback})"));
+            }
             finally { _readerGate.Release(); }
             if (_stores.TryAdd(path, store))
             {
@@ -476,7 +482,7 @@ public sealed partial class MainWindow : Window
         finally { _readerGate.Release(); }
     }
 
-    private TreeViewItem BuildArchiveNode(string path, PstStore store)
+    private TreeViewItem BuildArchiveNode(string path, IPstEngine store)
     {
         var roots = PstFolderPresentation.VisibleRoots(store.Root);
         var countVisited = new HashSet<uint>();
@@ -1332,7 +1338,7 @@ public sealed partial class MainWindow : Window
         return await dialog.ShowDialog<string?>(this);
     }
 
-    private async Task DetachAsync(string path, PstStore store)
+    private async Task DetachAsync(string path, IPstEngine store)
     {
         Interlocked.Increment(ref _folderVersion);
         Interlocked.Increment(ref _messageVersion);

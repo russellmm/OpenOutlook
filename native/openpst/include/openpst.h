@@ -103,6 +103,7 @@ typedef struct opst_msg_row {
     const char *cc;
     const char *topic;           /* conversation topic */
     const char *message_class;
+    int32_t     flag_status;     /* PidTagFlagStatus: 0 none, 1 complete, 2 flagged */
 } opst_msg_row;
 
 OPST_API int  opst_messages(opst *p, uint32_t folder, opst_msg_row **out, size_t *count);
@@ -168,6 +169,7 @@ typedef struct opst_attachment {
     const char *cid;             /* Content-ID for inline images, "" otherwise */
     int64_t     size;
     int32_t     method;          /* 1 = by value (data stored in the file), 5 = embedded message, 6 = OLE, ... */
+    int32_t     hidden;          /* PidTagAttachmentHidden */
 } opst_attachment;
 OPST_API int  opst_msg_attachments(opst_msg *m, opst_attachment **out, size_t *count);
 OPST_API void opst_free_attachments(opst_attachment *arr);

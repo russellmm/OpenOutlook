@@ -3,9 +3,13 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Nullable>disable</Nullable>
+    <Nullable>annotations</Nullable>
     <RootNamespace>OpenPst</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PstCore\PstCore.csproj" />
+  </ItemGroup>
 
   <!-- Native library built by scripts/build-native.*; flows to every referencing app/test output. -->
   <ItemGroup>

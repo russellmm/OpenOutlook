@@ -35,6 +35,7 @@ namespace OpenPst
             public long sent, received, size;
             public int importance, has_attachments;
             public IntPtr subject, sender, to, cc, topic, message_class;
+            public int flag_status;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -47,6 +48,7 @@ namespace OpenPst
             public IntPtr filename, mime, cid;
             public long size;
             public int method;
+            public int hidden;
         }
 
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr opst_version();
@@ -149,10 +151,11 @@ namespace OpenPst
     [Flags] public enum PstMessageFlags : uint { Read = 1, Unsent = 8, HasAttachments = 0x10 }
 
     public sealed record PstMessageRow(uint Nid, PstMessageFlags Flags, DateTime? Sent, DateTime? Received, long Size,
-        int Importance, bool HasAttachments, string Subject, string Sender, string To, string Cc, string Topic, string MessageClass);
+        int Importance, bool HasAttachments, string Subject, string Sender, string To, string Cc, string Topic, string MessageClass,
+        int FlagStatus = 0);
 
     public sealed record PstRecipient(string Name, string Email, int Type);   // Type: 1 To, 2 Cc, 3 Bcc
-    public sealed record PstAttachment(uint Index, uint Nid, string FileName, string MimeType, string ContentId, long Size, int Method);
+    public sealed record PstAttachment(uint Index, uint Nid, string FileName, string MimeType, string ContentId, long Size, int Method, bool Hidden = false);
 
     public sealed record PstDeleteResult(bool Permanent, int Folders, int Messages);
     public sealed record PstFixReport(int RowsWithoutIds, int DanglingIdMapRecords, int MessagesNotIndexed, int RowVersionIssues, int NidMarkIssues)
@@ -266,7 +269,7 @@ namespace OpenPst
                 foreach (var m in ReadArray<Native.MsgRow>(arr, cnt))
                     list.Add(new PstMessageRow(m.nid, (PstMessageFlags)m.flags, FromFileTime(m.sent), FromFileTime(m.received), m.size,
                         m.importance, m.has_attachments != 0, Native.Str(m.subject) ?? "", Native.Str(m.sender) ?? "",
-                        Native.Str(m.to) ?? "", Native.Str(m.cc) ?? "", Native.Str(m.topic) ?? "", Native.Str(m.message_class) ?? ""));
+                        Native.Str(m.to) ?? "", Native.Str(m.cc) ?? "", Native.Str(m.topic) ?? "", Native.Str(m.message_class) ?? "", m.flag_status));
                 return list;
             }
             finally { Native.opst_free_messages(arr); }
@@ -431,6 +434,10 @@ namespace OpenPst
         public string TransportHeaders => Native.Str(Native.opst_msg_str(M, 0x007D)) ?? "";
         public DateTime? Received => PstFile.FromFileTime(Native.opst_msg_i64(M, 0x0E06, 0));
         public DateTime? Sent => PstFile.FromFileTime(Native.opst_msg_i64(M, 0x0039, 0));
+        /// <summary>String property by tag id (e.g. 0x001A message class); null when absent.</summary>
+        public string Str(ushort pid) => Native.Str(Native.opst_msg_str(M, pid));
+        /// <summary>Integer/boolean property by tag id; <paramref name="dflt"/> when absent.</summary>
+        public long Int(ushort pid, long dflt = 0) => Native.opst_msg_i64(M, pid, dflt);
         public bool Has(PstBody kind) => (Native.opst_msg_bodies(M) & (1u << (int)kind)) != 0;
 
         /// <summary>Body as text (Text/Html as UTF-8 decoded to string; Rtf is the decompressed 7-bit RTF as Latin-1). Null when absent.</summary>
@@ -492,11 +499,18 @@ namespace OpenPst
                 for (int i = 0; i < (int)cnt; i++)
                 {
                     var a = Marshal.PtrToStructure<Native.Attachment>(arr + i * sz);
-                    list.Add(new PstAttachment(a.index, a.nid, Native.Str(a.filename) ?? "", Native.Str(a.mime) ?? "", Native.Str(a.cid) ?? "", a.size, a.method));
+                    list.Add(new PstAttachment(a.index, a.nid, Native.Str(a.filename) ?? "", Native.Str(a.mime) ?? "", Native.Str(a.cid) ?? "", a.size, a.method, a.hidden != 0));
                 }
                 return list;
             }
             finally { Native.opst_free_attachments(arr); }
+        }
+
+        /// <summary>Exact payload length of an attachment without copying it (<see cref="PstAttachment.Size"/> is the on-disk size).</summary>
+        public long AttachmentLength(uint index)
+        {
+            Native.Check(Native.opst_attachment_data(M, index, out _, out var len));
+            return (long)len;
         }
 
         public byte[] AttachmentData(uint index)

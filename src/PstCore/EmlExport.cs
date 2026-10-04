@@ -5,7 +5,7 @@ namespace PstCore;
 
 public static class EmlExport
 {
-    public static string ToEml(PstStore store, MailMessage message)
+    public static string ToEml(IPstEngine store, MailMessage message)
     {
         var sb = new StringBuilder();
         var headers = message.Headers?.Trim();
@@ -58,7 +58,7 @@ public static class EmlExport
         return sb.ToString();
     }
 
-    public static void SaveMessage(PstStore store, MailMessage message, string path)
+    public static void SaveMessage(IPstEngine store, MailMessage message, string path)
     {
         var ext = Path.GetExtension(path).ToLowerInvariant();
         if (ext is ".html" or ".htm")
@@ -77,7 +77,7 @@ public static class EmlExport
         File.WriteAllText(path, ToEml(store, message), Encoding.UTF8);
     }
 
-    public static int SaveFolder(PstStore store, MailFolder folder, string directory, bool recursive)
+    public static int SaveFolder(IPstEngine store, MailFolder folder, string directory, bool recursive)
     {
         Directory.CreateDirectory(directory);
         var count = 0;

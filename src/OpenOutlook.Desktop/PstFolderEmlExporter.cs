@@ -18,7 +18,7 @@ public static class PstFolderEmlExporter
     public const int MaximumMessages = 10_000;
     public const int MaximumDepth = 16;
 
-    public static Task<PstFolderExportResult> ExportAsync(PstStore store, MailFolder folder,
+    public static Task<PstFolderExportResult> ExportAsync(IPstEngine store, MailFolder folder,
         string destinationDirectory, IProgress<PstFolderExportProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {

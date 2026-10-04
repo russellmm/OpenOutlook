@@ -179,7 +179,7 @@ int opst_messages(opst *p, uint32_t folder, opst_msg_row **out, size_t *count) {
             c_to = op_tc_col(&tc, 0x0E04), c_cc = op_tc_col(&tc, 0x0E03), c_sent = op_tc_col(&tc, 0x0039),
             c_recv = op_tc_col(&tc, 0x0E06), c_flags = op_tc_col(&tc, 0x0E07), c_size = op_tc_col(&tc, 0x0E08),
             c_imp = op_tc_col(&tc, 0x0017), c_att = op_tc_col(&tc, 0x0E1B), c_topic = op_tc_col(&tc, 0x0070),
-            c_cls = op_tc_col(&tc, 0x001A);
+            c_cls = op_tc_col(&tc, 0x001A), c_flag = op_tc_col(&tc, 0x1090);
         for (size_t i = 0; i < tc.nrows; i++) {
             const uint8_t *row = op_tc_row(&tc, i);
             if (!row) continue;
@@ -192,6 +192,7 @@ int opst_messages(opst *p, uint32_t folder, opst_msg_row **out, size_t *count) {
             r.size = cell_i64(&tc, row, c_size, 0);
             r.importance = (int32_t)cell_i64(&tc, row, c_imp, 1);
             r.has_attachments = (r.flags & OPST_MSGFLAG_HASATTACH) != 0 || cell_i64(&tc, row, c_att, 0) != 0;
+            r.flag_status = (int32_t)cell_i64(&tc, row, c_flag, 0);
             size_t o_subj = cell_str(&tc, row, c_subj, &l, 0, 1);
             size_t o_from = cell_str(&tc, row, c_from, &l, 0, 0);
             if (!o_from) o_from = cell_str(&tc, row, c_from2, &l, 0, 0);
@@ -477,6 +478,7 @@ int opst_msg_attachments(opst_msg *m, opst_attachment **out, size_t *count) {
         free(cid);
         int64_t v;
         pc_i32(pc, 0x3705, 0, &v); a.method = (int32_t)v;
+        pc_i32(pc, 0x7FFE, 0, &v); a.hidden = v != 0;
         if (!pc_i32(pc, 0x0E20, 0, &v)) {
             oppc_prop *pr = op_pc_find(pc, 0x3701);
             v = (pr && op_pc_value(pc, pr) == 0) ? (int64_t)pr->n : 0;

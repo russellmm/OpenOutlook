@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using OpenOutlook.PstNative;
 using PstCore;
 
 namespace OpenOutlook.Desktop;
@@ -81,7 +82,7 @@ public partial class MainWindow
         }
         try
         {
-            var fresh = PstStore.Open(archivePath, writable: false);
+            var fresh = PstEngineFactory.Open(archivePath, writable: false);
             _stores[archivePath] = fresh;
             InvalidateFolderCache(archivePath);
         }

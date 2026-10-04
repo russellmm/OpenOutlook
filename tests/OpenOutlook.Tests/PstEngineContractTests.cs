@@ -45,10 +45,13 @@ public sealed class PstEngineContractTests
         using var native = new PstFile(path);
         var m = managed.AllFolders().Select(f => (f.Nid, f.ContentCount)).OrderBy(x => x.Nid).ToArray();
         var n = new List<(uint, int)>();
-        void Walk(uint parent) { foreach (var f in native.Children(parent)) { n.Add((f.Nid, f.ContentCount)); if (f.HasSubfolders) Walk(f.Nid); } }
+        void Walk(uint parent) { foreach (var f in native.Children(parent)) { if ((f.Nid & 0x1F) == 2) n.Add((f.Nid, f.ContentCount)); if (f.HasSubfolders) Walk(f.Nid); } }
+        // Native also lists search folders (nid type 3); the managed engine does not. Phase 1 decides how NativePstEngine
+        // presents them, so this contract compares normal folders (nid type 2) only.
         Walk(native.RootFolder);
         // Every native folder must exist in the managed tree with the same message count.
-        foreach (var (nid, count) in n)
-            Assert.Contains((nid, count), m);
+        var missing = n.Where(x => !m.Contains(x)).Select(x => $"{x.Item1:x}:{x.Item2}").ToArray();
+        Assert.True(missing.Length == 0, "native folders not matched by managed: " + string.Join(", ", missing)
+            + " | managed: " + string.Join(", ", m.Select(x => $"{x.Nid:x}:{x.ContentCount}")));
     }
 }

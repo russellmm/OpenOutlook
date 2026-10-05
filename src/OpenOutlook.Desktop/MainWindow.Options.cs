@@ -162,6 +162,7 @@ public partial class MainWindow
         try { _optionsStore.Save(_options); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         { ReadingPaneFeedback.Text = "Changes could not be saved. Check the settings folder."; return; }
+        if (!_options.ReadPaneFullScreenPortrait) ExitPortraitReading();
         CloseReadingPaneDialog();
     }
 
@@ -244,6 +245,7 @@ public partial class MainWindow
         SetComboText(OptAfterMoveDelete, s.AfterMoveOrDelete);
         OptMarkReadDeleted.IsChecked = s.MarkReadWhenDeleted;
         OptHighlightFlagged.IsChecked = s.HighlightFlaggedItems;
+        OptBackupBeforeEditing.IsChecked = s.PstBackupBeforeEditing;
     }
 
     private OptionsSettings CollectMailOptions(OptionsSettings s) => s with
@@ -304,7 +306,8 @@ public partial class MainWindow
         DontAutoExpandConversations = OptNoAutoExpand.IsChecked == true,
         AfterMoveOrDelete = ComboText(OptAfterMoveDelete, s.AfterMoveOrDelete),
         MarkReadWhenDeleted = OptMarkReadDeleted.IsChecked == true,
-        HighlightFlaggedItems = OptHighlightFlagged.IsChecked == true
+        HighlightFlaggedItems = OptHighlightFlagged.IsChecked == true,
+        PstBackupBeforeEditing = OptBackupBeforeEditing.IsChecked == true
     };
 
     private void ApplyProofingOptions(OptionsSettings s)

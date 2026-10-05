@@ -96,6 +96,7 @@ public sealed partial class MainWindow : Window
         ApplyViewLayout(layout);
         InitializeFolderOrder();
         InitializeReadingState();
+        InitializeReadingOptions();
         _layoutSaveTimer.Tick += (_, _) =>
         {
             _layoutSaveTimer.Stop();
@@ -969,6 +970,7 @@ public sealed partial class MainWindow : Window
         }
         if (MessageList.SelectedItem is not MessageListRow { Summary: var summary } ||
             _activePath is null || !_stores.TryGetValue(_activePath, out var store)) return;
+        if (PreviewBlocked(summary)) { ShowPreviewBlocked(summary); return; }
         StatusText.Text = "Reading message…";
         try
         {
@@ -1614,7 +1616,7 @@ public sealed partial class MainWindow : Window
         var messages = PaneGrid.ColumnDefinitions[2].ActualWidth;
         var reader = PaneGrid.ColumnDefinitions[4].ActualWidth;
         var total = folder + messages + reader;
-        if (total <= 0) return;
+        if (total <= 0 || _portraitReading) return;   // the collapsed portrait-reading widths are temporary
         var columns = MessageList.Columns.Select((column, index) =>
         {
             var isStar = column.Width.UnitType == DataGridLengthUnitType.Star;

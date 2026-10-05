@@ -43,4 +43,17 @@ public interface IPstEngine : IDisposable
     void DeleteFolder(uint folderNid);
 
     IReadOnlyList<string> VerifyIntegrity();
+
+    /// <summary>Full structural scan (works on read-only archives): the findings, one line each, and how many
+    /// inconsistencies the built-in repair can fix.</summary>
+    PstScanReport Scan();
+
+    /// <summary>Applies the built-in repairs (the "minor inconsistencies" SCANPST reports in edited files) as one
+    /// atomic transaction, then rescans. Throws when the archive is read-only.</summary>
+    PstScanReport Repair();
 }
+
+/// <param name="Findings">One line per problem the scan found; empty when the archive is clean.</param>
+/// <param name="Fixable">Inconsistencies the built-in repair can fix (before a repair).</param>
+/// <param name="Fixed">Inconsistencies a repair just fixed (0 for a plain scan).</param>
+public sealed record PstScanReport(IReadOnlyList<string> Findings, int Fixable, int Fixed);

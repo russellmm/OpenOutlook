@@ -368,6 +368,35 @@ namespace OpenOutlook.PstNative
             }
         }
 
+        static int Total(PstFixReport f) =>
+            f.RowsWithoutIds + f.DanglingIdMapRecords + f.MessagesNotIndexed + f.RowVersionIssues + f.NidMarkIssues + f.RowCellIssues;
+
+        static IReadOnlyList<string> Lines(PstCheckResult r) =>
+            r.Problems == 0 ? Array.Empty<string>() : r.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+        public PstScanReport Scan()
+        {
+            lock (_gate)
+            {
+                FlushPending();
+                return Wrap(() => new PstScanReport(Lines(_file.Check()), Total(_file.Fix(false)), 0));
+            }
+        }
+
+        public PstScanReport Repair()
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                FlushPending();
+                return Wrap(() =>
+                {
+                    var fixedCount = Total(_file.Fix(true));
+                    return new PstScanReport(Lines(_file.Check()), Total(_file.Fix(false)), fixedCount);
+                });
+            }
+        }
+
         void RequireWrite()
         {
             if (_disposed) throw new ObjectDisposedException(nameof(NativePstEngine));

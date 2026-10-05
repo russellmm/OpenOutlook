@@ -156,6 +156,32 @@ public sealed class PstImportTests
     }
 
     [Fact]
+    public void Scan_works_read_only_and_repair_needs_a_writable_archive()
+    {
+        var path = Fixture();
+        if (path is null) return;
+        using (var ro = NativePstEngine.Open(path))
+        {
+            var scan = ro.Scan();
+            Assert.Equal(ro.VerifyIntegrity().Count, scan.Findings.Count);
+            Assert.Equal(0, scan.Fixed);
+            Assert.Throws<PstCore.PstException>(() => ro.Repair());
+        }
+        var copy = TempCopy(path);
+        try
+        {
+            using var e = NativePstEngine.Open(copy, write: true);
+            var before = e.Scan();
+            var repaired = e.Repair();
+            Assert.Equal(before.Fixable, repaired.Fixed);          // everything it said it could fix, it fixed
+            Assert.Equal(0, repaired.Fixable);
+            Assert.True(repaired.Findings.Count <= before.Findings.Count);
+            Assert.Equal(0, e.Repair().Fixed);                    // a second repair has nothing to do
+        }
+        finally { Cleanup(copy); }
+    }
+
+    [Fact]
     public void Importing_into_a_read_only_engine_fails_closed()
     {
         var path = Fixture();

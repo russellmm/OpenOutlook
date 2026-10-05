@@ -496,6 +496,8 @@
 
               <!-- Action chips live in a toolbar strip above the message, level with the list's "By date" row. -->
               <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="10,8,10,4" MinHeight="30">
+                <Button Name="ReaderBackButton" Classes="olChip" Content="‹ Back to list" IsVisible="False" Click="ReaderBackClicked"
+                        ToolTip.Tip="Return to the message list (Esc)" />
                 <StackPanel Name="FormatBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
                   <TextBlock Text="View as" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" Margin="0,0,2,0" />
                   <Button Name="FormatHtmlButton" Classes="olChip" Content="HTML" Tag="html" Click="FormatClicked"
@@ -727,6 +729,19 @@
               </Grid>
 
               <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
+                <Button Classes="olBsCard" Click="CheckArchiveClicked">
+                  <StackPanel Spacing="7">
+                    <ContentControl Template="{StaticResource OlIconMailboxTools}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <TextBlock Text="Check &amp;&#10;Repair" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <StackPanel Grid.Column="1" Margin="27,0,0,0">
+                  <TextBlock Classes="olBsCardTitle" Text="Check and Repair Archive" />
+                  <TextBlock Classes="olBsBody" Text="Scan the selected archive file for structural problems and fix the ones OpenOutlook can repair." />
+                </StackPanel>
+              </Grid>
+
+              <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
                 <Button Classes="olBsCard" Click="RibbonPlaceholderClicked" Tag="Rules and Alerts">
                   <StackPanel Spacing="7">
                     <ContentControl Template="{StaticResource OlIconRulesBell}" Width="42" Height="42" HorizontalAlignment="Center" />
@@ -878,6 +893,13 @@
                       <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconKeyboard}" Width="18" Height="18" /><TextBlock Text="Mail - keyboard shortcuts" VerticalAlignment="Center" /></StackPanel>
                     </Button>
                   </StackPanel>
+                  <TextBlock Classes="olOptSection" Text="Archive files (.pst)" Margin="0,22,0,0" />
+                  <Border Classes="olOptRule" />
+                  <CheckBox Name="OptBackupBeforeEditing" Content="Make a .bak copy of an archive the first time it is opened for editing"
+                            ToolTip.Tip="Off by default. Edits are journaled and crash-safe; the copy doubles the disk space used." />
+                  <Button Classes="olBsAction" Click="CheckArchiveClicked" HorizontalAlignment="Left" Margin="0,10,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconMailboxTools}" Width="18" Height="18" /><TextBlock Text="Check and repair the selected archive…" VerticalAlignment="Center" /></StackPanel>
+                  </Button>
                 </StackPanel>
 
                 <!-- Mail: full recreation of the classic page -->

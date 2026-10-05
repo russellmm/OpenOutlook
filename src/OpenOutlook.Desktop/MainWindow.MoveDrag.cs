@@ -80,8 +80,9 @@ public partial class MainWindow
         {
             var gmail = _activeGmailFolder is not null;
             var pst = _activePath is not null;
-            moveItem.IsEnabled = gmail || pst;
-            copyItem.IsEnabled = gmail || pst;
+            var online = gmail || _activeMicrosoftFolder is not null;
+            moveItem.IsEnabled = online || pst;
+            copyItem.IsEnabled = online || pst;
             copyItem.Header = gmail ? "Add Label\u2026" : "Copy to Folder\u2026";
             archiveItem.IsVisible = pst;
         };
@@ -92,6 +93,7 @@ public partial class MainWindow
     {
         InitMessageContextMenu();
         if (_activeGmailFolder is not null) { await MoveGmailViaDialogAsync(copy); return; }
+        if (_activeMicrosoftFolder is not null) { await MoveMicrosoftViaDialogAsync(copy); return; }
         if (_activePath is not { } path || _activeFolder is not { } folder)
         {
             StatusText.Text = "Select a message in an archive first.";
@@ -156,6 +158,11 @@ public partial class MainWindow
             _messageDragStart = e.GetPosition(MessageList);
             _messageDragCandidate = true;
         }
+        else if (OnlineDragAvailable)
+        {
+            _messageDragStart = e.GetPosition(MessageList);
+            _messageDragCandidate = true;
+        }
     }
 
     private async void MessageListDragMoved(object? sender, PointerEventArgs e)
@@ -168,6 +175,7 @@ public partial class MainWindow
         var dy = e.GetPosition(MessageList).Y - _messageDragStart.Y;
         if (dx * dx + dy * dy < 400) return;
         _messageDragCandidate = false;
+        if (_activePath is null && OnlineDragAvailable) { await StartOnlineDragAsync(e); return; }
         var path = _activePath;
         var folder = _activeFolder;
         if (path is null || folder is null) return;

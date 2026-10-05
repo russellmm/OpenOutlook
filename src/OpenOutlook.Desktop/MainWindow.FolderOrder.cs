@@ -179,6 +179,7 @@ public partial class MainWindow
             top.IsEnabled = index > 0;
         };
         item.ContextFlyout = menu;
+        EnableOnlineDrops(item);                                  // Gmail and Microsoft folders accept dragged messages of their own account
     }
 
     // ---- drag and drop (sibling reorder only) ----

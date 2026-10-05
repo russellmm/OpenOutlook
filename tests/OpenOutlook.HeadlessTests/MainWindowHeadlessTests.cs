@@ -29,6 +29,14 @@ public sealed class MainWindowHeadlessTests
         return string.IsNullOrWhiteSpace(path) || !File.Exists(path) || !OpenPst.NativeLibraryLoader.IsAvailable ? null : path;
     }
 
+    /// <summary>The account registry lives in a scratch folder shared by the tests of this run (a registry holds at most two accounts per provider), so each test starts it empty.</summary>
+    private static OpenOutlook.Auth.ConnectedAccountRegistry ResetRegistry()
+    {
+        var registry = new OpenOutlook.Auth.ConnectedAccountRegistry();
+        registry.Save([]);
+        return registry;
+    }
+
     private static string OutDir()
     {
         var dir = Environment.GetEnvironmentVariable("OO_HEADLESS_OUT") ?? Path.Combine(Path.GetTempPath(), "oo-headless-shots");
@@ -202,7 +210,7 @@ public sealed class MainWindowHeadlessTests
     public async Task Gmail_account_appears_with_its_standard_folders_and_survives_selection()
     {
         // an account in the scratch registry (XDG_DATA_HOME is a temp folder, see TestAppBuilder); no network or keyring is needed to show the tree
-        new OpenOutlook.Auth.ConnectedAccountRegistry().Upsert(new OpenOutlook.Auth.ConnectedAccount(
+        ResetRegistry().Upsert(new OpenOutlook.Auth.ConnectedAccount(
             OpenOutlook.Auth.OAuthProvider.Google, "gmail-account-1", "someone@gmail.test", "client", DateTimeOffset.UtcNow));
         var window = new MainWindow { Width = 1200, Height = 800 };
         window.Show();
@@ -280,7 +288,7 @@ public sealed class MainWindowHeadlessTests
         var server = new FakeGmail(labels);
         var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.Google, "gmail-account-2", "me@example.org", "client", DateTimeOffset.UtcNow,
             ["https://www.googleapis.com/auth/gmail.modify"]);
-        new OpenOutlook.Auth.ConnectedAccountRegistry().Upsert(account);
+        ResetRegistry().Upsert(account);
         var window = new MainWindow { Width = 1200, Height = 800 };
         window.Show();
         Dispatcher.UIThread.RunJobs();
@@ -410,6 +418,62 @@ public sealed class MainWindowHeadlessTests
             foreach (var expected in new[] { "Mark as Read", "Mark as Unread", "Flag", "Clear Flag", "Delete" })
                 Assert.Contains(expected, headers);
             Assert.Contains(headers, h => h!.StartsWith("Move to Folder", StringComparison.Ordinal));
+        }
+        finally { window.Close(); }
+    }
+
+    [Fact]
+    public void Online_drag_payload_round_trips_and_rejects_foreign_text()
+    {
+        var text = MainWindow.FormatOnlineDragPayload("acct-1", "INBOX", ["m1", "m2", "AAMk-long/id=="]);
+        var parsed = MainWindow.ParseOnlineDragPayload(text)!.Value;
+        Assert.Equal("acct-1", parsed.AccountId);
+        Assert.Equal("INBOX", parsed.SourceFolderId);
+        Assert.Equal(["m1", "m2", "AAMk-long/id=="], parsed.MessageIds);
+        Assert.Null(MainWindow.ParseOnlineDragPayload("hello"));
+        Assert.Null(MainWindow.ParseOnlineDragPayload(null));
+        Assert.Null(MainWindow.ParseOnlineDragPayload("OpenOutlook-online-move:v1\nonly-account\n"));
+    }
+
+    [AvaloniaFact]
+    public async Task Dropping_messages_on_a_Gmail_folder_moves_them_and_adding_a_label_copies()
+    {
+        var labels = new Dictionary<string, HashSet<string>>
+        {
+            ["m1"] = ["INBOX", "UNREAD"], ["m2"] = ["INBOX"], ["m3"] = ["INBOX"]
+        };
+        var server = new FakeGmail(labels);
+        var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.Google, "gmail-account-3", "me@example.org", "client", DateTimeOffset.UtcNow,
+            ["https://www.googleapis.com/auth/gmail.modify"]);
+        ResetRegistry().Upsert(account);
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var boxes = (System.Collections.IDictionary)typeof(MainWindow).GetField("_gmailBoxes", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            boxes[account.AccountId] = new OpenOutlook.Providers.Google.GmailMailbox(new HttpClient(server), _ => ValueTask.FromResult("tok"), "me@example.org");
+            var tree = window.FindControl<TreeView>("FolderTree")!;
+            var root = tree.Items.OfType<TreeViewItem>().Single(i => i.Tag is OpenOutlook.Auth.ConnectedAccount { AccountId: "gmail-account-3" });
+            TreeViewItem Node(string header) => root.Items.OfType<TreeViewItem>().First(i => i.Header?.ToString()?.StartsWith(header, StringComparison.Ordinal) == true);
+            tree.SelectedItem = Node("Inbox");
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            await WaitUntil(() => list.CollectionView?.Cast<object>().Count() == 3);
+
+            // what a drop on the Spam folder does
+            await Call<Task>(window, "MoveOnlineAsync", new List<string> { "m1", "m2" }, Node("Spam").Tag!, false);
+            Assert.True(labels["m1"].Contains("SPAM"), "status: " + window.FindControl<TextBlock>("StatusText")!.Text + " | server: " + string.Join(",", server.Log));
+            Assert.Contains("SPAM", labels["m1"]); Assert.DoesNotContain("INBOX", labels["m1"]);
+            Assert.Contains("SPAM", labels["m2"]); Assert.DoesNotContain("INBOX", labels["m2"]);
+            await WaitUntil(() => list.CollectionView!.Cast<object>().Count() == 1);       // the list reloaded: only m3 is left in the Inbox
+
+            // "Copy Here" keeps the message where it is and only adds the label
+            await Call<Task>(window, "MoveOnlineAsync", new List<string> { "m3" }, Node("Spam").Tag!, true);
+            Assert.Contains("SPAM", labels["m3"]); Assert.Contains("INBOX", labels["m3"]);
+
+            // Gmail cannot keep a copy in Trash: copying there is a move
+            await Call<Task>(window, "MoveOnlineAsync", new List<string> { "m3" }, Node("Trash").Tag!, true);
+            Assert.Contains("TRASH", labels["m3"]); Assert.DoesNotContain("INBOX", labels["m3"]);
         }
         finally { window.Close(); }
     }

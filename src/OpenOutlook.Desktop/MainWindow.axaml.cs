@@ -90,6 +90,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         RemoveWebViewIfUnsupported();
+        LoadOAuthClientConfigurationAtStartup();
         _appearance = _appearanceStore.Load();
         _shortcuts = _shortcutStore.Load();
         ApplyAppearance();
@@ -698,6 +699,7 @@ public sealed partial class MainWindow : Window
                     if (root.Items.FirstOrDefault() is TreeViewItem inbox)
                     {
                         inbox.Header = FolderHeader(folder.DisplayName, folder.UnreadCount);
+                        _msUnread[account.AccountId + "|inbox"] = folder.UnreadCount;
                         foreach (var child in folder.Children)
                             inbox.Items.Add(BuildMicrosoftFolderNode(account, child));
                         ApplyFolderOrder(inbox);
@@ -718,6 +720,7 @@ public sealed partial class MainWindow : Window
 
     private TreeViewItem BuildMicrosoftFolderNode(ConnectedAccount account, GraphMailboxFolder folder)
     {
+        _msUnread[account.AccountId + "|" + folder.Id] = folder.UnreadCount;
         var item = new TreeViewItem
         {
             Header = FolderHeader(folder.DisplayName, folder.UnreadCount),

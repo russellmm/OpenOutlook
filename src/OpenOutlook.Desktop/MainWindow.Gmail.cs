@@ -200,8 +200,8 @@ public partial class MainWindow
 
     private async void RibbonMoveClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_activeGmailFolder is not null || _activePath is not null) await MoveViaDialogAsync(copy: false);
-        else StatusText.Text = "Select messages in an archive or a Gmail folder to move them. Moving Microsoft mailbox messages is planned.";
+        if (_activeGmailFolder is not null || _activeMicrosoftFolder is not null || _activePath is not null) await MoveViaDialogAsync(copy: false);
+        else StatusText.Text = "Select messages in an archive or a mailbox folder to move them.";
     }
 
     private Task RefreshGmailCountsAsync(ConnectedAccount account)
@@ -260,27 +260,39 @@ public partial class MainWindow
         });
         await dialog.ShowDialog(this);
         if (dialog.Result?.Tag is not GmailFolderSelection dest) return;
-        if (_gmailActionBusy) return;
-        _gmailActionBusy = true;
-        try
-        {
-            var ids = messages.Select(m => m.Id).ToArray();
-            var box = GetGmailMailbox(account);
-            // System labels the current folder cannot lose (Spam can; Trash and the others are handled by their own call).
-            var removeCurrent = !copy && folder.LabelId is not ("SENT" or "DRAFT" or "STARRED" or "IMPORTANT" or "TRASH");
-            if (dest.LabelId == GmailMailbox.TrashLabel) await box.TrashAsync(ids);
-            else await box.ModifyLabelsAsync(ids, [dest.LabelId], removeCurrent ? [folder.LabelId] : []);
-            var leaves = dest.LabelId == GmailMailbox.TrashLabel || removeCurrent;
-            if (leaves && _activeGmailFolder == folder) foreach (var message in messages) ApplyCompletedMailAction(message, "delete");
-            StatusText.Text = copy ? $"Added the label \"{dest.Name}\"." :
-                !removeCurrent && dest.LabelId != GmailMailbox.TrashLabel ? $"Added the label \"{dest.Name}\" ({folder.Name} cannot be removed from these messages)." :
-                messages.Length == 1 ? $"Message moved to {dest.Name}." : $"{messages.Length} messages moved to {dest.Name}.";
-            _ = RefreshGmailCountsAsync(account);
-        }
-        catch (GmailReadException error) { StatusText.Text = error.Message; }
-        catch (OperationCanceledException) { }
-        catch (Exception) { StatusText.Text = "Gmail change failed. Check the connection and retry."; }
-        finally { _gmailActionBusy = false; }
+        await MoveOnlineAsync(messages.Select(m => m.Id).ToArray(), dest, copy);
+    }
+
+    /// <summary>The label changes of a Gmail move / copy (picker and drag and drop both end here); returns the status text.</summary>
+    private async Task<string> GmailMoveCoreAsync(GmailFolderSelection source, IReadOnlyList<string> ids, GmailFolderSelection dest, bool copy)
+    {
+        var account = source.Account;
+        var box = GetGmailMailbox(account);
+        // System labels the current folder cannot lose (Spam can; Trash and the others are handled by their own call).
+        var removeCurrent = !copy && source.LabelId is not ("SENT" or "DRAFT" or "STARRED" or "IMPORTANT" or "TRASH");
+        if (dest.LabelId == GmailMailbox.TrashLabel) await box.TrashAsync(ids);
+        else await box.ModifyLabelsAsync(ids, [dest.LabelId], removeCurrent ? [source.LabelId] : []);
+        _ = RefreshGmailCountsAsync(account);
+        if (copy && dest.LabelId == GmailMailbox.TrashLabel) return "Gmail cannot keep a copy in Trash; the message was moved there.";
+        return copy ? $"Added the label \"{dest.Name}\"." :
+            !removeCurrent && dest.LabelId != GmailMailbox.TrashLabel ? $"Added the label \"{dest.Name}\" ({source.Name} cannot be removed from these messages)." :
+            ids.Count == 1 ? $"Message moved to {dest.Name}." : $"{ids.Count} messages moved to {dest.Name}.";
+    }
+
+    private async Task ReloadGmailFolderAsync(GmailFolderSelection folder)
+    {
+        if (_activeGmailFolder != folder) return;
+        _folderRefreshCancellation?.Cancel();
+        _folderRefreshCancellation = new CancellationTokenSource();
+        await LoadGmailFolderAsync(folder, Interlocked.Increment(ref _folderVersion), _folderRefreshCancellation.Token);
+    }
+
+    /// <summary>The sign-in settings (client ids and the Google client secret) are needed for token refresh as soon as the window starts, not only when the Accounts window opens.</summary>
+    private static void LoadOAuthClientConfigurationAtStartup()
+    {
+        try { OAuthClientConfiguration.Load(); }
+        catch (Exception ex) when (ex is System.IO.IOException or System.IO.InvalidDataException or UnauthorizedAccessException)
+        { AppLog.Error("startup", ex, "could not read the sign-in configuration"); }
     }
 
     /// <summary>Viewing an unread message for the reading pane's wait time marks it read in Gmail (same option as for other mailboxes).</summary>

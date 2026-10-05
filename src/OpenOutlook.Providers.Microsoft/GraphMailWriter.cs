@@ -76,6 +76,30 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         RequiredId(result.RootElement);
     }
 
+    public async Task CopyAsync(string token, string messageId, string destinationId, CancellationToken ct = default)
+    {
+        ValidateId(destinationId);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        using var result = await RequestJsonAsync(HttpMethod.Post, MessageUri(messageId) + "/copy", token,
+            new { destinationId }, HttpStatusCode.Created, ct).ConfigureAwait(false);
+        RequiredId(result.RootElement);
+    }
+
+    /// <summary>Creates a mail folder at the top of the mailbox (parentFolderId null) or under another folder; returns its id and name.</summary>
+    public async Task<(string Id, string Name)> CreateFolderAsync(string token, string? parentFolderId, string name, CancellationToken ct = default)
+    {
+        name = (name ?? "").Trim();
+        if (name.Length is < 1 or > 255 || name.Any(char.IsControl)) throw new ArgumentException("Invalid folder name.", nameof(name));
+        if (parentFolderId is not null) ValidateId(parentFolderId);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        var path = Origin + "/me/mailFolders" +
+                   (parentFolderId is null ? "" : "/" + Uri.EscapeDataString(parentFolderId) + "/childFolders");
+        using var result = await RequestJsonAsync(HttpMethod.Post, path, token, new { displayName = name }, HttpStatusCode.Created, ct).ConfigureAwait(false);
+        var id = RequiredId(result.RootElement);
+        var shown = String(result.RootElement, "displayName", 255);
+        return (id, shown.Length > 0 ? shown : name);
+    }
+
     public async Task DeletePermanentlyAsync(string token, string messageId, CancellationToken ct = default)
     {
         if (!await IsInDeletedItemsAsync(token, messageId, ct).ConfigureAwait(false))

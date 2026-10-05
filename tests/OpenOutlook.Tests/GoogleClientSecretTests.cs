@@ -40,4 +40,22 @@ public sealed class GoogleClientSecretTests
         }
         finally { DesktopOAuth.SetClientSecret(OAuthProvider.Google, null); }
     }
+
+    [Fact]
+    public async Task Loading_the_sign_in_configuration_at_startup_sets_the_secret_for_token_refresh()
+    {
+        // Regression: the secret was only set when the Accounts window opened, so the first Gmail token refresh after a restart was rejected.
+        var path = Path.Combine(Path.GetTempPath(), "oo-oauth-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(path, """{"microsoftClientId":"m","googleClientId":"g.apps.googleusercontent.com","googleClientSecret":"loaded-secret"}""");
+        try
+        {
+            DesktopOAuth.SetClientSecret(OAuthProvider.Google, null);
+            OpenOutlook.Desktop.OAuthClientConfiguration.Load(path);
+            var capture = new Capture();
+            using var http = new HttpClient(capture);
+            await DesktopOAuth.RefreshAsync(OAuthProvider.Google, "g.apps.googleusercontent.com", "refresh-1", http);
+            Assert.Contains("client_secret=loaded-secret", capture.Form);
+        }
+        finally { File.Delete(path); DesktopOAuth.SetClientSecret(OAuthProvider.Google, null); }
+    }
 }

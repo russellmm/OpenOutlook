@@ -3,6 +3,11 @@ using OpenOutlook.Auth;
 
 namespace OpenOutlook.Tests;
 
+[CollectionDefinition("OAuth static state", DisableParallelization = true)]
+public sealed class OAuthStaticStateCollection;
+
+/// <summary>Sets the process-wide Google client secret, so it must not run alongside tests that check exact token requests.</summary>
+[Collection("OAuth static state")]
 public sealed class GoogleClientSecretTests
 {
     private sealed class Capture : HttpMessageHandler

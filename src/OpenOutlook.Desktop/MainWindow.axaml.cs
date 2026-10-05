@@ -742,6 +742,39 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>Re-reads the unread counts of an account's folders and redraws the folder list headers (after a delete, move or read change).</summary>
+    private async Task RefreshMicrosoftFolderCountsAsync(ConnectedAccount account, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
+            var folders = await new GraphMailFolderReader(_graphHttp, account.AccountId).GetFoldersAsync(token, cancellationToken);
+            if (cancellationToken.IsCancellationRequested) return;
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            void Collect(GraphMailboxFolder f)
+            {
+                counts[f.Id] = f.UnreadCount;
+                if (f.DisplayName.Equals("Inbox", StringComparison.OrdinalIgnoreCase)) counts["inbox"] = f.UnreadCount;
+                foreach (var c in f.Children) Collect(c);
+            }
+            foreach (var f in folders) Collect(f);
+            void Walk(IEnumerable<object?> items)
+            {
+                foreach (var node in items.OfType<TreeViewItem>())
+                {
+                    if (node.Tag is MicrosoftFolderSelection sel && sel.Account.AccountId == account.AccountId && counts.TryGetValue(sel.Id, out var n))
+                    {
+                        _msUnread[account.AccountId + "|" + sel.Id] = n;
+                        node.Header = FolderHeader(sel.Name, n);
+                    }
+                    Walk(node.Items.Cast<object?>());
+                }
+            }
+            Walk(FolderTree.Items.Cast<object?>());
+        }
+        catch (Exception) { }                                                         // the counts are cosmetic; the next refresh tries again
+    }
+
     private TreeViewItem BuildMicrosoftFolderNode(ConnectedAccount account, GraphMailboxFolder folder)
     {
         _msUnread[account.AccountId + "|" + folder.Id] = folder.UnreadCount;
@@ -803,6 +836,7 @@ public sealed partial class MainWindow : Window
             else ReconcileGraphMessages(page.Messages);
             StatusText.Text = $"{page.Messages.Count} newest of {page.TotalCount:N0} {page.FolderName} items · " +
                 $"{page.UnreadCount:N0} unread · {account.DisplayAddress}";
+            _ = RefreshMicrosoftFolderCountsAsync(account, cancellationToken);
         }
         catch (OperationCanceledException) { }
         catch (GraphMailException error)

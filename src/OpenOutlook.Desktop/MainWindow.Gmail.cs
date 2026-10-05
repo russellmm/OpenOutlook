@@ -106,6 +106,28 @@ public partial class MainWindow
         }
     }
 
+    private string? _chipChoice;
+
+    /// <summary>One clickable chip per attachment under the message header; clicking saves that attachment to a new file. Null clears the row.</summary>
+    private void ShowAttachmentChips(IEnumerable<(string Name, long Size, bool CanSave)>? items)
+    {
+        AttachmentChips.Children.Clear();
+        var list = items?.ToList();
+        AttachmentChips.IsVisible = list is { Count: > 0 };
+        if (list is null) return;
+        foreach (var (name, size, canSave) in list)
+        {
+            var chip = new Button
+            {
+                Content = $"📎 {name} ({(size < 1024 ? size + " B" : size < 1048576 ? (size / 1024.0).ToString("0.#") + " KB" : (size / 1048576.0).ToString("0.#") + " MB")})",
+                Margin = new Avalonia.Thickness(0, 0, 6, 4), Padding = new Avalonia.Thickness(8, 3), FontSize = 12.5, IsEnabled = canSave
+            };
+            ToolTip.SetTip(chip, canSave ? "Click to save this attachment to a new file" : "This attachment cannot be saved");
+            chip.Click += (_, _) => { _chipChoice = name; ExportAttachmentClicked(chip, new Avalonia.Interactivity.RoutedEventArgs()); };
+            AttachmentChips.Children.Add(chip);
+        }
+    }
+
     private GmailContent? _gmailContent;
     private string? _gmailContentMessageId;
 
@@ -123,7 +145,10 @@ public partial class MainWindow
         var candidates = content.Attachments.Where(CanSaveGmailAttachment).ToArray();
         if (candidates.Length == 0) { StatusText.Text = "This message has no attachment that can be saved."; return; }
         GmailAttachmentInfo? attachment = candidates[0];
-        if (candidates.Length > 1)
+        var chosen = _chipChoice is null ? null : candidates.FirstOrDefault(c => c.FileName == _chipChoice);
+        _chipChoice = null;
+        if (chosen is not null) attachment = chosen;
+        else if (candidates.Length > 1)
         {
             var chooser = new Window { Title = "Choose an attachment", Width = 450, Height = 300, WindowStartupLocation = WindowStartupLocation.CenterOwner };
             var list = new ListBox();
@@ -176,8 +201,8 @@ public partial class MainWindow
             MessageDateText.Text = message.Received?.ToLocalTime().ToString("ddd M/d/yyyy h:mm tt") ?? "";
             SetReaderAvatar(message.From);
             ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible = ReaderForwardButton.IsVisible = folder.Account.CanSendGmail;   // reading-pane Reply / Reply All / Forward
-            AttachmentText.Text = content.Attachments.Count == 0 ? "" :
-                $"Attachments: {string.Join(", ", content.Attachments.Select(a => a.FileName + (CanSaveGmailAttachment(a) ? "" : " (cannot save)")))}";
+            AttachmentText.Text = "";
+            ShowAttachmentChips(content.Attachments.Select(a => (a.FileName, (long)a.SizeBytes, CanSaveGmailAttachment(a))));
             HideFormatBar();
             SetMessageBody(content.Html, content.Html is null ? (content.Text ?? content.Snippet ?? "") : "");
             StatusText.Text = _richRuns is null ? "Gmail message opened." : "Gmail message opened in rich-text view.";

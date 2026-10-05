@@ -1025,6 +1025,7 @@ public sealed partial class MainWindow : Window
             ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible =
                 ReaderForwardButton.IsVisible = false;
             AttachmentText.Text = PstMessageHeader.AttachmentLine(PstMessageHeader.VisibleAttachments(message));
+            ShowAttachmentChips(null);
             ShowPstMessageBody(message);
             StatusText.Text = _richRuns is null ? "Message opened read-only." :
                 "Message opened in rich-text view; images are loading automatically.";
@@ -1083,10 +1084,8 @@ public sealed partial class MainWindow : Window
             SetReaderAvatar(message.From);
             ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible =
                 ReaderForwardButton.IsVisible = true;
-            AttachmentText.Text = attachmentError ? "Could not load attachments. Select this message again to retry." :
-                attachments.Count == 0 ? "" :
-                $"Attachments: {string.Join(", ", attachments.Select(a => a.Name +
-                    (CanSaveGraphAttachment(a) ? "" : " (cannot save)")))}";
+            AttachmentText.Text = attachmentError ? "Could not load attachments. Select this message again to retry." : "";
+            ShowAttachmentChips(attachments.Select(a => (a.Name, (long)a.SizeBytes, CanSaveGraphAttachment(a))));
             HideFormatBar();
             SetMessageBody(string.Equals(body?.ContentType, "html", StringComparison.OrdinalIgnoreCase)
                     ? body?.Content : null,
@@ -1267,7 +1266,9 @@ public sealed partial class MainWindow : Window
         var version = _messageVersion;
         var candidates = attachments.Where(CanSaveGraphAttachment).ToArray();
         if (candidates.Length == 0) return;
-        var attachment = candidates.Length == 1 ? candidates[0] : await ChooseGraphAttachmentAsync(candidates);
+        var chosen = _chipChoice is null ? null : candidates.FirstOrDefault(c => c.Name == _chipChoice);
+        _chipChoice = null;
+        var attachment = chosen ?? (candidates.Length == 1 ? candidates[0] : await ChooseGraphAttachmentAsync(candidates));
         if (attachment is null || version != _messageVersion || !ReferenceEquals(_activeGraphMessage, message)) return;
         var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
         {
@@ -2386,6 +2387,7 @@ public sealed partial class MainWindow : Window
         HideFormatBar();
         SubjectText.Text = "Select a message";
         SenderText.Text = RecipientText.Text = AttachmentText.Text = BodyText.Text = "";
+        ShowAttachmentChips(null);
         MessageDateText.Text = "";
         ReaderAvatar.IsVisible = false;
         ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible =

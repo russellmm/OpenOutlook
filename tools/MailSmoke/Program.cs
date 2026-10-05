@@ -26,6 +26,17 @@ MicrosoftMailSession? mSession = null;
 if (gAcc is not null) { var s = new MicrosoftMailSession(gAcc, secrets, tokenHttp); gBox = new GmailMailbox(gHttp, ct => new ValueTask<string>(s.GetAccessTokenAsync(ct)), gAcc.DisplayAddress); }
 if (mAcc is not null) mSession = new MicrosoftMailSession(mAcc, secrets, tokenHttp);
 
+if (step == "attach" && mAcc is not null)
+{
+    var r = new GraphInboxReader(graphHttp, mAcc.AccountId);
+    var t = await mSession!.GetAccessTokenAsync();
+    foreach (var m in (await r.GetInboxAsync(t)).Messages.Where(m => m.HasAttachments).Take(5))
+    {
+        try { var l = await new GraphAttachmentReader(graphHttp, mAcc.AccountId).ListAsync(t, m.Id); Console.WriteLine($"{m.Subject}: {l.Count} attachments: " + string.Join(", ", l.Select(x => x.Name))); }
+        catch (Exception ex) { Console.WriteLine($"{m.Subject}: FAILED {ex.GetType().Name}: {ex.Message} / {ex.InnerException?.Message}"); }
+    }
+    return 0;
+}
 var attachPath = Path.Combine(Path.GetTempPath(), $"smoke-{stamp}.txt");
 File.WriteAllText(attachPath, "OpenOutlook smoke test attachment " + stamp);
 var progress = new Progress<string>(m => Console.WriteLine("   " + m));

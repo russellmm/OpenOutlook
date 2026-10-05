@@ -482,6 +482,7 @@
                   <TextBlock Name="SenderText" TextWrapping="Wrap" FontSize="14" Foreground="{DynamicResource OlText}" />
                   <TextBlock Name="RecipientText" TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource OlTextSecondary}" />
                   <TextBlock Name="AttachmentText" TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource OlTextSecondary}" />
+                  <WrapPanel Name="AttachmentChips" IsVisible="False" Margin="0,2,0,0" />
                 </StackPanel>
                 <TextBlock Grid.Column="2" Name="MessageDateText" Text="" FontSize="12.5" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="8,2,0,0" />
               </Grid>

@@ -17,6 +17,8 @@
  *              are made to mirror their folder's properties (has-subfolders = the truth about the children)           [op_folders.c]
  *   R9 refs    orphan blocks (nothing references them: SCANPST "Couldn't find BBT entry in the RBT") are removed and their space freed; blocks whose
  *              BBT reference count differs from what the references imply get the right count ("BBT entry has different refcount in RBT")
+ *   R10 rowsync contents-table rows whose size (0x0E08), flags (0x0E07) or delivery time (0x0E06) differ from the message's own values take the message's
+ *              (SCANPST: "Contents Table for X, row doesn't match sub-object")
  * "no known issues" is not "SCANPST will find nothing". */
 #include "op_wr.h"
 
@@ -460,6 +462,32 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
     }
     free(tabs.v);
     bb_free(&blob);
+    /* ---- R10 ---- */
+    for (size_t ti = 0; ti < tabs.n && !rc; ti++) {
+        if ((tabs.v[ti] & 0x1F) != 0xE) continue;
+        tctx tc;
+        if (ed_load_tc(w, tabs.v[ti], &tc) != 0) continue;
+        static const unsigned pids[3] = {0x0E08, 0x0E07, 0x0E06};
+        int cols[3], dirty = 0;
+        for (int k = 0; k < 3; k++) cols[k] = tc_col(&tc, pids[k]);
+        for (size_t r = 0; r < tc.nrows && !rc; r++) {
+            pcprops mp;
+            if (pcprops_get_ex(w, tc.rows[r].rowid, &mp, 1) != 0) continue;       /* no readable message: the other rules deal with that */
+            for (int k = 0; k < 3 && !rc; k++) {
+                if (cols[k] < 0 || !tc.rows[r].present[cols[k]] || !tc.rows[r].cell[cols[k]].n) continue;
+                pcprop *p = pcprops_find(&mp, pids[k]);
+                size_t want = k == 2 ? 8 : 4;
+                if (!p || p->v.n != want || tc.rows[r].cell[cols[k]].n != want) continue;
+                if (memcmp(p->v.p, tc.rows[r].cell[cols[k]].p, want) == 0) continue;
+                rep->rowsync_issues++;
+                if (apply) { rc = tc_set_cell(&tc, r, cols[k], p->v.p, want); dirty = 1; }
+            }
+            pcprops_free(&mp);
+        }
+        if (!rc && dirty) rc = ed_store_tc(w, tabs.v[ti], &tc);
+        tc_free(&tc);
+    }
+
     /* ---- R8 ---- */
     if (!rc) {
         int nf = 0;
@@ -479,7 +507,7 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
         }
         refsfix_free(&rf);
     }
-    if (!rc && apply && (rep->refs_issues || rep->amap_issues || rep->folder_issues || rep->rowcell_issues || rep->rows_without_ids || rep->dangling_idmap || rep->messages_not_indexed || rep->row_version_issues || rep->nid_mark_issues)) {
+    if (!rc && apply && (rep->rowsync_issues || rep->refs_issues || rep->amap_issues || rep->folder_issues || rep->rowcell_issues || rep->rows_without_ids || rep->dangling_idmap || rep->messages_not_indexed || rep->row_version_issues || rep->nid_mark_issues)) {
         rc = ops_note_max_message_nid(o, NULL, 0, NULL, 0, NULL, 0);
     }
     return rc;

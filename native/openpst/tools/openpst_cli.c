@@ -324,9 +324,9 @@ int main(int argc, char **argv) {
         else {
             printf("R1 rows without ID cells          %d\nR2 ID-map records of deleted nodes %d\nR3 messages missing from the index %d\n"
                    "R4 duplicate / high row versions   %d\nR5 NID high-water marks too low    %d\nR6 rows without row cells          %d\n"
-                   "R7 allocation-map problems        %d\nR8 incomplete folders / rows        %d\nR9 orphan blocks / wrong refcounts   %d\n",
+                   "R7 allocation-map problems        %d\nR8 incomplete folders / rows        %d\nR9 orphan blocks / wrong refcounts   %d\nR10 row cells vs message          %d\n",
                    fr.rows_without_ids, fr.dangling_idmap, fr.messages_not_indexed, fr.row_version_issues, fr.nid_mark_issues, fr.rowcell_issues,
-                   fr.amap_issues, fr.folder_issues, fr.refs_issues);
+                   fr.amap_issues, fr.folder_issues, fr.refs_issues, fr.rowsync_issues);
             if (apply) printf("applied\n");
         }
     } else if (!strcmp(cmd, "check")) {

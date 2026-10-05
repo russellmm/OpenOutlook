@@ -89,6 +89,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        RemoveWebViewIfUnsupported();
         _appearance = _appearanceStore.Load();
         _shortcuts = _shortcutStore.Load();
         ApplyAppearance();
@@ -2071,8 +2072,27 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private bool _webViewAvailable = true;
+
+    /// <summary>The embedded web view needs WebKitGTK on Linux. Without it the control throws while it attaches (a crash dialog on every
+    /// launch), so it is taken out of the tree and the reader uses the snapshot / text renderers, which need no native browser.</summary>
+    private void RemoveWebViewIfUnsupported()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var name in new[] { "libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.0.so.37" })
+            if (System.Runtime.InteropServices.NativeLibrary.TryLoad(name, out var handle))
+            {
+                System.Runtime.InteropServices.NativeLibrary.Free(handle);
+                return;
+            }
+        _webViewAvailable = false;
+        if (MainHtmlWebView.Parent is Panel panel) panel.Children.Remove(MainHtmlWebView);
+        AppLog.Note("reader", "WebKitGTK is not installed; the interactive reader is off and the snapshot reader is used");
+    }
+
     private async Task<bool> TryShowEmbeddedHtmlAsync(string document, long version, CancellationToken cancellationToken)
     {
+        if (!_webViewAvailable) return false;
         if (version != _messageVersion) return false;
         if (document.Length > EmbeddedHtmlMaximumCharacters)
         {

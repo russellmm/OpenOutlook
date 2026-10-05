@@ -369,7 +369,7 @@ namespace OpenOutlook.PstNative
         }
 
         static int Total(PstFixReport f) =>
-            f.RowsWithoutIds + f.DanglingIdMapRecords + f.MessagesNotIndexed + f.RowVersionIssues + f.NidMarkIssues + f.RowCellIssues;
+            f.RowsWithoutIds + f.DanglingIdMapRecords + f.MessagesNotIndexed + f.RowVersionIssues + f.NidMarkIssues + f.RowCellIssues + f.AmapIssues + f.FolderIssues + f.RefsIssues;
 
         static IReadOnlyList<string> Lines(PstCheckResult r) =>
             r.Problems == 0 ? Array.Empty<string>() : r.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);

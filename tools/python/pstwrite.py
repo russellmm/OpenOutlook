@@ -229,8 +229,17 @@ class PSTWriter:
                     self._freecnt.pop(sec, None)
                     fixed += 1
         self.reconciled_fixes = fixed
-        self.free_delta -= fixed * 64
+        if fixed:
+            # the bitmaps are the truth: a header that already counted (some of) these blocks as used must not be reduced again
+            self.cb_amap_free = self.free_from_maps()
+            self.free_delta = 0
         return fixed
+
+    def free_from_maps(self):
+        total = 0
+        for sec in range(self.nsec):
+            total += (SLOTS - bin(int.from_bytes(self.amap(sec), 'big')).count('1')) * 64
+        return total
 
     def alloc(self, size, align=64):
         self.reconcile()

@@ -6,7 +6,10 @@
  *   rowvers  PidTagLtpRowVer values unique store-wide and below dwUnique
  *   subnodes attachment sizes (PR_ATTACH_SIZE = sum of the sizes of the attachment's property values) and the header counters of the
  *            local NIDs used inside messages (attachment / LTP subnodes)            [found by repairing imported files with SCANPST]
- *   rowcells contents-table rows carry the row-only cells Outlook writes (0x0E17 message status, 0x3013 per-row key) */
+ *   rowcells contents-table rows carry the row-only cells Outlook writes (0x0E17 message status, 0x3013 per-row key)
+ *   amap     every block and tree page is marked allocated in the allocation maps, and the header's cbAMapFree equals the maps' free space
+ *   folders  every folder has its hierarchy / contents / FAI tables and a row in its parent's hierarchy table that mirrors its properties
+ *            [amap and folders were found by repairing a damaged archive with SCANPST] */
 #include "op_wr.h"
 
 #define NOMEM op_err(OPST_E_NOMEM, "out of memory")
@@ -96,7 +99,7 @@ static int nbt_ref_cb(void *ctx, const uint8_t *e) {
     return 0;
 }
 
-static int check_refs(chk *c, opw *w) {
+static int check_refs(chk *c, opw *w, refsfix *fix) {
     hmap m = {0, 0, 0};
     bbtctx bc = {&m};
     int rc = bt_items(w, 0, bbt_load_cb, &bc);
@@ -133,8 +136,34 @@ static int check_refs(chk *c, opw *w) {
         hent *h = &m.e[i];
         if (!h->used || !h->ib) continue;                           /* entries created only by reference counting have no location */
         nb++;
-        if (h->refs == 0) { orphans++; note(c, &probs, "  ??Couldn't find BBT entry in the RBT (%llX)", (unsigned long long)h->key); }
-        else if (h->cref != h->refs + 1) { bad++; if (bad <= 50) note(c, &probs, "  refcount mismatch for block 0x%llx: BBT has %u, references imply %u", (unsigned long long)h->key, h->cref, h->refs + 1); else probs++; }
+        if (h->refs == 0) {
+            orphans++;
+            if (fix) {
+                if (fix->norphan == fix->caporphan) {
+                    size_t ncap = fix->caporphan ? fix->caporphan * 2 : 256;
+                    uint64_t *t = (uint64_t *)realloc(fix->orphan, ncap * sizeof *t);
+                    if (!t) { rc = OPST_E_NOMEM; break; }
+                    fix->orphan = t; fix->caporphan = ncap;
+                }
+                fix->orphan[fix->norphan++] = h->key;
+            }
+            if (c->out || !fix) note(c, &probs, "  ??Couldn't find BBT entry in the RBT (%llX)", (unsigned long long)h->key); else probs++;
+        } else if (h->cref != h->refs + 1) {
+            bad++;
+            if (fix) {
+                if (fix->nfix == fix->capfix) {
+                    size_t ncap = fix->capfix ? fix->capfix * 2 : 64;
+                    uint64_t *tb = (uint64_t *)realloc(fix->fix_bid, ncap * sizeof *tb);
+                    if (!tb) { rc = OPST_E_NOMEM; break; }
+                    fix->fix_bid = tb;
+                    unsigned *tcr = (unsigned *)realloc(fix->fix_cref, ncap * sizeof *tcr);
+                    if (!tcr) { rc = OPST_E_NOMEM; break; }
+                    fix->fix_cref = tcr; fix->capfix = ncap;
+                }
+                fix->fix_bid[fix->nfix] = h->key; fix->fix_cref[fix->nfix++] = h->refs + 1;
+            }
+            if (bad <= 50) note(c, &probs, "  refcount mismatch for block 0x%llx: BBT has %u, references imply %u", (unsigned long long)h->key, h->cref, h->refs + 1); else probs++;
+        }
     }
     c->rep->refs_problems += probs;
     if (!rc) info(c, "refs: %zu blocks, %d orphans, %d refcount mismatches, %d missing blocks", nb, orphans, bad, missing);
@@ -526,6 +555,43 @@ static int check_rowcells(chk *c, ops *o, const tabvec *tabs) {
     return 0;
 }
 
+static int check_amap(chk *c, opw *w) {
+    uint64_t un, comp, hdr;
+    int rc = opw_amap_state(w, &un, &comp, &hdr);
+    if (rc) return rc;
+    int probs = 0;
+    if (un) note(c, &probs, "  %llu blocks / tree pages are referenced by the B-trees but not marked allocated in the AMaps   <-- SCANPST: Block is not allocated in AMAP", (unsigned long long)un);
+    if (comp != hdr) note(c, &probs, "  Computed cbAMapFree of %llu, but header has %llu", (unsigned long long)comp, (unsigned long long)hdr);
+    c->rep->amap_problems += probs;
+    info(c, "amap: free %llu (header %llu), %llu blocks not allocated, %d problems", (unsigned long long)comp, (unsigned long long)hdr, (unsigned long long)un, probs);
+    return 0;
+}
+
+static void folder_say(void *ctx, const char *line) {
+    void **a = (void **)ctx;
+    note((chk *)a[0], (int *)a[1], "%s", line);
+}
+
+static int check_folders(chk *c, ops *o) {
+    int probs = 0, found = 0;
+    void *a[2] = {c, &probs};
+    int rc = fo_repair_all(o, 0, &found, folder_say, a);
+    if (rc) return rc;
+    c->rep->folder_problems += probs;
+    info(c, "folders: %d problems", probs);
+    return 0;
+}
+
+/* orphan blocks (nothing references them) and blocks whose BBT reference count differs from what the references imply (the fixer's R9) */
+int refs_collect(opw *w, refsfix *out) {
+    opst_check_report dummy;
+    memset(&dummy, 0, sizeof dummy);
+    chk c = {NULL, &dummy};
+    memset(out, 0, sizeof *out);
+    return check_refs(&c, w, out);
+}
+void refsfix_free(refsfix *r) { free(r->orphan); free(r->fix_bid); free(r->fix_cref); memset(r, 0, sizeof *r); }
+
 int opst_check(opst *p, opst_check_report *rep, char *text, size_t text_cap) {
     if (!p || !rep) return op_err(OPST_E_ARG, "null argument");
     memset(rep, 0, sizeof *rep);
@@ -540,7 +606,7 @@ int opst_check(opst *p, opst_check_report *rep, char *text, size_t text_cap) {
     if (rc) return rc;
     tabvec tabs = {0, 0, 0};
     rc = bt_items(o.w, 1, tab_cb, &tabs);
-    if (!rc) rc = check_refs(&c, o.w);
+    if (!rc) rc = check_refs(&c, o.w, NULL);
     if (!rc) rc = check_nids(&c, o.w);
     if (!rc) rc = check_tables(&c, p, o.w);
     if (!rc) rc = check_idmap(&c, &o, &tabs);
@@ -548,6 +614,8 @@ int opst_check(opst *p, opst_check_report *rep, char *text, size_t text_cap) {
     if (!rc) rc = check_rowvers(&c, &o, &tabs);
     if (!rc) rc = check_subnodes(&c, o.w);
     if (!rc) rc = check_rowcells(&c, &o, &tabs);
+    if (!rc) rc = check_amap(&c, o.w);
+    if (!rc) rc = check_folders(&c, &o);
     free(tabs.v);
     ops_end_ro(&o);
     if (text && text_cap) {

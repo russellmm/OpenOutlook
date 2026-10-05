@@ -85,6 +85,11 @@ int  opw_add_block(opw *w, const uint8_t *data, size_t cb, int internal, unsigne
 int  opw_xblock(opw *w, int level, const uint64_t *ids, size_t n, uint32_t total, uint64_t *bid);
 int  opw_add_ref(opw *w, uint64_t bid);
 int  opw_release(opw *w, uint64_t bid);
+int  opw_bbt_drop(opw *w, uint64_t bid);                       /* BBT entry removed and its space freed; children untouched */
+int  opw_bbt_set_cref(opw *w, uint64_t bid, unsigned cref);
+typedef struct { uint64_t *orphan; size_t norphan, caporphan; uint64_t *fix_bid; unsigned *fix_cref; size_t nfix, capfix; } refsfix;
+int  refs_collect(opw *w, refsfix *out);                       /* op_check.c: orphan blocks and blocks whose reference count is wrong */
+void refsfix_free(refsfix *r);
 
 /* nodes */
 typedef struct { uint64_t bd, bs; uint32_t parent; } nbt_e;
@@ -217,6 +222,8 @@ typedef struct { uint32_t key, nid; } keyednid;                      /* message 
 int  msg_conv_key(opw *w, uint32_t nid, uint32_t *key);               /* key from the conversation GUID; 0 = message has no conversation index */
 int  ops_note_max_message_nid(ops *o, const nidpair *pairs, size_t npairs, const idxgroup *groups, size_t ngroups, const keyednid *keyed, size_t nkeyed);
 int  ops_bump_hwm(ops *o, const uint32_t *nids, size_t n);
+int  opw_amap_state(opw *w, uint64_t *unalloc, uint64_t *computed_free, uint64_t *header_free);
+int  opw_amap_repair(opw *w);
 int  ops_pc_add(ops *o, uint32_t nid, unsigned pid, int delta, int *found);
 int  ops_hier_add(ops *o, uint32_t folder, int d_cnt, int d_unread);
 
@@ -246,6 +253,7 @@ int  xc_copy(ops *dst, opst *src, const uint32_t *nids, size_t n, uint32_t dest,
 
 int  fo_create(ops *o, uint32_t parent, const char *name, const char *cls, uint32_t *nid);
 int  fo_rename(ops *o, uint32_t nid, const char *name);
+int  fo_repair_all(ops *o, int apply, int *found, void (*say)(void *, const char *), void *ctx);
 int  fo_move(ops *o, uint32_t nid, uint32_t dest, int *moved);
 int  fo_purge(ops *o, uint32_t nid, opst_purge_stats *st);
 int  fo_delete(ops *o, uint32_t nid, int *permanent, opst_purge_stats *st);

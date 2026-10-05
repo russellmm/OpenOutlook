@@ -107,6 +107,77 @@ def refs(f, out=print):
     return len(orphans) + len(bad) + probs
 
 
+AMAP0, SLOTS = 0x4400, 496 * 8
+SECT = SLOTS * 64
+
+
+def amap(f, out=print):
+    """Allocation maps: every block in the BBT must be marked allocated, and the header's cbAMapFree must equal the free space the maps show
+    (SCANPST: "Block is not allocated in AMAP!", "Computed cbAMapFree of X, but header has Y")."""
+    import struct as _s
+    eof, _last, cbfree = _s.unpack_from('<QQQ', f.h, 184)
+    nsec = (eof - AMAP0) // SECT
+    maps = []
+    free = 0
+    for sec in range(nsec):
+        pg = f.rd(AMAP0 + sec * SECT, 512)
+        if len(pg) < 512 or pg[496] != 0x84:
+            out('  AMap page missing or wrong type at section %d' % sec)
+            return 1
+        bits = int.from_bytes(pg[:496], 'big')
+        maps.append(bits)
+        free += (SLOTS - bin(bits).count('1')) * 64
+    probs = 0
+    unalloc = []
+    for k, (bid, ib, cb, _cref) in f.bbt.items():
+        n = (cb + 16 + 63) // 64
+        k0 = (ib - AMAP0) // 64
+        for slot in range(k0, k0 + n):
+            sec, idx = divmod(slot, SLOTS)
+            if sec >= nsec or not (maps[sec] >> (SLOTS - 1 - idx)) & 1:
+                unalloc.append((bid, ib, cb)); break
+    for bid, ib, cb in unalloc[:50]:
+        out('  Block is not allocated in AMAP! BID 0x%X, IB 0x%X, CB 0x%X' % (bid, ib, cb)); probs += 1
+    probs += max(0, len(unalloc) - 50)
+    if free != cbfree:
+        out('  Computed cbAMapFree of %d, but header has %d' % (free, cbfree)); probs += 1
+    out('amap: %d sections, %d blocks not allocated, free %d (header %d), %d problems' % (nsec, len(unalloc), free, cbfree, probs))
+    return probs
+
+
+def folders(f, path, out=print):
+    """Folder completeness: every folder node needs its hierarchy / contents / FAI tables (nid types 0xD / 0xE / 0xF with the folder's index)
+    and a row in its parent folder's hierarchy table (SCANPST: "Adding folder (nid=...) back to the database", "Hierarchy Table ..., row doesn't match
+    sub-object")."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import pstcore as P, pstwrite as W, pstedit as E
+    nodes = {n: par for n, _bd, _bs, par in f.nbt}
+    w = W.PSTWriter(path)
+    ed = E.Editor(w, P.MPBB_I)
+    probs = 0
+    checked = 0
+    rows_of = {}
+    for nid, par in sorted(nodes.items()):
+        if nid & 0x1F != 2 or par == nid or par & 0x1F != 2 or par not in nodes:
+            continue
+        checked += 1
+        base = nid & ~0x1F
+        missing = [t for t in (0xD, 0xE, 0xF) if (base | t) not in nodes]
+        if missing:
+            out('  folder 0x%x: missing table nodes of type %s' % (nid, ', '.join('0x%X' % t for t in missing))); probs += 1
+        hn = (par & ~0x1F) | 0xD
+        if hn not in rows_of:
+            try:
+                rows_of[hn] = {r for r, _c in ed.load_tc(hn).rows}
+            except Exception:
+                rows_of[hn] = None
+        if rows_of[hn] is not None and nid not in rows_of[hn]:
+            out("  folder 0x%x: not listed in the hierarchy table of its parent 0x%x" % (nid, par)); probs += 1
+    out('folders: %d folders checked, %d problems' % (checked, probs))
+    w.close()
+    return probs
+
+
 def nids(f, out=print):
     rg = struct.unpack_from('<32I', f.h, 44)
     mx = {}
@@ -386,6 +457,8 @@ if __name__ == '__main__':
     cmd, path = sys.argv[1], sys.argv[2]
     f = F(path)
     if cmd in ('refs', 'all'): refs(f)
+    if cmd in ('amap', 'all'): amap(f)
+    if cmd in ('folders', 'all'): folders(f, path)
     if cmd in ('nids', 'all'): nids(f)
     if cmd in ('tables', 'all'): tables(path)
     if cmd in ('idmap', 'all'): idmap(path)

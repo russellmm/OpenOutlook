@@ -197,11 +197,69 @@ class FolderOps(O.Ops):
             for _r, c in tc.rows:
                 if ci is not None and ci in c and c[ci]:
                     return c[ci]
-        return None
+        try:                                 # no row has one yet: the message store's own 0x0E34
+            return self.pc_props(0x21)[0x0E34][1] or None
+        except Exception:
+            return None
 
     def _row_ver(self, tc):
         self.w.unique = (self.w.unique + 1) & 0xFFFFFFFF      # store-wide unique row versions (see Ops.next_row_ver)
         return self.w.unique
+
+    def _make_tables(self, nid, parent, only_missing=False):
+        """Empty hierarchy / contents / FAI tables for a folder, layouts copied from a sibling / the parent / Deleted Items.
+        With only_missing, tables the folder already has are left alone. Returns the table types created."""
+        ed, w = self.ed, self.w
+        made = []
+        order = [c for c, _n in self.children(parent) if c & 0x1F == 2 and c != nid] + [parent, self.deleted_nid]
+        for t in (T_HIER, T_CONT, T_FAI):
+            if only_missing and ed.entry(self._base(nid) | t):
+                continue
+            tmpl = next((self._base(c) | t for c in order if c and ed.entry(self._base(c) | t)), None)
+            if tmpl is None:
+                raise E.EditError('no template table of type 0x%x found' % t)
+            tbd, tbs, _p = ed.entry(tmpl)
+            tc = ed.load_tc(tmpl)
+            if not tc.rows and not tbs:
+                w.add_ref(tbd); bd = tbd                       # Outlook shares identical empty tables
+            else:
+                tc.rows = []
+                tc.rows_nid = 0
+                bd = ed.put_blocks(tc.build()[0])
+            w.nbt.put(self._base(nid) | t, self._entry(self._base(nid) | t, bd, 0, 0))
+            made.append(t)
+            o = 44 + 4 * t                                      # the header's counter of this type must cover the folder's index
+            if struct.unpack_from('<I', w.hdr, o)[0] < nid >> 5:
+                struct.pack_into('<I', w.hdr, o, nid >> 5)
+        return made
+
+    ROW_PIDS = (0x3001, 0x3602, 0x3603, 0x360A, 0x3613, 0x6635, 0x6636)   # folder properties a hierarchy row mirrors
+
+    def _add_hier_row(self, nid, parent, name16, cls16, extra=None, mirror=None):
+        """Row for folder nid in its parent's hierarchy table (name16 / cls16 are UTF-16LE bytes; extra = {pid: raw} overrides)."""
+        ed, w = self.ed, self.w
+        z4 = b'\0\0\0\0'
+        hn = self._base(parent) | T_HIER
+        tc = ed.load_tc(hn)
+        cells = {0x3001: name16, 0x3602: z4, 0x3603: z4, 0x360A: b'\0', 0x6635: z4, 0x6636: z4,
+                 0x67F2: struct.pack('<I', nid), 0x67F3: struct.pack('<I', self._row_ver(tc))}
+        if cls16:
+            cells[0x3613] = cls16
+        cells.update(extra or {})
+        if mirror is not None:                       # repairing an existing folder: the row has exactly the properties the folder has
+            for pid in self.ROW_PIDS:
+                if pid not in mirror:
+                    cells.pop(pid, None)
+        if self.idmap.present and tc.col_by_pid.get(0x0E30) is not None:
+            guid = M.IdMap.new_guid()
+            cells[0x0E30] = guid
+            cells[0x0E33] = struct.pack('<Q', w.bid_next_b)             # change number: any increasing value
+            blob = self._replica_blob(parent)                           # replica blob copied from an existing row
+            if blob:
+                cells[0x0E34] = blob
+            self.idmap.add(guid, nid)
+        tc.add_by_pid(nid, cells)
+        ed.store_tc(hn, tc)
 
     # ---- operations -------------------------------------------------------------
     def create(self, parent, name, cls='IPF.Note'):
@@ -232,39 +290,8 @@ class FolderOps(O.Ops):
             props[0x3613] = (0x001F, enc16(cls))
         w.nbt.put(nid, self._entry(nid, ed.put_blocks(self.pc_build(props)), 0, parent))
 
-        # empty tables, layouts copied from a sibling / the parent / Deleted Items
-        order = [c for c, _n in self.children(parent) if c & 0x1F == 2] + [parent, self.deleted_nid]
-        for t in (T_HIER, T_CONT, T_FAI):
-            tmpl = next((self._base(c) | t for c in order if c and ed.entry(self._base(c) | t)), None)
-            if tmpl is None:
-                raise E.EditError('no template table of type 0x%x found' % t)
-            tbd, tbs, _p = ed.entry(tmpl)
-            tc = ed.load_tc(tmpl)
-            if not tc.rows and not tbs:
-                w.add_ref(tbd); bd = tbd                       # Outlook shares identical empty tables
-            else:
-                tc.rows = []
-                tc.rows_nid = 0
-                bd = ed.put_blocks(tc.build()[0])
-            w.nbt.put(self._base(nid) | t, self._entry(self._base(nid) | t, bd, 0, 0))
-
-        # row in the parent's hierarchy table
-        hn = self._base(parent) | T_HIER
-        tc = ed.load_tc(hn)
-        cells = {0x3001: enc16(name), 0x3602: z4, 0x3603: z4, 0x360A: b'\0', 0x6635: z4, 0x6636: z4,
-                 0x67F2: struct.pack('<I', nid), 0x67F3: struct.pack('<I', self._row_ver(tc))}
-        if cls:
-            cells[0x3613] = enc16(cls)
-        if self.idmap.present and tc.col_by_pid.get(0x0E30) is not None:
-            guid = M.IdMap.new_guid()
-            cells[0x0E30] = guid
-            cells[0x0E33] = struct.pack('<Q', w.bid_next_b)             # change number: any increasing value
-            blob = self._replica_blob(parent)                           # replica blob copied from an existing row
-            if blob:
-                cells[0x0E34] = blob
-            self.idmap.add(guid, nid)
-        tc.add_by_pid(nid, cells)
-        ed.store_tc(hn, tc)
+        self._make_tables(nid, parent)
+        self._add_hier_row(nid, parent, enc16(name), enc16(cls) if cls else None)
         self._set_has_sub(parent)
         return nid
 

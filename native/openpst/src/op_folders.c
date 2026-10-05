@@ -277,7 +277,115 @@ static int replica_blob(ops *o, uint32_t folder, bbuf *out, int *found) {
         tc_free(&tc);
         if (*found || rc) return rc;
     }
-    return 0;
+    /* no row has one yet (a store whose ID map is still empty): the message store's own 0x0E34 */
+    pcprops sp;
+    if (pcprops_get_ex(o->w, 0x21, &sp, 1) == 0) {
+        pcprop *p = pcprops_find(&sp, 0x0E34);
+        if (p && p->v.n) { rc = bb_put(out, p->v.p, p->v.n) ? OPST_E_NOMEM : 0; *found = rc == 0; }
+        pcprops_free(&sp);
+    }
+    return rc;
+}
+
+/* empty hierarchy / contents / FAI tables for folder nid, layouts copied from a sibling / the parent / Deleted Items; with only_missing the
+   tables the folder already has are left alone */
+static int fo_make_tables(ops *o, uint32_t nid, uint32_t parent, int only_missing) {
+    opw *w = o->w;
+    static const unsigned derived[3] = {T_HIER, T_CONT, T_FAI};
+    fchildren sib;
+    int rc = fo_children(o, parent, &sib);
+    if (rc) return rc;
+    uint32_t order[1024];
+    size_t norder = 0;
+    for (size_t i = 0; i < sib.n && norder < 1020; i++) if ((sib.c[i].nid & 0x1F) == 2 && sib.c[i].nid != nid) order[norder++] = sib.c[i].nid;
+    fchildren_free(&sib);
+    order[norder++] = parent;
+    order[norder++] = o->deleted;
+    for (int k = 0; k < 3 && !rc; k++) {
+        unsigned t = derived[k];
+        nbt_e have;
+        if (only_missing && opw_node(w, (nid & ~0x1Fu) | t, &have) == 0) continue;
+        uint32_t tmpl = 0;
+        for (size_t i = 0; i < norder; i++) {
+            nbt_e e;
+            if (order[i] && opw_node(w, (order[i] & ~0x1Fu) | t, &e) == 0) { tmpl = (order[i] & ~0x1Fu) | t; break; }
+        }
+        if (!tmpl) { rc = op_err(OPST_E_FORMAT, "no template table of type 0x%x found", t); break; }
+        nbt_e te = {0};
+        rc = opw_node(w, tmpl, &te);
+        tctx tc = {0};
+        if (!rc) rc = ed_load_tc(w, tmpl, &tc);
+        uint64_t tbd = 0;
+        if (!rc) {
+            if (tc.nrows == 0 && !te.bs) { rc = opw_add_ref(w, te.bd); tbd = te.bd; }
+            else {
+                tc_clear_rows(&tc);
+                hblocks heap, rows;
+                uint32_t rn;
+                rc = tc_build(&tc, &heap, &rows, &rn);
+                if (!rc) { rc = opw_put_blocks(w, &heap, &tbd); hb_free(&heap); hb_free(&rows); }
+            }
+            tc_free(&tc);
+        }
+        if (!rc) rc = opw_node_put(w, (nid & ~0x1Fu) | t, tbd, 0, 0);
+        if (!rc) {                                                    /* the header's counter of this type must cover the folder's index */
+            uint8_t *h = w->hdr + 44 + 4 * t;
+            if (op_u32(h) < (nid >> 5)) wr32(h, nid >> 5);
+        }
+    }
+    return rc;
+}
+
+/* a row cell that mirrors a folder property: a new folder gets the default, a repaired one exactly what the folder has (nothing if it has no such property) */
+static int row_cell(pcprops *cells, const pcprops *mirror, unsigned pid, unsigned ptype, const uint8_t *dflt, size_t n) {
+    if (!mirror) return pcprops_set(cells, pid, ptype, dflt, n);
+    pcprop *p = pcprops_find((pcprops *)mirror, pid);
+    return p ? pcprops_set(cells, pid, ptype, p->v.p, p->v.n) : 0;
+}
+
+/* row for folder nid in its parent's hierarchy table; nm / cl are UTF-16 name and container class; mirror = the folder's properties when
+   repairing an existing folder (NULL when the folder is new) */
+static int fo_add_row(ops *o, uint32_t nid, uint32_t parent, const bbuf *nm, const bbuf *cl, const pcprops *mirror) {
+    opw *w = o->w;
+    uint32_t hn = (parent & ~0x1Fu) | T_HIER;
+    static const uint8_t z4[4] = {0, 0, 0, 0};
+    tctx tc = {0};
+    int rc = ed_load_tc(w, hn, &tc);
+    if (rc) return rc;
+    pcprops cells;
+    memset(&cells, 0, sizeof cells);
+    uint8_t b4[4], b0 = 0;
+    rc = pcprops_set(&cells, 0x3001, 0x1F, nm->p, nm->n);
+    if (!rc) rc = row_cell(&cells, mirror, 0x3602, 3, z4, 4);
+    if (!rc) rc = row_cell(&cells, mirror, 0x3603, 3, z4, 4);
+    if (!rc) rc = row_cell(&cells, mirror, 0x360A, 0x0B, &b0, 1);
+    if (!rc) rc = row_cell(&cells, mirror, 0x6635, 3, z4, 4);
+    if (!rc) rc = row_cell(&cells, mirror, 0x6636, 3, z4, 4);
+    wr32(b4, nid);
+    if (!rc) rc = pcprops_set(&cells, 0x67F2, 3, b4, 4);
+    wr32(b4, ops_next_row_ver(o));
+    if (!rc) rc = pcprops_set(&cells, 0x67F3, 3, b4, 4);
+    if (!rc && cl && cl->n) rc = pcprops_set(&cells, 0x3613, 0x1F, cl->p, cl->n);
+    idmap *im = NULL;
+    if (!rc) im = ops_idmap(o, &rc);
+    if (!rc && im && idmap_present(im) && tc_col(&tc, 0x0E30) >= 0) {
+        uint8_t g[16], b8[8];
+        rc = op_random(g, 16);
+        if (!rc) rc = pcprops_set(&cells, 0x0E30, 0x0102, g, 16);
+        wr64(b8, w->bid_next_b);
+        if (!rc) rc = pcprops_set(&cells, 0x0E33, 0x0014, b8, 8);
+        bbuf blob = {0};
+        int have = 0;
+        if (!rc) rc = replica_blob(o, parent, &blob, &have);
+        if (!rc && have) rc = pcprops_set(&cells, 0x0E34, 0x0102, blob.p, blob.n);
+        bb_free(&blob);
+        if (!rc) rc = idmap_add(im, g, nid);
+    }
+    if (!rc) rc = tc_add_by_pid(&tc, nid, &cells);
+    pcprops_free(&cells);
+    if (!rc) rc = ed_store_tc(w, hn, &tc);
+    tc_free(&tc);
+    return rc;
 }
 
 /* ---- create ----------------------------------------------------------------------------------------------------------------------- */
@@ -330,85 +438,130 @@ int fo_create(ops *o, uint32_t parent, const char *name, const char *cls, uint32
     if (!rc) rc = opw_node_put(w, nid, bd, 0, parent);
     if (rc) { bb_free(&nm); bb_free(&cl); return rc; }
 
-    /* empty tables, layouts copied from a sibling / the parent / Deleted Items */
-    fchildren sib;
-    rc = fo_children(o, parent, &sib);
-    if (rc) { bb_free(&nm); bb_free(&cl); return rc; }
-    uint32_t order[1024];
-    size_t norder = 0;
-    for (size_t i = 0; i < sib.n && norder < 1020; i++) if ((sib.c[i].nid & 0x1F) == 2) order[norder++] = sib.c[i].nid;
-    fchildren_free(&sib);
-    order[norder++] = parent;
-    order[norder++] = o->deleted;
-    for (int k = 0; k < 3 && !rc; k++) {
-        unsigned t = derived[k];
-        uint32_t tmpl = 0;
-        for (size_t i = 0; i < norder; i++) {
-            nbt_e e;
-            if (order[i] && opw_node(w, (order[i] & ~0x1Fu) | t, &e) == 0) { tmpl = (order[i] & ~0x1Fu) | t; break; }
-        }
-        if (!tmpl) { rc = op_err(OPST_E_FORMAT, "no template table of type 0x%x found", t); break; }
-        nbt_e te = {0};
-        rc = opw_node(w, tmpl, &te);
-        tctx tc = {0};
-        if (!rc) rc = ed_load_tc(w, tmpl, &tc);
-        uint64_t tbd = 0;
-        if (!rc) {
-            if (tc.nrows == 0 && !te.bs) { rc = opw_add_ref(w, te.bd); tbd = te.bd; }
-            else {
-                tc_clear_rows(&tc);
-                hblocks heap, rows;
-                uint32_t rn;
-                rc = tc_build(&tc, &heap, &rows, &rn);
-                if (!rc) { rc = opw_put_blocks(w, &heap, &tbd); hb_free(&heap); hb_free(&rows); }
-            }
-            tc_free(&tc);
-        }
-        if (!rc) rc = opw_node_put(w, (nid & ~0x1Fu) | t, tbd, 0, 0);
-    }
-
-    /* row in the parent's hierarchy table */
-    uint32_t hn = (parent & ~0x1Fu) | T_HIER;
-    tctx tc = {0};
-    if (!rc) rc = ed_load_tc(w, hn, &tc);
-    if (!rc) {
-        pcprops cells;
-        memset(&cells, 0, sizeof cells);
-        uint8_t b4[4], b0 = 0;
-        rc = pcprops_set(&cells, 0x3001, 0x1F, nm.p, nm.n);
-        if (!rc) rc = pcprops_set(&cells, 0x3602, 3, z4, 4);
-        if (!rc) rc = pcprops_set(&cells, 0x3603, 3, z4, 4);
-        if (!rc) rc = pcprops_set(&cells, 0x360A, 0x0B, &b0, 1);
-        if (!rc) rc = pcprops_set(&cells, 0x6635, 3, z4, 4);
-        if (!rc) rc = pcprops_set(&cells, 0x6636, 3, z4, 4);
-        wr32(b4, nid);
-        if (!rc) rc = pcprops_set(&cells, 0x67F2, 3, b4, 4);
-        wr32(b4, ops_next_row_ver(o));
-        if (!rc) rc = pcprops_set(&cells, 0x67F3, 3, b4, 4);
-        if (!rc && cls && *cls) rc = pcprops_set(&cells, 0x3613, 0x1F, cl.p, cl.n);
-        idmap *im = NULL;
-        if (!rc) im = ops_idmap(o, &rc);
-        if (!rc && im && idmap_present(im) && tc_col(&tc, 0x0E30) >= 0) {
-            uint8_t g[16], b8[8];
-            rc = op_random(g, 16);
-            if (!rc) rc = pcprops_set(&cells, 0x0E30, 0x0102, g, 16);
-            wr64(b8, w->bid_next_b);
-            if (!rc) rc = pcprops_set(&cells, 0x0E33, 0x0014, b8, 8);
-            bbuf blob = {0};
-            int have = 0;
-            if (!rc) rc = replica_blob(o, parent, &blob, &have);
-            if (!rc && have) rc = pcprops_set(&cells, 0x0E34, 0x0102, blob.p, blob.n);
-            bb_free(&blob);
-            if (!rc) rc = idmap_add(im, g, nid);
-        }
-        if (!rc) rc = tc_add_by_pid(&tc, nid, &cells);
-        pcprops_free(&cells);
-        if (!rc) rc = ed_store_tc(w, hn, &tc);
-        tc_free(&tc);
+    const char *hook = getenv("OPST_TEST_INCOMPLETE_FOLDER");          /* test hook: leave the folder without tables and parent row, as early versions did */
+    if (!(hook && *hook)) {
+        rc = fo_make_tables(o, nid, parent, 0);
+        if (!rc) rc = fo_add_row(o, nid, parent, &nm, &cl, NULL);
     }
     bb_free(&nm); bb_free(&cl);
     if (!rc) rc = set_has_sub(o, parent);
     if (!rc && out_nid) *out_nid = nid;
+    return rc;
+}
+
+/* ---- repair of incomplete folders (R8) ------------------------------------------------------------------------------------------------- */
+typedef struct { uint32_t nid, parent; } fnode;
+typedef struct { fnode *v; size_t n, cap; } fnodes;
+static int fnodes_cb(void *ctx, const uint8_t *e) {
+    fnodes *f = (fnodes *)ctx;
+    uint32_t nid = (uint32_t)(op_u64(e) & 0xFFFFFFFFu), par = op_u32(e + 24);
+    if ((nid & 0x1F) != 2 || par == nid || (par & 0x1F) != 2) return 0;
+    if (f->n == f->cap) {
+        size_t nc = f->cap ? f->cap * 2 : 64;
+        fnode *t = (fnode *)realloc(f->v, nc * sizeof *t);
+        if (!t) return OPST_E_NOMEM;
+        f->v = t; f->cap = nc;
+    }
+    f->v[f->n].nid = nid; f->v[f->n].parent = par; f->n++;
+    return 0;
+}
+
+static const unsigned row_pids[7] = {0x3001, 0x3602, 0x3603, 0x360A, 0x3613, 0x6635, 0x6636};
+
+/* Finds (apply = 0) or repairs (apply = 1):
+   - folders without their hierarchy / contents / FAI tables or without a row in the parent's hierarchy table (SCANPST: "Adding folder back to the
+     database"): tables are copied from a sibling, the row is built from the folder's own properties;
+   - hierarchy rows that do not mirror their folder's properties (name, counts, class, has-subfolders = the truth about the children;
+     SCANPST: "Hierarchy Table for X, row doesn't match sub-object").
+   `say` (may be NULL) receives one line per finding. Returns the number of findings through *found. */
+int fo_repair_all(ops *o, int apply, int *found, void (*say)(void *, const char *), void *ctx) {
+    opw *w = o->w;
+    char line[300];
+    *found = 0;
+    fnodes fn = {0, 0, 0};
+    int rc = bt_items(w, 1, fnodes_cb, &fn);
+    for (size_t i = 0; i < fn.n && !rc; i++) {
+        uint32_t nid = fn.v[i].nid, par = fn.v[i].parent;
+        nbt_e pe;
+        if (opw_node(w, par, &pe) != 0) continue;
+        unsigned missing = 0;
+        for (unsigned t = 0xD; t <= 0xF; t++) { nbt_e e; if (opw_node(w, (nid & ~0x1Fu) | t, &e) != 0) missing |= 1u << (t - 0xD); }
+        uint32_t hn = (par & ~0x1Fu) | T_HIER;
+        tctx tc;
+        int no_row = 0;
+        if (ed_load_tc(w, hn, &tc) == 0) { no_row = tc_find(&tc, nid) < 0; tc_free(&tc); } else continue;
+        if (!missing && !no_row) continue;
+        (*found)++;
+        if (say) {
+            snprintf(line, sizeof line, "  folder 0x%x: %s%s%s", nid, missing ? "missing table nodes" : "", missing && no_row ? ", " : "", no_row ? "not listed in the hierarchy table of its parent" : "");
+            say(ctx, line);
+        }
+        if (!apply) continue;
+        pcprops props;
+        rc = pcprops_get_ex(w, nid, &props, 1);
+        if (rc) { rc = 0; continue; }                                   /* no readable property context: nothing to rebuild from */
+        if (missing) rc = fo_make_tables(o, nid, par, 1);
+        if (!rc && no_row) {
+            pcprop *pn = pcprops_find(&props, 0x3001), *pc = pcprops_find(&props, 0x3613);
+            bbuf nm = {0}, cl = {0};
+            if (pn) bb_put(&nm, pn->v.p, pn->v.n);
+            if (pc) bb_put(&cl, pc->v.p, pc->v.n);
+            rc = fo_add_row(o, nid, par, &nm, &cl, &props);
+            bb_free(&nm); bb_free(&cl);
+        }
+        pcprops_free(&props);
+    }
+    /* rows that do not mirror their folder (also after the repair above) */
+    for (size_t i = 0; i < fn.n && !rc; i++) {
+        uint32_t nid = fn.v[i].nid, par = fn.v[i].parent;
+        nbt_e e;
+        if (opw_node(w, par, &e) != 0 || opw_node(w, (par & ~0x1Fu) | T_HIER, &e) != 0) continue;
+        pcprops props;
+        if (pcprops_get_ex(w, nid, &props, 1) != 0) continue;
+        uint32_t hn = (par & ~0x1Fu) | T_HIER;
+        tctx tc;
+        if (ed_load_tc(w, hn, &tc) != 0) { pcprops_free(&props); continue; }
+        int ri = tc_find(&tc, nid);
+        if (ri < 0) { tc_free(&tc); pcprops_free(&props); continue; }
+        fchildren ch;
+        int has = 0;
+        if (opw_node(w, (nid & ~0x1Fu) | T_HIER, &e) == 0 && fo_children(o, nid, &ch) == 0) { has = ch.n ? 1 : 0; fchildren_free(&ch); }
+        int dirty = 0, bad = 0;
+        for (int k = 0; k < 7 && !rc; k++) {
+            unsigned pid = row_pids[k];
+            int ci = tc_col(&tc, pid);
+            if (ci < 0) continue;
+            pcprop *pp = pcprops_find(&props, pid);
+            uint8_t one = (uint8_t)has;
+            const uint8_t *want = pp ? (pid == 0x360A ? &one : pp->v.p) : NULL;
+            size_t wn = pp ? (pid == 0x360A ? 1 : pp->v.n) : 0;
+            int have = tc.rows[ri].present[ci] && tc.rows[ri].cell[ci].n;
+            int same = want ? (have && tc.rows[ri].cell[ci].n == wn && memcmp(tc.rows[ri].cell[ci].p, want, wn) == 0) : !have;
+            if (same) continue;
+            bad = 1;
+            if (!apply) break;
+            if (want) rc = tc_set_cell(&tc, (size_t)ri, ci, want, wn);
+            else { tc.rows[ri].cell[ci].n = 0; tc.rows[ri].present[ci] = 0; }
+            dirty = 1;
+        }
+        if (bad) {
+            (*found)++;
+            if (say) { snprintf(line, sizeof line, "  folder 0x%x: its row in the hierarchy table of 0x%x does not match the folder's properties", nid, par); say(ctx, line); }
+        }
+        if (!rc && dirty) rc = ed_store_tc(w, hn, &tc);
+        tc_free(&tc);
+        /* the folder's own has-subfolders property follows the children too */
+        {
+            pcprop *hp = pcprops_find(&props, 0x360A);
+            if (hp && hp->v.n >= 1 && hp->v.p[0] != (uint8_t)has) {
+                (*found)++;
+                if (say) { snprintf(line, sizeof line, "  folder 0x%x: has-subfolders property %d but %s", nid, hp->v.p[0], has ? "it has subfolders" : "no subfolders"); say(ctx, line); }
+                if (apply) { uint8_t one = (uint8_t)has; rc = pc_set(o, nid, 0x360A, 0x000B, &one, 1); }
+            }
+        }
+        pcprops_free(&props);
+    }
+    free(fn.v);
     return rc;
 }
 

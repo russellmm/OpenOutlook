@@ -305,6 +305,9 @@ typedef struct opst_fix_report {
     int32_t row_version_issues;      /* R4: duplicate / too high PidTagLtpRowVer values */
     int32_t nid_mark_issues;         /* R5: header NID high-water marks that are too low (any node type) */
     int32_t rowcell_issues;          /* R6: contents-table rows without the row-only cells 0x0E17 / 0x3013 */
+    int32_t amap_issues;             /* R7: blocks not marked allocated in the allocation maps (+1 when the header's cbAMapFree is wrong) */
+    int32_t folder_issues;           /* R8: incomplete folders and hierarchy rows that do not mirror their folder */
+    int32_t refs_issues;             /* R9: orphan blocks and blocks with a wrong reference count */
 } opst_fix_report;
 OPST_API int opst_fix(opst *p, int apply, opst_fix_report *report);
 
@@ -315,6 +318,7 @@ typedef struct opst_check_report {
     int32_t problems;                /* total number of findings */
     int32_t refs_problems, nids_problems, tables_problems, idmap_problems, xblocks_problems, rowver_problems;
     int32_t subnode_problems, rowcell_problems;   /* attachment sizes and local nid counters; row-only table cells */
+    int32_t amap_problems, folder_problems;       /* allocation maps vs the block tree and cbAMapFree; folder tables / hierarchy rows */
 } opst_check_report;
 OPST_API int opst_check(opst *p, opst_check_report *report, char *text, size_t text_cap);
 

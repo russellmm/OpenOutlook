@@ -272,6 +272,21 @@ static int cb_bbt_span(void *ctx, const uint8_t *e) {
     return aspans_add(c->sp, op_u64(e + 8), ((size_t)op_u16(e + 16) + 16 + 63) / 64 * 64);
 }
 
+/* free space the allocation maps show, in bytes (the truth cbAMapFree in the header must equal) */
+static int free_from_maps(opw *w, uint64_t *out) {
+    uint64_t total = 0;
+    for (uint32_t sec = 0; sec < w->nsec; sec++) {
+        int err;
+        uint8_t *a = amap(w, sec, &err);
+        if (!a) return err;
+        unsigned ones = 0;
+        for (int i = 0; i < 496; i++) for (unsigned b = a[i]; b; b &= b - 1) ones++;
+        total += (uint64_t)(OPW_SLOTS - ones) * 64;
+    }
+    *out = total;
+    return 0;
+}
+
 /* marks every block / tree page referenced by the B-trees as allocated (sets bits only) */
 static int reconcile(opw *w) {
     if (w->reconciled) return 0;
@@ -301,7 +316,57 @@ static int reconcile(opw *w) {
     free(sp.s);
     if (rc) return rc;
     w->reconciled_fixes = fixed;
-    w->free_delta -= (int64_t)fixed * 64;
+    if (fixed) {
+        /* the maps are the truth: a header that already counted (some of) these blocks as used must not be reduced a second time */
+        uint64_t total;
+        rc = free_from_maps(w, &total);
+        if (rc) return rc;
+        w->cb_amap_free = total;
+        w->free_delta = 0;
+    }
+    return 0;
+}
+
+/* read-only analysis for the checker / fixer: referenced blocks and tree pages not marked allocated, and whether the header's cbAMapFree
+   differs from the free space the maps show */
+int opw_amap_state(opw *w, uint64_t *unalloc, uint64_t *computed_free, uint64_t *header_free) {
+    aspans sp = {0, 0, 0};
+    int rc = walk_pages(w, 1, w->nbt_ib, w->nbt_bid, &sp, 0);
+    if (!rc) rc = walk_pages(w, 0, w->bbt_ib, w->bbt_bid, &sp, 0);
+    if (!rc) { blkctx c = {&sp}; rc = bt_items(w, 0, cb_bbt_span, &c); }
+    uint64_t bad = 0;
+    for (size_t i = 0; i < sp.n && !rc; i++) {
+        uint64_t k0 = (sp.s[i].ib - OPW_AMAP0) / 64;
+        int missing = 0;
+        for (uint64_t k = k0; k < k0 + sp.s[i].size / 64 && !rc; k++) {
+            uint32_t sec = (uint32_t)(k / OPW_SLOTS), idx = (uint32_t)(k % OPW_SLOTS);
+            if (sec >= w->nsec) { missing = 1; continue; }
+            int err;
+            uint8_t *a = amap(w, sec, &err);
+            if (!a) { rc = err; break; }
+            if (!(a[idx >> 3] & (uint8_t)(0x80 >> (idx & 7)))) missing = 1;
+        }
+        bad += missing;
+    }
+    free(sp.s);
+    if (!rc) rc = free_from_maps(w, computed_free);
+    if (rc) return rc;
+    *unalloc = bad;
+    *header_free = (uint64_t)((int64_t)w->cb_amap_free + w->free_delta);
+    return 0;
+}
+
+/* repairs both: marks unallocated spans, then sets cbAMapFree to the maps' free space and forces the header to be written */
+int opw_amap_repair(opw *w) {
+    w->reconciled = 0;
+    int rc = reconcile(w);
+    if (rc) return rc;
+    uint64_t total;
+    rc = free_from_maps(w, &total);
+    if (rc) return rc;
+    w->cb_amap_free = total;
+    w->free_delta = 0;
+    if (w->nsec) { int err; if (!amap(w, 0, &err)) return err; w->dirty[0] = 1; }
     return 0;
 }
 
@@ -703,6 +768,26 @@ int opw_add_ref(opw *w, uint64_t bid) {
     if (rc) return rc;
     uint8_t ent[24];
     bbt_pack(ent, e.bid, e.ib, e.cb, e.cref + 1);
+    return bt_put(w, 0, e.bid, ent);
+}
+
+/* removes a block's BBT entry and frees its space without touching what it references (used by the fixer for orphan blocks) */
+int opw_bbt_drop(opw *w, uint64_t bid) {
+    bbt_e e;
+    int rc = opw_bbt_entry(w, bid, &e);
+    if (rc) return rc;
+    rc = opw_free(w, e.ib, ((size_t)e.cb + 16 + 63) / 64 * 64);
+    int found;
+    if (!rc) rc = bt_delete(w, 0, e.bid, &found);
+    return rc;
+}
+
+int opw_bbt_set_cref(opw *w, uint64_t bid, unsigned cref) {
+    bbt_e e;
+    int rc = opw_bbt_entry(w, bid, &e);
+    if (rc) return rc;
+    uint8_t ent[24];
+    bbt_pack(ent, e.bid, e.ib, e.cb, cref);
     return bt_put(w, 0, e.bid, ent);
 }
 

@@ -80,11 +80,11 @@ public sealed class PstImportTests
                 (nid1, nid2) = (summaries[0].Nid, summaries[1].Nid);
                 Assert.Equal(count0 + 2, folder.ContentCount);
                 Assert.Equal(unread0 + 2, folder.UnreadCount);          // imported without Read: both unread
-                Assert.Equal(before, Findings(e));
+                Assert.Empty(Findings(e).Except(before));
                 Assert.Equal(2, e.GetMessages(folder).Count(m => m.Nid == nid1 || m.Nid == nid2));
             }
             using var r = NativePstEngine.Open(copy);
-            Assert.Equal(before, Findings(r));
+            Assert.Empty(Findings(r).Except(before));
             var f2 = r.FindFolder(folderNid)!;
             var rows = r.GetMessages(f2).ToDictionary(m => m.Nid);
             foreach (var nid in new[] { nid1, nid2 })
@@ -150,7 +150,7 @@ public sealed class PstImportTests
             e.CopyMessage(moved, folders[0]);
             e.DeleteMessage(moved);
             Assert.DoesNotContain(e.GetMessages(folders[1]), m => m.Nid == s.Nid);
-            Assert.Equal(before, Findings(e));
+            Assert.Empty(Findings(e).Except(before));
         }
         finally { Cleanup(copy); }
     }
@@ -175,7 +175,7 @@ public sealed class PstImportTests
             var repaired = e.Repair();
             Assert.Equal(before.Fixable, repaired.Fixed);          // everything it said it could fix, it fixed
             Assert.Equal(0, repaired.Fixable);
-            Assert.True(repaired.Findings.Count <= before.Findings.Count);
+            Assert.DoesNotContain(repaired.Findings, l => l.Contains("not allocated") || l.Contains("higher index") || l.Contains("not listed") || l.Contains("missing table") || l.Contains("Couldn"));
             Assert.Equal(0, e.Repair().Fixed);                    // a second repair has nothing to do
             Assert.DoesNotContain(repaired.Findings, l => l.Contains("higher index"));   // R5 raises the header counter of every node type
         }

@@ -12,6 +12,12 @@ Rules (known cases only - "no known issues" is not "SCANPST will find nothing"):
   R3 index   messages missing from Outlook's message index (node 0xE01) are appended to the bucket of the message they were
              copied from (found by comparing the properties of messages with the same conversation topic); the highest-NID field is raised.
   R4 rowver  duplicate PidTagLtpRowVer values (0x67F3) get new store-wide unique values; dwUnique is kept above all of them.
+  R7 amap    blocks in the block tree that the allocation maps do not mark as allocated are marked, and the header's cbAMapFree is set to the
+             free space the maps show (SCANPST: "Block is not allocated in AMAP!", "Computed cbAMapFree of X, but header has Y"). Without this
+             SCANPST treats the nodes that own those blocks as invalid and reports follow-on errors (tables with missing columns, orphaned folders).
+  R8 folders folders missing their hierarchy / contents / FAI tables, or missing from their parent's hierarchy table, get them (tables copied
+             from a sibling, row built from the folder's own properties); the parent's has-subfolders flag follows (SCANPST: "Adding folder (nid=...)
+             back to the database"). Such folders were left behind by early versions of the folder-creation code.
   R6 rowcells contents-table rows lacking the row-only cells 0x0E17 (message status, 0) and 0x3013 (a per-row GUID) get them
              (found by repairing files whose messages were imported by the C library with SCANPST).
 Always run on a COPY first and finish with SCANPST (Analyze only).
@@ -24,8 +30,9 @@ import pstcore as P
 import pstedit as E
 import pstops as O
 import pstidmap as M
+import pstfolders as FO
 
-ROOT_HIER = 0x12D          # root's hierarchy table: its rows (search folders etc.) legitimately have no ID cells
+ROOT_HIER = 0x12D          # root's hierarchy table: its search-folder rows legitimately have no ID cells; its normal-folder rows do
 
 
 def _tables(ops):
@@ -47,21 +54,24 @@ def _replica_blob(ops):
         for _r, c in tc.rows:
             if c.get(ci):
                 return c[ci]
-    return None
+    try:                                    # no row has one yet (a store whose ID map is still empty): the message store's own 0x0E34
+        return ops.pc_props(0x21)[0x0E34][1] or None
+    except Exception:
+        return None
 
 
-class Fixer(O.Ops):
+class Fixer(FO.FolderOps):
     def run(self, apply):
         ed, w = self.ed, self.w
         rep = collections.OrderedDict()
         blob = _replica_blob(self)
         change = w.bid_next_b
+        r7 = self._amap(apply)
+        rep['R7 allocation-map problems'] = r7
         # ---- R1 ids ------------------------------------------------------------------------------------------
         r1 = []
         idm = self.idmap
         for tn in list(_tables(self)):
-            if tn == ROOT_HIER:
-                continue
             try:
                 tc = ed.load_tc(tn)
             except Exception:
@@ -73,6 +83,8 @@ class Fixer(O.Ops):
             for rid, cells in tc.rows:
                 if cells.get(c30):
                     continue
+                if tn == ROOT_HIER and rid & 0x1F != 2:
+                    continue                          # search folders in the root table carry no ID; its normal folders do (SCANPST adds them)
                 r1.append((tn, rid))
                 if apply:
                     g = M.IdMap.new_guid()
@@ -103,12 +115,122 @@ class Fixer(O.Ops):
         rep['R5 header NID high-water marks too low'] = r5
         r6 = self._rowcells(apply)
         rep['R6 rows without the row cells 0x0E17 / 0x3013'] = r6
+        r8 = self._folders(apply)
+        rep['R8 incomplete folders (tables / parent row)'] = r8
         if apply and any(rep.values()):
             if pairs:
                 self.note_max_message_nid(pairs)
             else:
                 self.note_max_message_nid()
         return rep
+
+    # ---- R7 --------------------------------------------------------------------------------------------------------
+    def _amap(self, apply):
+        w = self.w
+        issues = []
+        for e in w.bbt.items():
+            bid, ib, cb = struct.unpack_from('<QQH', e, 0)
+            if not w.is_allocated(ib, cb + 16):
+                issues.append(('not allocated', hex(bid), hex(ib)))
+        computed = w.free_from_maps()
+        if apply and issues:
+            w.reconcile()                                   # marks the blocks and re-derives cbAMapFree from the maps
+            computed = w.free_from_maps()
+        if computed != w.cb_amap_free + (0 if not apply else w.free_delta):
+            issues.append(('cbAMapFree', w.cb_amap_free + w.free_delta, computed))
+            if apply:
+                w.cb_amap_free, w.free_delta = computed, 0
+                w.dirty.add(0)                              # force a commit even when only the header changes
+        return issues
+
+    # ---- R8 --------------------------------------------------------------------------------------------------------
+    def _folders(self, apply):
+        ed, w = self.ed, self.w
+        nodes = {}
+        for v in w.nbt.items():
+            n, _bd, _bs, par, _ = struct.unpack_from('<QQQII', v, 0)
+            nodes[n & 0xFFFFFFFF] = par
+        issues = []
+        hier = {}
+        for nid, par in sorted(nodes.items()):
+            if nid & 0x1F != 2 or par == nid or par & 0x1F != 2 or par not in nodes:
+                continue
+            base = nid & ~0x1F
+            missing = [t for t in (0xD, 0xE, 0xF) if (base | t) not in nodes]
+            hn = (par & ~0x1F) | 0xD
+            if hn not in hier:
+                try:
+                    hier[hn] = {r for r, _c in ed.load_tc(hn).rows}
+                except Exception:
+                    hier[hn] = None
+            no_row = hier[hn] is not None and nid not in hier[hn]
+            if not missing and not no_row:
+                continue
+            issues.append((nid, par, [hex(t) for t in missing], no_row))
+            if not apply:
+                continue
+            props = self.pc_props(nid)
+            if missing:
+                self._make_tables(nid, par, only_missing=True)
+            if no_row:
+                z4 = b'\0\0\0\0'
+                name16 = props.get(0x3001, (0x1F, b''))[1]
+                cls16 = props.get(0x3613, (0x1F, b''))[1] or None
+                extra = {pid: props[pid][1] for pid in (0x3602, 0x3603, 0x360A, 0x6635, 0x6636) if pid in props}
+                self._add_hier_row(nid, par, name16, cls16, extra, mirror=props)
+                hier[hn].add(nid)
+            self._set_has_sub(par)
+            self._sync_row(par)
+        issues += self._rows_vs_folders(apply)
+        return issues
+
+    def _rows_vs_folders(self, apply):
+        """Hierarchy-table rows must mirror their folder's properties (name, counts, has-subfolders, class); has-subfolders is the truth
+        about the children. SCANPST: "Hierarchy Table for X, row doesn't match sub-object"."""
+        ed = self.ed
+        issues = []
+        nodes = set()
+        for v in self.w.nbt.items():
+            nodes.add(struct.unpack_from('<Q', v, 0)[0] & 0xFFFFFFFF)
+        for nid in sorted(n for n in nodes if n & 0x1F == 2):
+            par = self.parent_of(nid) if nid != FO.NID_ROOT else None
+            if not par or par & 0x1F != 2 or (par & ~0x1F) | 0xD not in nodes:
+                continue
+            hn = (par & ~0x1F) | 0xD
+            tc = ed.load_tc(hn)
+            i = tc.find(nid)
+            if i < 0:
+                continue
+            try:
+                props = self.pc_props(nid)
+            except Exception:
+                continue
+            truth = {pid: v[1] for pid, v in props.items() if pid in self.ROW_PIDS}
+            if 0x360A in truth:
+                truth[0x360A] = bytes([1 if self.children(nid) else 0])
+            cells = tc.rows[i][1]
+            bad = []
+            for pid in self.ROW_PIDS:
+                ci = tc.col_by_pid.get(pid)
+                if ci is None:
+                    continue
+                have, want = cells.get(ci), truth.get(pid)
+                if have != want and not (have in (None, b'') and want in (None, b'')):
+                    bad.append(pid)
+            if bad:
+                issues.append((nid, [hex(p) for p in bad]))
+                if apply:
+                    for pid in bad:
+                        ci = tc.col_by_pid[pid]
+                        if truth.get(pid) is None:
+                            cells.pop(ci, None)
+                        else:
+                            cells[ci] = truth[pid]
+                    ed.store_tc(hn, tc)
+        return issues
+
+    def _sync_row(self, nid):
+        pass
 
     # ---- R3 --------------------------------------------------------------------------------------------------------
     def _buckets(self):

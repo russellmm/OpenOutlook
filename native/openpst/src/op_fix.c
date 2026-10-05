@@ -1,7 +1,8 @@
 /* op_fix.c - fixes, in place and without rebuilding the file, the "minor inconsistencies" SCANPST reports in PST files that Outlook has edited
  * (port of pstfix.py; every rule was found by repairing a COPY with SCANPST and diffing it against the original).
- *   R1 ids     message rows (contents tables) and folder rows (hierarchy tables, except the root table 0x12D) without the ID cells
- *              0x0E30/0x0E33/0x0E34 get them, plus an ID-map record (node 0xC01)
+ *   R1 ids     message rows (contents tables) and folder rows (hierarchy tables; in the root table 0x12D only normal folders, not search
+ *              folders) without the ID cells 0x0E30/0x0E33/0x0E34 get them, plus an ID-map record (node 0xC01); the replica blob comes from
+ *              any row, or else from the message store's own 0x0E34
  *   R2 idmap   ID-map records whose node no longer exists get NID 0 (SCANPST's convention for a deleted object)
  *   R3 index   messages missing from Outlook's message index (node 0xE01) are appended to the bucket of the message they were copied from
  *              (found by comparing the properties of messages with the same conversation topic); the highest-NID field is raised
@@ -9,6 +10,13 @@
  *   R5 hwm     header NID high-water marks (every node type except 6, 7, 0x10) must cover every node and sub-node
  *   R6 rowcells contents-table rows lack the row-only cells 0x0E17 (message status, 0) and 0x3013 (a per-row GUID) that Outlook writes; they
  *              are added (found by repairing files whose messages were imported by this library with SCANPST)
+ *   R7 amap    blocks in the block tree that the allocation maps do not mark as allocated are marked, and the header's cbAMapFree is set to
+ *              the free space the maps show (SCANPST: "Block is not allocated in AMAP!", "Computed cbAMapFree of X, but header has Y"); without
+ *              it SCANPST treats the nodes owning those blocks as invalid and reports follow-on errors
+ *   R8 folders folders missing their hierarchy / contents / FAI tables or their row in the parent's hierarchy table get them, and hierarchy rows
+ *              are made to mirror their folder's properties (has-subfolders = the truth about the children)           [op_folders.c]
+ *   R9 refs    orphan blocks (nothing references them: SCANPST "Couldn't find BBT entry in the RBT") are removed and their space freed; blocks whose
+ *              BBT reference count differs from what the references imply get the right count ("BBT entry has different refcount in RBT")
  * "no known issues" is not "SCANPST will find nothing". */
 #include "op_wr.h"
 
@@ -57,6 +65,14 @@ int fix_replica_blob(ops *o, bbuf *out, int *found) {
         tc_free(&tc);
     }
     free(tabs.v);
+    if (!rc && !*found) {                      /* no row has one yet (a store whose ID map is still empty): the message store's own 0x0E34 */
+        pcprops sp;
+        if (pcprops_get_ex(o->w, 0x21, &sp, 1) == 0) {
+            pcprop *p = pcprops_find(&sp, 0x0E34);
+            if (p && p->v.n) { rc = bb_put(out, p->v.p, p->v.n) ? OPST_E_NOMEM : 0; *found = rc == 0; }
+            pcprops_free(&sp);
+        }
+    }
     return rc;
 }
 
@@ -292,10 +308,19 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
     idmap *im = rc ? NULL : ops_idmap(o, &rcim);
     if (!rc) rc = rcim;
 
+    /* ---- R7 ---- */
+    if (!rc) {
+        uint64_t un = 0, comp = 0, hdr = 0;
+        rc = opw_amap_state(w, &un, &comp, &hdr);
+        if (!rc && (un || comp != hdr)) {
+            rep->amap_issues = (int32_t)un + (comp != hdr ? 1 : 0);
+            if (apply) rc = opw_amap_repair(w);
+        }
+    }
+
     /* ---- R1 ---- */
     for (size_t ti = 0; ti < tabs.n && !rc; ti++) {
         uint32_t tn = tabs.v[ti];
-        if (tn == ROOT_HIER) continue;
         tctx tc;
         if (ed_load_tc(w, tn, &tc) != 0) continue;
         int c30 = tc_col(&tc, 0x0E30), c33 = tc_col(&tc, 0x0E33), c34 = tc_col(&tc, 0x0E34);
@@ -303,6 +328,7 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
         int changed = 0;
         for (size_t r = 0; r < tc.nrows && !rc; r++) {
             if (tc.rows[r].present[c30] && tc.rows[r].cell[c30].n) continue;
+            if (tn == ROOT_HIER && (tc.rows[r].rowid & 0x1F) != 2) continue;      /* search folders in the root table carry no ID */
             rep->rows_without_ids++;
             if (apply) {
                 uint8_t g[16];
@@ -434,7 +460,26 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
     }
     free(tabs.v);
     bb_free(&blob);
-    if (!rc && apply && (rep->rowcell_issues || rep->rows_without_ids || rep->dangling_idmap || rep->messages_not_indexed || rep->row_version_issues || rep->nid_mark_issues)) {
+    /* ---- R8 ---- */
+    if (!rc) {
+        int nf = 0;
+        rc = fo_repair_all(o, apply, &nf, NULL, NULL);
+        rep->folder_issues = nf;
+    }
+    /* ---- R9 ---- (last: earlier rules may add references) */
+    if (!rc) {
+        refsfix rf;
+        rc = refs_collect(w, &rf);
+        if (!rc) {
+            rep->refs_issues = (int32_t)(rf.norphan + rf.nfix);
+            if (apply) {
+                for (size_t i = 0; i < rf.norphan && !rc; i++) rc = opw_bbt_drop(w, rf.orphan[i]);
+                for (size_t i = 0; i < rf.nfix && !rc; i++) rc = opw_bbt_set_cref(w, rf.fix_bid[i], rf.fix_cref[i]);
+            }
+        }
+        refsfix_free(&rf);
+    }
+    if (!rc && apply && (rep->refs_issues || rep->amap_issues || rep->folder_issues || rep->rowcell_issues || rep->rows_without_ids || rep->dangling_idmap || rep->messages_not_indexed || rep->row_version_issues || rep->nid_mark_issues)) {
         rc = ops_note_max_message_nid(o, NULL, 0, NULL, 0, NULL, 0);
     }
     return rc;

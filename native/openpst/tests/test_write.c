@@ -43,6 +43,16 @@ static char *slurp(const char *path, size_t *n) {
     return b;
 }
 
+/* MS-PST CRC (CRC-32 with a zero seed and no final inversion), used to re-sign a page edited by the test */
+static uint32_t crc_ms(const uint8_t *p, size_t n) {
+    uint32_t c = 0;
+    for (size_t i = 0; i < n; i++) {
+        c ^= p[i];
+        for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1)));
+    }
+    return c;
+}
+
 static int open_w(const char *path, opst **p) { return opst_open(path, OPST_OPEN_WRITE, p); }
 
 /* first folder below the IPM root that holds at least `want` messages (not Deleted Items); returns its NID or 0 */
@@ -395,6 +405,73 @@ int main(void) {
                 remove(tmp2);
                 char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);
             }
+        }
+    }
+    /* allocation maps: a bit cleared behind the library's back is found (and cbAMapFree no longer matches), and the fixer (R7) repairs it */
+    {
+        const char *tmp2 = "opst_write_test2.pst";
+        if (copy_file(src, tmp2)) {
+            FILE *f = fopen(tmp2, "r+b");
+            uint8_t pg[512];
+            int hit = 0;
+            if (f && fseek(f, 0x4400, SEEK_SET) == 0 && fread(pg, 1, 512, f) == 512 && pg[496] == 0x84 && crc_ms(pg, 496) == (uint32_t)(pg[500] | pg[501] << 8 | pg[502] << 16 | (uint32_t)pg[503] << 24)) {
+                for (int b = 495; b >= 0 && !hit; b--)
+                    for (int k = 0; k < 8 && !hit; k++)
+                        if ((pg[b] >> k) & 1 && b * 8 + (7 - k) >= 64) { pg[b] = (uint8_t)(pg[b] & ~(1 << k)); hit = 1; }
+                uint32_t c = crc_ms(pg, 496);
+                pg[500] = (uint8_t)c; pg[501] = (uint8_t)(c >> 8); pg[502] = (uint8_t)(c >> 16); pg[503] = (uint8_t)(c >> 24);
+                fseek(f, 0x4400, SEEK_SET);
+                fwrite(pg, 1, 512, f);
+            }
+            if (f) fclose(f);
+            CHECK(hit);
+            opst *q;
+            CHECK(opst_open(tmp2, 0, &q) == 0);
+            if (q) {
+                opst_check_report cr;
+                CHECK(opst_check(q, &cr, NULL, 0) == 0 && cr.amap_problems >= 1);
+                opst_close(q);
+            }
+            CHECK(open_w(tmp2, &q) == 0);
+            if (q) {
+                opst_fix_report fr;
+                memset(&fr, 0, sizeof fr);
+                CHECK(opst_fix(q, 0, &fr) == 0 && fr.amap_issues >= 1);
+                CHECK(opst_fix(q, 1, &fr) == 0);
+                opst_check_report cr;
+                CHECK(opst_check(q, &cr, NULL, 0) == 0 && cr.amap_problems == 0);
+                memset(&fr, 0, sizeof fr);
+                CHECK(opst_fix(q, 0, &fr) == 0 && fr.amap_issues == 0);
+                opst_close(q);
+            }
+            remove(tmp2);
+            char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);
+        }
+    }
+    /* a folder created without its tables and parent row (what early versions left behind): found, then completed by the fixer (R8) */
+    {
+        const char *tmp2 = "opst_write_test2.pst";
+        if (copy_file(src, tmp2)) {
+            opst *q;
+            CHECK(open_w(tmp2, &q) == 0);
+            if (q) {
+                uint32_t parent = find_source_folder(q, 1), nid = 0;
+                SETENV("OPST_TEST_INCOMPLETE_FOLDER", "1");
+                CHECK(parent && opst_folder_create(q, parent, "half made", "IPF.Note", &nid) == 0);
+                SETENV("OPST_TEST_INCOMPLETE_FOLDER", "");
+                opst_check_report cr;
+                CHECK(opst_check(q, &cr, NULL, 0) == 0 && cr.folder_problems >= 1);
+                opst_fix_report fr;
+                memset(&fr, 0, sizeof fr);
+                CHECK(opst_fix(q, 0, &fr) == 0 && fr.folder_issues >= 1);
+                CHECK(opst_fix(q, 1, &fr) == 0);
+                CHECK(opst_check(q, &cr, NULL, 0) == 0 && cr.folder_problems == 0 && cr.amap_problems == 0);
+                memset(&fr, 0, sizeof fr);
+                CHECK(opst_fix(q, 0, &fr) == 0 && fr.folder_issues == 0);
+                opst_close(q);
+            }
+            remove(tmp2);
+            char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);
         }
     }
     remove(tmp);

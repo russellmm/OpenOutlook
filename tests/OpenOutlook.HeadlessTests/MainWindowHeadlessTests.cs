@@ -265,6 +265,15 @@ public sealed class MainWindowHeadlessTests
                 labels[id].Remove("INBOX"); labels[id].Add("TRASH");
                 json = "{}";
             }
+            else if (path == "/messages/rich/attachments/att1") json = "{\"data\":\"YXR0YWNoZWQ\",\"size\":8}";
+            else if (path == "/messages/rich")
+            {
+                json = "{\"id\":\"rich\",\"threadId\":\"thread-9\",\"labelIds\":[\"INBOX\"],\"internalDate\":\"1700000000000\",\"sizeEstimate\":2500,\"snippet\":\"s\"," +
+                       "\"payload\":{\"mimeType\":\"multipart/mixed\",\"headers\":[{\"name\":\"From\",\"value\":\"Ann <ann@example.org>\"},{\"name\":\"Subject\",\"value\":\"Plans\"}," +
+                       "{\"name\":\"To\",\"value\":\"me@example.org, Bob <bob@example.org>\"},{\"name\":\"Cc\",\"value\":\"carol@example.org\"},{\"name\":\"Message-ID\",\"value\":\"<m1@example.org>\"}]," +
+                       "\"parts\":[{\"mimeType\":\"text/plain\",\"body\":{\"data\":\"aGVsbG8\"}}," +
+                       "{\"mimeType\":\"text/plain\",\"filename\":\"notes.txt\",\"body\":{\"attachmentId\":\"att1\",\"size\":8}}]}}";
+            }
             else if (path.StartsWith("/messages/", StringComparison.Ordinal))
             {
                 var id = path.Split('/')[2];
@@ -563,6 +572,85 @@ public sealed class MainWindowHeadlessTests
         public Task SendAsync(string? draftId, ComposeDraft draft, IReadOnlyList<ComposeFile> files, IProgress<string> progress, CancellationToken cancellationToken = default)
         { Log.Add("send"); LastDraft = draft; LastFiles = files; return Task.CompletedTask; }
         public Task RemoveServerFileAsync(string draftId, string serverId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    [AvaloniaFact]
+    public async Task Gmail_reply_reply_all_and_forward_are_prepared_from_the_original()
+    {
+        var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.Google, "gmail-account-3", "me@example.org", "client", DateTimeOffset.UtcNow,
+            ["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.compose"]);
+        ResetRegistry().Upsert(account);
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        try
+        {
+            var server = new FakeGmail(new Dictionary<string, HashSet<string>>());
+            var boxes = (System.Collections.IDictionary)typeof(MainWindow).GetField("_gmailBoxes", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            boxes[account.AccountId] = new OpenOutlook.Providers.Google.GmailMailbox(new HttpClient(server), _ => ValueTask.FromResult("tok"), "me@example.org");
+            var selectionType = typeof(MainWindow).GetNestedType("GmailFolderSelection", BindingFlags.NonPublic)!;
+            var folder = Activator.CreateInstance(selectionType, account, "INBOX", "Inbox")!;
+            var message = new OpenOutlook.Providers.Microsoft.GraphInboxMessage("rich", "Plans", "Ann <ann@example.org>", "me@example.org",
+                DateTimeOffset.UtcNow, 100, true, true, "p");
+            async Task<ComposeSeed> Seed(string action) => await Call<Task<ComposeSeed>>(window, "BuildGmailSeedAsync", folder, message, action);
+
+            var reply = await Seed("reply");
+            Assert.Equal("Ann <ann@example.org>", reply.To);
+            Assert.Equal("Re: Plans", reply.Subject);
+            Assert.Equal("<m1@example.org>", reply.InReplyTo);
+            Assert.Equal("thread-9", reply.ThreadId);
+            Assert.Contains("> hello", reply.Body);
+            Assert.True(string.IsNullOrEmpty(reply.Cc));
+            Assert.Null(reply.Files);
+
+            var all = await Seed("replyAll");
+            Assert.Contains("bob@example.org", all.Cc);
+            Assert.Contains("carol@example.org", all.Cc);
+            Assert.DoesNotContain("me@example.org", all.Cc);           // never reply to yourself
+            Assert.DoesNotContain("ann@example.org", all.Cc);          // the sender is already in To
+
+            var forward = await Seed("forward");
+            Assert.Equal("Fw: Plans", forward.Subject);
+            Assert.Contains("Forwarded message", forward.Body);
+            Assert.Null(forward.InReplyTo);
+            var file = Assert.Single(forward.Files!);
+            Assert.Equal("notes.txt", file.Name);
+            Assert.Equal("attached", System.Text.Encoding.UTF8.GetString(file.Data!));
+            Assert.Contains("GET /messages/rich/attachments/att1", server.Log);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task Compose_window_marks_unbuilt_buttons_locks_from_after_a_draft_and_sends_seed_files()
+    {
+        var backend = new RecordingBackend("me@gmail.test", "Gmail");
+        var other = new RecordingBackend("me@hotmail.test", "Microsoft");
+        var accounts = new List<ComposeAccount>
+        {
+            new("me@gmail.test", "Gmail", null, () => backend), new("me@hotmail.test", "Microsoft", null, () => other)
+        };
+        var seed = new ComposeSeed(To: "a@example.org", Subject: "Fwd: x", Body: "text",
+            Files: [new ComposeFile { Name = "notes.txt", Data = [1, 2, 3], Size = 3 }]);
+        var window = new ComposeWindow(accounts, accounts[0], seed) { Width = 1000, Height = 760 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var tips = window.GetVisualDescendants().OfType<Control>().Select(c => ToolTip.GetTip(c)?.ToString()).Where(t => t is not null).ToList();
+            Assert.Contains(tips, t => t!.Contains("To be implemented", StringComparison.OrdinalIgnoreCase));
+
+            var save = window.GetVisualDescendants().OfType<Button>().First(b => ToolTip.GetTip(b)?.ToString() == "Save draft");
+            save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntil(() => backend.Log.Contains("save"), 5000);
+            Assert.Contains("save", backend.Log);
+            Dispatcher.UIThread.RunJobs();
+            var from = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.Items.OfType<ComboBoxItem>().Any(i => i.Tag is ComposeAccount));
+            from.SelectedIndex = 1;                                                    // a saved draft belongs to its account: the change is refused
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("me@gmail.test", window.SelectedAccount.Address);
+            Assert.Equal(0, from.SelectedIndex);
+            Assert.Equal("notes.txt", Assert.Single(backend.LastFiles!).Name);
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]

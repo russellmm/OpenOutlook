@@ -29,7 +29,7 @@ The app needs a public OAuth client id for each provider. They are read from `op
 Mark read/unread, flag, archive, delete, and **Move to Folder / Copy to Folder** (ribbon Move, right-click menu, or drag the messages onto a folder of the same account; right-drag offers Move Here / Copy Here). The picker looks like Outlook's Move Items window and its New... button creates a folder. These need the account to have been connected with mail write permission; otherwise the app asks you to sign in again.
 
 ## Gmail
-Labels appear as folders (Inbox, Starred, Important, Sent, Drafts, Spam, Trash and your own labels, with unread counts) and messages open in the reading pane with HTML. The sign-in requests the `gmail.modify` scope, which allows these actions (Home ribbon, right-click menu, or the reading-pane timer):
+Labels appear as folders (Inbox, Starred, Important, Sent, Drafts, Spam, Trash and your own labels, with unread counts) and messages open in the reading pane with HTML. The sign-in requests the `gmail.modify` and `gmail.compose` scopes, which allow these actions (Home ribbon, right-click menu, or the reading-pane timer):
 
 | Action | What it does in Gmail |
 |--------|-----------------------|
@@ -39,12 +39,12 @@ Labels appear as folders (Inbox, Starred, Important, Sent, Drafts, Spam, Trash a
 | Delete | moves to Trash (Gmail empties Trash after 30 days; permanent deletion needs a broader scope and is not offered) |
 | Move to Folder... (ribbon Move, right-click, or drag onto a folder) | adds the destination label and removes the current one; "Add Label..." / Copy Here only adds the label; copying to Trash is a move |
 
-Composing, replying, forwarding and saving attachments are not available yet (sending needs another scope). An account connected earlier with the read-only scope keeps working for reading; use Account setup to sign in again to enable these actions.
+New message, Reply, Reply All, Forward (with the original attachments) and saving attachments work for Gmail; the compose window has a From list of every connected account (a saved draft stays with its account). Editing a saved Gmail draft is not available yet. An account connected earlier without the `gmail.compose` scope keeps working for reading and the actions above; use Account setup to sign in again to enable sending.
 
 Setting up the Google side (once):
 
 1. Google Cloud Console > create a project > APIs & Services > Library > enable the **Gmail API**.
-2. OAuth consent screen: User type *External*; add the scope `.../auth/gmail.modify`; while the app is in *Testing*, add your own Gmail address under *Test users* (refresh tokens of testing apps expire after 7 days; publish the app, or keep re-connecting, for longer use).
+2. OAuth consent screen: User type *External*; add the scopes `.../auth/gmail.modify` and `.../auth/gmail.compose`; while the app is in *Testing*, add your own Gmail address under *Test users* (refresh tokens of testing apps expire after 7 days; publish the app, or keep re-connecting, for longer use).
 3. Credentials > Create credentials > OAuth client ID > Application type **Desktop app**.
 4. Put the client id in `googleClientId` and the client secret in `googleClientSecret` (Google requires the secret on the token request for desktop clients; for installed apps it is not confidential).
 5. In the app: File > Info > Add Account > Gmail > Connect.

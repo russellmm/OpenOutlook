@@ -31,7 +31,7 @@ cp src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll /f/Claude/OpenOut
 - Windows git: SCANPST scans may leave `.log` files next to scanned PSTs; the test PSTs (`rmarrash_*.pst`) are the owner's data: only ever work on copies.
 
 ## Open items / ideas
-1. Gmail: compose, reply, forward, save attachments (needs the `gmail.send` scope for sending); drag onto Gmail labels already works.
+1. Gmail: editing a saved draft; drag onto Gmail labels works.
 2. Hotmail: unread counts in the Move picker only come from the folder list loaded at startup.
 3. Google consent screen shows "Home Assistant 13" (shared project): rename it or create a separate project and swap the client id/secret.
 4. PST engine: the 3 broken tables of `test-archive.pst` are not rebuilt by any rule; ANSI/4K files are read-only; the soak harness does not cover folder rename/move; Python fixer lacks R10.
@@ -45,8 +45,7 @@ Done and committed (builds; 450 .NET tests pass, 13 headless pass):
 - Compose abstraction (`ComposeBackends.cs`): `IComposeBackend` with `GraphComposeBackend` (server drafts) and `GmailComposeBackend` (MIME); `ComposeAccount` list for the From picker; `ComposeSeed` for reply/forward.
 - New `ComposeWindow.cs`: Outlook-like layout (quick access, Message/Insert/Options/Format Text/Review/Help tabs, Send, From account list, To/Cc/Bcc, Subject), "To be implemented" tooltips on unbuilt buttons; From can change until a draft is saved.
 - `MainWindow.Compose.cs`: `OpenCompose`, `BuildComposeAccounts`, `BuildGmailSeedAsync` (reply, reply all, forward incl. attachments), quoting; Gmail reading-pane Reply/Reply All/Forward buttons; Gmail attachment saving (`SaveGmailAttachmentAsync`).
+Tests added (15 headless pass): Gmail reply / reply all / forward preparation (headers, no self-reply, attachment download), compose window tooltips, From locked once a draft is saved, seed files reach the backend.
 Still to do / verify:
-1. Tests for `BuildGmailSeedAsync` (extend `FakeGmail` in the headless tests with Message-ID/Cc headers and an attachment + `/attachments/att1` endpoint), compose-window tests (tooltip "To be implemented", draft locks the From list, seed files reach the backend).
-2. Real-world check by the owner: sign in to Gmail again (new scope), send / reply / forward / save attachment; Hotmail compose in the new window (edit existing draft, reply/forward drafts, attachments).
-3. Publish a new EXE and push (see "Build, test, publish, push" above); update `accounts-setup.md` (Gmail now sends; needs `gmail.compose` scope in the consent screen: add it under OAuth consent screen > Scopes).
-4. Known gaps: editing a saved Gmail draft is not supported (`CanReopenDrafts = false`); Paste icon is a placeholder; the ribbon is not yet scrollable-friendly at narrow widths.
+1. Real-world check by the owner: sign in to Gmail again (new scope; add `gmail.compose` to the consent screen), send / reply / forward / save attachment; Hotmail compose in the new window (edit existing draft, reply/forward drafts, attachments).
+2. Known gaps: editing a saved Gmail draft is not supported (`CanReopenDrafts = false`); Paste icon is a placeholder; the ribbon is not yet scrollable-friendly at narrow widths.

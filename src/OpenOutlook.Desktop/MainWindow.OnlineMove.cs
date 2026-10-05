@@ -72,7 +72,9 @@ public partial class MainWindow
         }
         item.AddHandler(DragDrop.DragOverEvent, (_, e) =>
         {
-            if (item.Tag is GmailFolderSelection or MicrosoftFolderSelection && CanDrop(e.Data)) { e.DragEffects = DragDropEffects.Move; e.Handled = true; }
+            if (item.Tag is not (GmailFolderSelection or MicrosoftFolderSelection)) return;
+            if (CanDrop(e.Data)) { e.DragEffects = DragDropEffects.Move; e.Handled = true; }
+            else if (!e.Data.Contains(FolderDragFormat)) { e.DragEffects = DragDropEffects.None; e.Handled = true; }   // another account, the same folder, a file...: say "not allowed"
         });
         item.AddHandler(DragDrop.DropEvent, async (_, e) =>
         {

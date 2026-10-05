@@ -221,7 +221,10 @@ public partial class MainWindow
     private void FolderDragOver(object? sender, DragEventArgs e)
     {
         _dropTargetItem = null;
-        if (_dragSourceItem is null || !e.Data.Contains(FolderDragFormat))
+        // This handler also sees every other drag over the folder pane (messages dragged onto a folder). It must not touch those: the folder nodes
+        // decide for themselves, and forcing "None" here overrode them (the red no-drop cursor).
+        if (_dragSourceItem is null) return;
+        if (!e.Data.Contains(FolderDragFormat))
         { e.DragEffects = DragDropEffects.None; return; }
         var target = (e.Source as Visual)?.FindAncestorOfType<TreeViewItem>(includeSelf: true);
         if (target is null || ReferenceEquals(target, _dragSourceItem) || FolderKeyOf(target) is null ||

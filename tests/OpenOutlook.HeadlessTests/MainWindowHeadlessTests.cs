@@ -516,6 +516,9 @@ public sealed class MainWindowHeadlessTests
             Assert.False((bool)typeof(MainWindow).GetField("_messageDragCandidate", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!);
             window.MouseUp(new Point(rowPoint.X + 40, rowPoint.Y + 4), MouseButton.Left);
 
+            var finalEffect = DragDropEffects.Move;
+            window.AddHandler(DragDrop.DragOverEvent, (_, e) => finalEffect = e.DragEffects, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);   // what the drag ends up with, after every handler on the way
+
             // 2. the folder node accepts the drag payload of its own account and moves the dragged message
             var spam = Node("Spam");
             var spamPoint = Center(spam);
@@ -523,6 +526,7 @@ public sealed class MainWindowHeadlessTests
             data.Set(DataFormats.Text, MainWindow.FormatOnlineDragPayload("gmail-account-4", "INBOX", ["m1"]));
             window.DragDrop(spamPoint, RawDragEventType.DragEnter, data, DragDropEffects.Move);
             window.DragDrop(spamPoint, RawDragEventType.DragOver, data, DragDropEffects.Move);
+            Assert.Equal(DragDropEffects.Move, finalEffect);                              // the cursor must say "move allowed", not the red no-drop circle
             window.DragDrop(spamPoint, RawDragEventType.Drop, data, DragDropEffects.Move);
             await WaitUntil(() => labels["m1"].Contains("SPAM"), 5000);
             Assert.Contains("SPAM", labels["m1"]);
@@ -532,7 +536,10 @@ public sealed class MainWindowHeadlessTests
             // 3. a drag from another account, or onto the folder it came from, is refused
             var foreign = new DataObject();
             foreign.Set(DataFormats.Text, MainWindow.FormatOnlineDragPayload("another-account", "INBOX", ["m2"]));
+            finalEffect = DragDropEffects.Move;
+            window.DragDrop(spamPoint, RawDragEventType.DragEnter, foreign, DragDropEffects.Move);     // a new drag session
             window.DragDrop(spamPoint, RawDragEventType.DragOver, foreign, DragDropEffects.Move);
+            Assert.Equal(DragDropEffects.None, finalEffect);
             window.DragDrop(spamPoint, RawDragEventType.Drop, foreign, DragDropEffects.Move);
             await WaitUntil(() => false, 300);
             Assert.DoesNotContain("SPAM", labels["m2"]);

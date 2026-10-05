@@ -95,14 +95,16 @@ public static class DesktopOAuth
 
         var endpoint = TokenEndpoint(authorization.Provider);
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var exchangeForm = new Dictionary<string, string>
         {
             ["grant_type"] = "authorization_code",
             ["client_id"] = authorization.ClientId,
             ["code"] = code,
             ["redirect_uri"] = authorization.RedirectUri.AbsoluteUri,
             ["code_verifier"] = authorization.CodeVerifier
-        });
+        };
+        AddClientSecret(exchangeForm, authorization.Provider);
+        request.Content = new FormUrlEncodedContent(exchangeForm);
         return await SendTokenRequestAsync(request, httpClient, cancellationToken).ConfigureAwait(false);
     }
 
@@ -120,14 +122,35 @@ public static class DesktopOAuth
         ArgumentNullException.ThrowIfNull(httpClient);
         cancellationToken.ThrowIfCancellationRequested();
         using var request = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint(provider));
-        request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var refreshForm = new Dictionary<string, string>
         {
             ["grant_type"] = "refresh_token",
             ["client_id"] = clientId,
             ["refresh_token"] = refreshToken
-        });
+        };
+        AddClientSecret(refreshForm, provider);
+        request.Content = new FormUrlEncodedContent(refreshForm);
         var tokens = await SendTokenRequestAsync(request, httpClient, cancellationToken).ConfigureAwait(false);
         return tokens with { RefreshToken = tokens.RefreshToken ?? refreshToken };
+    }
+
+    private static readonly Dictionary<OAuthProvider, string> ClientSecrets = [];
+
+    /// <summary>
+    /// Google's "Desktop app" OAuth clients come with a client secret that the token endpoint requires even when PKCE is used. For an installed app it is not
+    /// confidential (Google says so), but it is configuration, so it is supplied once at startup and sent only to that provider's pinned token endpoint.
+    /// Microsoft public clients need none.
+    /// </summary>
+    public static void SetClientSecret(OAuthProvider provider, string? secret)
+    {
+        if (string.IsNullOrWhiteSpace(secret)) { ClientSecrets.Remove(provider); return; }
+        if (secret.Length > 1024 || secret.Any(char.IsControl) || secret != secret.Trim()) throw new ArgumentException("Invalid client secret.", nameof(secret));
+        ClientSecrets[provider] = secret;
+    }
+
+    private static void AddClientSecret(Dictionary<string, string> form, OAuthProvider provider)
+    {
+        if (ClientSecrets.TryGetValue(provider, out var secret)) form["client_secret"] = secret;
     }
 
     private static Uri TokenEndpoint(OAuthProvider provider)

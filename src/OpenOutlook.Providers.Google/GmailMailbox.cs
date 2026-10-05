@@ -1,0 +1,253 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+
+namespace OpenOutlook.Providers.Google;
+
+/// <summary>
+/// Read-only Gmail browsing for the mail window: labels with counts, the newest messages of any label, list-row summaries and the displayable content of
+/// one message. Same safety rules as <see cref="GmailInboxReader"/> (verified account, no redirects, bounded responses), but the account is verified once per
+/// access token instead of before every request, so a folder of 100 messages costs about 100 requests rather than 200.
+/// </summary>
+public sealed class GmailMailbox
+{
+    private const string Root = "https://gmail.googleapis.com/gmail/v1/users/me";
+    private const int MaxResponseBytes = 4 * 1024 * 1024;
+    private const int MaxBodyBytes = 1024 * 1024;
+    private readonly HttpClient _http;
+    private readonly Func<CancellationToken, ValueTask<string>> _accessToken;
+    private readonly string _expectedEmail;
+    private string? _verifiedToken;
+
+    public GmailMailbox(HttpClient httpClient, Func<CancellationToken, ValueTask<string>> accessToken, string expectedEmail)
+    {
+        _http = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _accessToken = accessToken ?? throw new ArgumentNullException(nameof(accessToken));
+        _expectedEmail = !string.IsNullOrWhiteSpace(expectedEmail) && expectedEmail == expectedEmail.Trim()
+            ? expectedEmail : throw new ArgumentException("An expected account email is required.", nameof(expectedEmail));
+    }
+
+    public static HttpClient CreateNoRedirectHttpClient() => new(new HttpClientHandler { AllowAutoRedirect = false });
+
+    /// <summary>All labels of the mailbox with message counts (counts need one request per label and are best effort).</summary>
+    public async Task<IReadOnlyList<GmailLabel>> ListLabelsAsync(CancellationToken cancellationToken = default)
+    {
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var json = await GetJsonAsync("/labels", token, cancellationToken).ConfigureAwait(false);
+        var labels = new List<(string Id, string Name, bool System)>();
+        if (json.RootElement.TryGetProperty("labels", out var array))
+        {
+            if (array.ValueKind != JsonValueKind.Array || array.GetArrayLength() > 500) throw new GmailReadException("Gmail returned invalid labels.");
+            foreach (var item in array.EnumerateArray())
+            {
+                var id = OptionalString(item, "id");
+                var name = OptionalString(item, "name");
+                if (id is null || name is null || !ValidLabelId(id)) continue;
+                labels.Add((id, name, OptionalString(item, "type") == "system"));
+            }
+        }
+        var result = new GmailLabel[labels.Count];
+        using var gate = new SemaphoreSlim(6);
+        await Task.WhenAll(labels.Select(async (label, index) =>
+        {
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                int? total = null, unread = null;
+                try
+                {
+                    using var detail = await GetJsonAsync("/labels/" + Uri.EscapeDataString(label.Id), token, cancellationToken).ConfigureAwait(false);
+                    total = OptionalInt(detail.RootElement, "messagesTotal");
+                    unread = OptionalInt(detail.RootElement, "messagesUnread");
+                }
+                catch (GmailReadException) { }                                   // counts are decoration; the label itself is still usable
+                result[index] = new GmailLabel(label.Id, label.Name, label.System, total, unread);
+            }
+            finally { gate.Release(); }
+        })).ConfigureAwait(false);
+        return result;
+    }
+
+    /// <summary>Newest-first message ids of one label.</summary>
+    public async Task<IReadOnlyList<string>> ListLabelMessageIdsAsync(string labelId, int maxMessages = 100, CancellationToken cancellationToken = default)
+    {
+        if (!ValidLabelId(labelId)) throw new ArgumentException("An invalid Gmail label was supplied.", nameof(labelId));
+        if (maxMessages is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(maxMessages));
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        var ids = new List<string>();
+        string? pageToken = null;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        do
+        {
+            var query = $"?labelIds={Uri.EscapeDataString(labelId)}&maxResults={Math.Min(100, maxMessages - ids.Count)}";
+            if (pageToken is not null) query += "&pageToken=" + Uri.EscapeDataString(pageToken);
+            using var json = await GetJsonAsync("/messages" + query, token, cancellationToken).ConfigureAwait(false);
+            if (json.RootElement.TryGetProperty("messages", out var messages) && messages.ValueKind == JsonValueKind.Array)
+                foreach (var item in messages.EnumerateArray())
+                    if (OptionalString(item, "id") is { } id && ValidId(id) && ids.Count < maxMessages) ids.Add(id);
+            pageToken = OptionalString(json.RootElement, "nextPageToken");
+            if (pageToken is not null && (!ValidPageToken(pageToken) || !seen.Add(pageToken)))
+                throw new GmailReadException("Gmail returned an invalid pagination token.");
+        } while (pageToken is not null && ids.Count < maxMessages);
+        return ids;
+    }
+
+    /// <summary>List-row data for many messages (metadata only, a few requests at a time); the result keeps the order of <paramref name="ids"/>.</summary>
+    public async Task<IReadOnlyList<GmailSummary>> GetSummariesAsync(IReadOnlyList<string> ids, CancellationToken cancellationToken = default)
+    {
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        var result = new GmailSummary?[ids.Count];
+        using var gate = new SemaphoreSlim(8);
+        await Task.WhenAll(ids.Select(async (id, index) =>
+        {
+            if (!ValidId(id)) return;
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                using var json = await GetJsonAsync("/messages/" + id +
+                    "?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date", token, cancellationToken).ConfigureAwait(false);
+                result[index] = ParseSummary(json.RootElement, id);
+            }
+            catch (GmailReadException) { }                                       // one unreadable message must not hide the rest
+            finally { gate.Release(); }
+        })).ConfigureAwait(false);
+        return result.Where(r => r is not null).Select(r => r!).ToList();
+    }
+
+    /// <summary>The displayable content of one message: HTML and plain-text bodies, the names of its attachments and its headers.</summary>
+    public async Task<GmailContent> GetContentAsync(string messageId, CancellationToken cancellationToken = default)
+    {
+        if (!ValidId(messageId)) throw new ArgumentException("An invalid Gmail message ID was supplied.", nameof(messageId));
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var json = await GetJsonAsync("/messages/" + messageId + "?format=full", token, cancellationToken).ConfigureAwait(false);
+        var root = json.RootElement;
+        if (root.ValueKind != JsonValueKind.Object || OptionalString(root, "id") != messageId) throw new GmailReadException("Gmail returned an invalid message.");
+        string? html = null, text = null;
+        var attachments = new List<GmailAttachmentInfo>();
+        var headers = new List<GmailHeader>();
+        if (root.TryGetProperty("payload", out var payload) && payload.ValueKind == JsonValueKind.Object)
+        {
+            ReadContentParts(payload, ref html, ref text, attachments, 0, new PartCounter());
+            if (payload.TryGetProperty("headers", out var ha) && ha.ValueKind == JsonValueKind.Array && ha.GetArrayLength() <= 256)
+                foreach (var h in ha.EnumerateArray())
+                    if (OptionalString(h, "name") is { } n && OptionalString(h, "value") is { } v) headers.Add(new GmailHeader(n, v));
+        }
+        return new GmailContent(html, text, attachments, headers, OptionalString(root, "snippet"));
+    }
+
+    // ---- internals ----
+
+    private async Task<string> VerifiedTokenAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var token = await _accessToken(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(token) || token.Any(char.IsControl)) throw new GmailReadException("A valid access token is required.");
+        if (!string.Equals(_verifiedToken, token, StringComparison.Ordinal))
+        {
+            using var json = await GetJsonAsync("/profile", token, ct).ConfigureAwait(false);
+            if (!string.Equals(OptionalString(json.RootElement, "emailAddress"), _expectedEmail, StringComparison.OrdinalIgnoreCase))
+                throw new GmailReadException("Gmail token belongs to a different account.");
+            _verifiedToken = token;
+        }
+        return token;
+    }
+
+    private async Task<JsonDocument> GetJsonAsync(string relativePath, string token, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        using var request = new HttpRequestMessage(HttpMethod.Get, Root + relativePath);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
+        if (!response.IsSuccessStatusCode) throw new GmailReadException($"Gmail read failed with HTTP {(int)response.StatusCode}.", response.StatusCode);
+        if (response.Content.Headers.ContentLength > MaxResponseBytes) throw new GmailReadException("Gmail response exceeds the size limit.");
+        await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var bytes = new byte[8192];
+        int count;
+        while ((count = await stream.ReadAsync(bytes, ct).ConfigureAwait(false)) != 0)
+        {
+            if (buffer.Length + count > MaxResponseBytes) throw new GmailReadException("Gmail response exceeds the size limit.");
+            buffer.Write(bytes, 0, count);
+        }
+        buffer.Position = 0;
+        try { return await JsonDocument.ParseAsync(buffer, cancellationToken: ct).ConfigureAwait(false); }
+        catch (JsonException) { throw new GmailReadException("Gmail returned invalid JSON."); }
+    }
+
+    private static GmailSummary ParseSummary(JsonElement root, string id)
+    {
+        string Header(string name)
+        {
+            if (root.TryGetProperty("payload", out var payload) && payload.TryGetProperty("headers", out var headers) && headers.ValueKind == JsonValueKind.Array)
+                foreach (var h in headers.EnumerateArray())
+                    if (string.Equals(OptionalString(h, "name"), name, StringComparison.OrdinalIgnoreCase)) return OptionalString(h, "value") ?? "";
+            return "";
+        }
+        var labels = new HashSet<string>(StringComparer.Ordinal);
+        if (root.TryGetProperty("labelIds", out var la) && la.ValueKind == JsonValueKind.Array)
+            foreach (var l in la.EnumerateArray()) if (l.ValueKind == JsonValueKind.String) labels.Add(l.GetString()!);
+        DateTimeOffset? date = null;
+        if (long.TryParse(OptionalString(root, "internalDate"), out var ms) && ms > 0) date = DateTimeOffset.FromUnixTimeMilliseconds(ms);
+        else if (DateTimeOffset.TryParse(Header("Date"), out var parsed)) date = parsed;
+        var mime = root.TryGetProperty("payload", out var pl) ? OptionalString(pl, "mimeType") ?? "" : "";
+        return new GmailSummary(id, OptionalString(root, "threadId"), Header("Subject"), Header("From"), Header("To"), date,
+            OptionalInt(root, "sizeEstimate"), labels.Contains("UNREAD"), labels.Contains("STARRED"), labels.Contains("DRAFT"),
+            mime.StartsWith("multipart/mixed", StringComparison.OrdinalIgnoreCase), OptionalString(root, "snippet") ?? "");
+    }
+
+    private static void ReadContentParts(JsonElement part, ref string? html, ref string? text, List<GmailAttachmentInfo> attachments, int depth, PartCounter counter)
+    {
+        if (depth > 8 || ++counter.Count > 64) throw new GmailReadException("Gmail message has too many MIME parts.");
+        var mime = OptionalString(part, "mimeType") ?? "";
+        var filename = OptionalString(part, "filename") ?? "";
+        if (part.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.Object)
+        {
+            if (filename.Length > 0) attachments.Add(new GmailAttachmentInfo(filename, mime, OptionalInt(body, "size") ?? 0));
+            else if (body.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.String)
+            {
+                if (mime == "text/html" && html is null) html = DecodeBody(data.GetString()!);
+                else if (mime == "text/plain" && text is null) text = DecodeBody(data.GetString()!);
+            }
+        }
+        if (!part.TryGetProperty("parts", out var children)) return;
+        if (children.ValueKind != JsonValueKind.Array || children.GetArrayLength() > 64) throw new GmailReadException("Gmail returned invalid MIME parts.");
+        foreach (var child in children.EnumerateArray())
+            if (child.ValueKind == JsonValueKind.Object) ReadContentParts(child, ref html, ref text, attachments, depth + 1, counter);
+    }
+
+    private static string DecodeBody(string encoded)
+    {
+        if (encoded.Length > MaxBodyBytes * 2) throw new GmailReadException("Gmail message body exceeds the size limit.");
+        try
+        {
+            var bytes = Convert.FromBase64String(encoded.Replace('-', '+').Replace('_', '/').PadRight((encoded.Length + 3) / 4 * 4, '='));
+            if (bytes.Length > MaxBodyBytes) throw new GmailReadException("Gmail message body exceeds the size limit.");
+            return new UTF8Encoding(false, false).GetString(bytes);              // lenient: a few bad bytes must not hide the whole message
+        }
+        catch (FormatException) { throw new GmailReadException("Gmail returned an invalid message body."); }
+    }
+
+    private static string? OptionalString(JsonElement obj, string key) =>
+        obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    private static int? OptionalInt(JsonElement obj, string key) =>
+        obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : null;
+
+    private static bool ValidId(string? id) => id is { Length: >= 1 and <= 256 } &&
+        id.All(c => c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' or '-');
+
+    private static bool ValidLabelId(string? id) => id is { Length: >= 1 and <= 256 } &&
+        id.All(c => c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' or '-' or '/' or ' ' or '.');
+
+    private static bool ValidPageToken(string? token) => token is { Length: >= 1 and <= 1024 } &&
+        token.All(c => c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' or '-' or '+' or '/' or '=');
+
+    private sealed class PartCounter { public int Count; }
+}
+
+public sealed record GmailLabel(string Id, string Name, bool IsSystem, int? Total, int? Unread);
+public sealed record GmailSummary(string Id, string? ThreadId, string Subject, string From, string To, DateTimeOffset? Date, int? SizeBytes,
+    bool IsUnread, bool IsStarred, bool IsDraft, bool HasAttachments, string Snippet);
+public sealed record GmailAttachmentInfo(string FileName, string MimeType, int SizeBytes);
+public sealed record GmailContent(string? Html, string? Text, IReadOnlyList<GmailAttachmentInfo> Attachments, IReadOnlyList<GmailHeader> Headers, string? Snippet);

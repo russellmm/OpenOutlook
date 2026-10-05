@@ -1,4 +1,5 @@
 {
   "microsoftClientId": "",
-  "googleClientId": ""
+  "googleClientId": "",
+  "googleClientSecret": ""
 }

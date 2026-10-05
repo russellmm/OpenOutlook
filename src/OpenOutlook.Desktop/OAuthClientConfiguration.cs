@@ -10,11 +10,15 @@ public sealed class OAuthClientConfiguration
 
     public string? MicrosoftClientId { get; }
     public string? GoogleClientId { get; }
+    /// <summary>Google Desktop-app clients need their client secret on the token request (not confidential for installed apps).</summary>
+    public string? GoogleClientSecret { get; }
 
-    private OAuthClientConfiguration(string? microsoftClientId, string? googleClientId)
+    private OAuthClientConfiguration(string? microsoftClientId, string? googleClientId, string? googleClientSecret = null)
     {
         MicrosoftClientId = microsoftClientId;
         GoogleClientId = googleClientId;
+        GoogleClientSecret = googleClientSecret;
+        DesktopOAuth.SetClientSecret(OAuthProvider.Google, googleClientSecret);
     }
 
     public static OAuthClientConfiguration Load(string? path = null)
@@ -30,7 +34,8 @@ public sealed class OAuthClientConfiguration
                 throw new InvalidDataException("OAuth application configuration is invalid.");
             return new OAuthClientConfiguration(
                 ReadId(json.RootElement, "microsoftClientId"),
-                ReadId(json.RootElement, "googleClientId"));
+                ReadId(json.RootElement, "googleClientId"),
+                ReadId(json.RootElement, "googleClientSecret"));
         }
         catch (JsonException)
         { throw new InvalidDataException("OAuth application configuration is invalid."); }

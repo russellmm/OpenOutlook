@@ -187,7 +187,7 @@ public sealed class AccountSetupWindow : Window
             RefreshAccounts();
             _status.Text = provider == OAuthProvider.MicrosoftConsumers
                 ? $"{identity.DisplayAddress} is connected. Close this window and select a mail folder."
-                : $"{identity.DisplayAddress} is connected. Gmail mailbox display is still being built.";
+                : $"{identity.DisplayAddress} is connected. Its folders are in the folder pane (read-only for now).";
         }
         catch (OperationCanceledException) { _status.Text = "Account connection canceled."; }
         catch (SecretStoreException exception) { _status.Text = exception.Message; }

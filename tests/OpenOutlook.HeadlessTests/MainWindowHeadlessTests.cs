@@ -196,4 +196,28 @@ public sealed class MainWindowHeadlessTests
         }
         finally { window.Close(); Cleanup(copy); }
     }
+
+    [AvaloniaFact]
+    public async Task Gmail_account_appears_with_its_standard_folders_and_survives_selection()
+    {
+        // an account in the scratch registry (XDG_DATA_HOME is a temp folder, see TestAppBuilder); no network or keyring is needed to show the tree
+        new OpenOutlook.Auth.ConnectedAccountRegistry().Upsert(new OpenOutlook.Auth.ConnectedAccount(
+            OpenOutlook.Auth.OAuthProvider.Google, "gmail-account-1", "someone@gmail.test", "client", DateTimeOffset.UtcNow));
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var tree = window.FindControl<TreeView>("FolderTree")!;
+            var root = tree.Items.OfType<TreeViewItem>().Single(i => i.Tag is OpenOutlook.Auth.ConnectedAccount { Provider: OpenOutlook.Auth.OAuthProvider.Google });
+            Assert.Equal("someone@gmail.test", root.Header?.ToString());
+            var names = root.Items.OfType<TreeViewItem>().Select(i => i.Header?.ToString()).ToList();
+            foreach (var expected in new[] { "Inbox", "Starred", "Sent", "Drafts", "Spam", "Trash" }) Assert.Contains(expected, names);
+            tree.SelectedItem = root.Items.OfType<TreeViewItem>().First();      // no token available: it must fail politely, not crash
+            await WaitUntil(() => window.FindControl<TextBlock>("StatusText")!.Text?.StartsWith("Could not load", StringComparison.Ordinal) == true, 8000);
+            Shot(window, "06-gmail-tree");
+            Assert.StartsWith("Could not load", window.FindControl<TextBlock>("StatusText")!.Text);
+        }
+        finally { window.Close(); }
+    }
 }

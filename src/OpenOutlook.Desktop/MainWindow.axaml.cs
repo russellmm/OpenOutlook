@@ -559,10 +559,24 @@ public sealed partial class MainWindow : Window
         _folderRefreshCancellation?.Cancel();
         _activeMicrosoftAccount = null;
         _activeMicrosoftFolder = null;
+        _activeGmailFolder = null;
         _currentGraphMessages = null;
         _graphRows = null;
         RefreshInboxButton.IsEnabled = false;
         ExportFolderButton.IsEnabled = false;
+        if (FolderTree.SelectedItem is TreeViewItem { Tag: GmailFolderSelection gmail })
+        {
+            _activePath = null;
+            _activeFolder = null;
+            _currentMessages = null;
+            MessageList.ItemsSource = null; RefreshItemCount();
+            ClearReader();
+            _activeGmailFolder = gmail;
+            RefreshInboxButton.IsEnabled = true;
+            _onlineCancellation = new CancellationTokenSource();
+            await LoadGmailFolderAsync(gmail, version, _onlineCancellation.Token);
+            return;
+        }
         if (FolderTree.SelectedItem is TreeViewItem { Tag: MicrosoftFolderSelection online })
         {
             _activePath = null;
@@ -628,13 +642,15 @@ public sealed partial class MainWindow : Window
         await new AccountSetupWindow().ShowDialog(this);
         _activeMicrosoftAccount = null;
         _activeMicrosoftFolder = null;
+        _activeGmailFolder = null;
+        _gmailBoxes.Clear();
         _currentGraphMessages = null;
         _graphRows = null;
         Interlocked.Increment(ref _messageVersion);
         MessageList.ItemsSource = null; RefreshItemCount();
         ClearReader();
         RefreshConnectedAccounts();
-        StatusText.Text = "Account settings updated. Select a Microsoft folder to continue.";
+        StatusText.Text = "Account settings updated. Select a mailbox folder to continue.";
     }
 
     private void RefreshConnectedAccounts()
@@ -645,6 +661,7 @@ public sealed partial class MainWindow : Window
             .Where(item => item.Tag is ConnectedAccount).ToArray())
             FolderTree.Items.Remove(existing);
         _microsoftSessions.Clear();
+        _gmailBoxes.Clear();
         try
         {
             foreach (var account in _accountRegistry.Load().Where(account => account.Provider == OAuthProvider.MicrosoftConsumers))
@@ -657,6 +674,7 @@ public sealed partial class MainWindow : Window
                 FolderTree.Items.Add(root);
                 _ = LoadAccountFoldersAsync(account, root, _folderDiscoveryCancellation.Token);
             }
+            AddGmailAccountNodes();
             ApplyFolderOrder(FolderTree);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -718,8 +736,17 @@ public sealed partial class MainWindow : Window
         return session;
     }
 
-    private async void RefreshInboxClicked(object? sender, RoutedEventArgs e) =>
+    private async void RefreshInboxClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_activeGmailFolder is { } gmail)
+        {
+            _folderRefreshCancellation?.Cancel();
+            _folderRefreshCancellation = new CancellationTokenSource();
+            await LoadGmailFolderAsync(gmail, Interlocked.Increment(ref _folderVersion), _folderRefreshCancellation.Token);
+            return;
+        }
         await RefreshMicrosoftFolderAsync();
+    }
 
     private async Task RefreshMicrosoftFolderAsync()
     {
@@ -963,6 +990,11 @@ public sealed partial class MainWindow : Window
         _currentGraphAttachments = null;
         ExportAttachmentButton.IsEnabled = false;
         ExportMessageButton.IsEnabled = false;
+        if (MessageList.SelectedItem is GraphMessageListRow { Message: var gmailMessage } && _activeGmailFolder is { } gmailFolder)
+        {
+            await OpenGmailMessageAsync(gmailFolder, gmailMessage, version);
+            return;
+        }
         if (MessageList.SelectedItem is GraphMessageListRow { Message: var graphMessage } &&
             _activeMicrosoftAccount is { } account)
         {

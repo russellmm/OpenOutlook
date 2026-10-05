@@ -55,6 +55,9 @@ Found by the soak harness and SCANPST probing (rules 27-35 in the design documen
 
 Run a soak: `PstSoak clean.pst --second clean2.pst --seed 1 --ops 300 --keep out.pst`, then scan `out.pst` with SCANPST. Both inputs must be SCANPST-clean first.
 
+## Creating files (2026-10-05)
+`opst_create(path, display_name, &p)` writes a new empty Unicode PST (never overwrites; nothing is left behind on failure) and returns it open for writing; the CLI has `openpst NEW.pst create "Name"`, .NET has `PstEngineFactory.Create(path, name)`. Validated against SCANPST: the blank file and soaked files made from it (seeds 11, 12, 13, 21, 22: 150-200 operations each, 33-73 items, 8-11 folders) are NO_ERRORS, and the node set / header counters were compared with a blank file Outlook 2024 made (`blank.pst`). Rule 36 in the design document lists what the file contains and which SCANPST messages each missing node produces. Tests: `PstCreateTests` (4).
+
 ## Status
 - 8 soak seeds (300-400 operations): no checker findings; SCANPST NO_ERRORS on every result.
 - Tests: `test_write` 168 checks pass; .NET 417 pass, 6 known Windows-only failures (5 unix-permission cache tests, 1 loopback socket test); 4 headless UI tests pass.

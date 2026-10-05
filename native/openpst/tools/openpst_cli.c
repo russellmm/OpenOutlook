@@ -169,6 +169,13 @@ int main(int argc, char **argv) {
 #endif
     if (argc < 3) { usage(); return 2; }
     opst *p;
+    if (!strcmp(argv[2], "create") && argc >= 4) {                       /* openpst NEWFILE.pst create "Display name" */
+        int crc = opst_create(argv[1], argv[3], &p);
+        if (crc) { fprintf(stderr, "openpst: %s\n", opst_last_error()); return 1; }
+        printf("created %s\n", argv[1]);
+        opst_close(p);
+        return 0;
+    }
     const char *cmd0 = argv[2];
     static const char *const wcmds[] = {"rebuild", "wvalidate", "wmove", "wcopy", "wdel", "wpurge", "fcreate", "frename", "fmove", "fdelete", "fpurge", "wxcopy", "wfix", NULL};
     int wcmd = 0;

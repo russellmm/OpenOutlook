@@ -700,6 +700,20 @@ namespace OpenOutlook.PstNative
         public static IPstEngine Open(string path) => NativePstEngine.Open(path);
 
         /// <summary>
+        /// Creates a new, empty PST file (it must not exist; it is never overwritten) and returns it open for writing. The display name names the store and its
+        /// top folder. Create the mail folders with <see cref="IPstEngine.CreateFolder"/> below the folder whose NID is the top folder's.
+        /// </summary>
+        public static IPstEngine Create(string path, string displayName)
+        {
+            if (!NativeLibraryLoader.IsAvailable)
+                throw new PstCore.PstException("The native PST library is not available.");
+            var full = System.IO.Path.GetFullPath(path);
+            try { OpenPst.PstFile.Create(full, displayName).Dispose(); }
+            catch (OpenPst.PstException e) { throw new PstCore.PstException(e.Message, e); }
+            return NativePstEngine.Open(full, write: true);
+        }
+
+        /// <summary>
         /// Opens for writing. Throws <see cref="PstCore.PstException"/> when the archive is locked by another window, not writable, an
         /// ANSI / 4K-page file, or the native library is missing.
         /// </summary>

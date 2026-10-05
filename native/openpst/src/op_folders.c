@@ -10,7 +10,7 @@
 
 /* ---- text helpers ------------------------------------------------------------------------------------------------------------- */
 /* UTF-8 -> UTF-16LE; returns the number of code points or -1 when the input is not valid UTF-8 */
-static long utf8_to_utf16(const char *s, bbuf *out) {
+long utf8_to_utf16(const char *s, bbuf *out) {
     const unsigned char *p = (const unsigned char *)s;
     long cps = 0;
     while (*p) {
@@ -233,7 +233,7 @@ static int hier_set_cell(ops *o, uint32_t folder, unsigned pid, const uint8_t *r
     return rc;
 }
 
-static int set_has_sub(ops *o, uint32_t nid) {
+int set_has_sub(ops *o, uint32_t nid) {
     fchildren ch;
     int rc = fo_children(o, nid, &ch);
     if (rc) return rc;
@@ -289,18 +289,22 @@ static int replica_blob(ops *o, uint32_t folder, bbuf *out, int *found) {
 
 /* empty hierarchy / contents / FAI tables for folder nid, layouts copied from a sibling / the parent / Deleted Items; with only_missing the
    tables the folder already has are left alone */
-static int fo_make_tables(ops *o, uint32_t nid, uint32_t parent, int only_missing) {
+int fo_make_tables(ops *o, uint32_t nid, uint32_t parent, int only_missing) {
     opw *w = o->w;
     static const unsigned derived[3] = {T_HIER, T_CONT, T_FAI};
-    fchildren sib;
-    int rc = fo_children(o, parent, &sib);
-    if (rc) return rc;
     uint32_t order[1024];
     size_t norder = 0;
-    for (size_t i = 0; i < sib.n && norder < 1020; i++) if ((sib.c[i].nid & 0x1F) == 2 && sib.c[i].nid != nid) order[norder++] = sib.c[i].nid;
-    fchildren_free(&sib);
-    order[norder++] = parent;
+    int rc = 0;
+    if (parent != nid) {                                           /* the root folder (parent == itself) has no siblings to copy layouts from */
+        fchildren sib;
+        rc = fo_children(o, parent, &sib);
+        if (rc) return rc;
+        for (size_t i = 0; i < sib.n && norder < 1020; i++) if ((sib.c[i].nid & 0x1F) == 2 && sib.c[i].nid != nid) order[norder++] = sib.c[i].nid;
+        fchildren_free(&sib);
+        order[norder++] = parent;
+    }
     order[norder++] = o->deleted;
+    order[norder++] = 0x602;                                       /* the standard empty templates (nodes 0x60D / 0x60E / 0x60F) of a newly created file */
     for (int k = 0; k < 3 && !rc; k++) {
         unsigned t = derived[k];
         nbt_e have;
@@ -345,7 +349,7 @@ static int row_cell(pcprops *cells, const pcprops *mirror, unsigned pid, unsigne
 
 /* row for folder nid in its parent's hierarchy table; nm / cl are UTF-16 name and container class; mirror = the folder's properties when
    repairing an existing folder (NULL when the folder is new) */
-static int fo_add_row(ops *o, uint32_t nid, uint32_t parent, const bbuf *nm, const bbuf *cl, const pcprops *mirror) {
+int fo_add_row(ops *o, uint32_t nid, uint32_t parent, const bbuf *nm, const bbuf *cl, const pcprops *mirror) {
     opw *w = o->w;
     uint32_t hn = (parent & ~0x1Fu) | T_HIER;
     static const uint8_t z4[4] = {0, 0, 0, 0};

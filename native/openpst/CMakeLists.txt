@@ -31,7 +31,8 @@ set(OPST_SOURCES
     src/op_fix.c
     src/op_check.c
     src/op_test.c
-    src/op_msg.c)
+    src/op_msg.c
+    src/op_create.c)
 
 if(MSVC)
     add_compile_options(/W4 /utf-8 /D_CRT_SECURE_NO_WARNINGS)

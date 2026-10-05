@@ -76,6 +76,8 @@ The engine writes Unicode PST only, and Outlook's OST is a PST with different he
 ## 9a. Finding: the engine cannot create a PST yet
 `opst_*` only edits an existing PST. Nothing in the C library, the C# wrapper or the Python tools writes a blank Unicode PST (header, NBT / BBT, AMap, message store, name-to-id map, root folder, standard folders). Without that the mirror has no file to start from. Options: (a) implement `opst_create` in the C engine, validated by SCANPST like every other rule (recommended: it is the same machinery, and it also gives "New archive file"); (b) ship a blank PST made once in Outlook as a template (needs a display-name / record-key rewrite so copies are unique). Phase 1 depends on one of them.
 
+**Resolved 2026-10-05:** option (a) was built and passed SCANPST (`opst_create`, `PstEngineFactory.Create`, design rule 36); the owner also supplied a blank Outlook file for comparison.
+
 ## 9b. Progress
 - Phase 0 started: `src/OpenOutlook.Mirror` (settings with the defaults above, `MirrorLocations` for Windows / Linux default folders, per-account override, file-name safety, folder validation incl. free space, network, removable and cloud-sync warnings; `SyncStateStore` on SQLite with folders, messages, change tokens and the pending-change journal). 15 unit tests.
 - Not yet: Data Files screen, `MirrorStore` (needs a PST to open), sync adapters, journal replay.

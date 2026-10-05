@@ -249,6 +249,7 @@ openpst FILE.pst wcopy NID[,NID...] DEST_FOLDER
 openpst FILE.pst wdel NID[,NID...]
 openpst FILE.pst wpurge NID[,NID...]
 openpst FILE.pst fcreate PARENT_FOLDER "New name" [CONTAINERCLASS]
+openpst NEWFILE.pst create "Display name"        (creates a new empty PST; refuses an existing file)
 openpst FILE.pst frename FOLDER "New name"
 openpst FILE.pst fmove FOLDER DEST_PARENT
 openpst FILE.pst fdelete FOLDER

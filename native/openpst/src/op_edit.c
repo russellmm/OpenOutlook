@@ -302,6 +302,17 @@ int heap_bth_insert(hblocks *h, uint32_t key, uint32_t val) {
     if (hn < 8 || hd[0] != 0xB5 || hd[1] != 4 || hd[2] != 4) return BAD("message index BTH has an unexpected shape");
     unsigned lv = hd[3];
     uint32_t root = op_u32(hd + 4);
+    if (root == 0) {                                    /* an empty index (a newly created file): the first record becomes the root leaf */
+        uint8_t rec[8];
+        wr32(rec, key); wr32(rec + 4, val);
+        uint32_t nh = 0;
+        rc = heap_append_item(h, rec, 8, &nh);
+        if (rc) return rc;
+        rc = heap_get(h, 0x40, &hd, &hn);              /* the append may have moved the block */
+        if (rc) return rc;
+        wr32((uint8_t *)hd + 4, nh);
+        return 0;
+    }
     bthnode *path = (bthnode *)calloc(lv + 1, sizeof *path);
     if (!path) return NOMEM;
     uint32_t cur = root;

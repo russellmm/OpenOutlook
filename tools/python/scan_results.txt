@@ -1,0 +1,54 @@
+2026-10-05 13:24:20  F:/Claude/OpenOutlook/.local/scan_new2.pst ERRORS    folders=5 items=0 log:58 lines, 10 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_new2.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 5
+Items found in this file: 0
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-05 13:25:47  F:/Claude/OpenOutlook/.local/scan_new3.pst ERRORS    folders=5 items=0 log:43 lines, 2 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_new3.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 5
+Items found in this file: 0
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-05 13:26:11  F:/Claude/OpenOutlook/.local/scan_new4.pst NO_ERRORS folders=5 items=0 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_new4.pst | No errors were found in this file.
+
+Folders found in this file: 5
+Items found in this file: 0
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-05 13:27:07  F:/Claude/OpenOutlook/.local/scan_soak_out.pst NO_ERRORS folders=11 items=33 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_soak_out.pst | No errors were found in this file.
+
+Folders found in this file: 11
+Items found in this file: 33
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-05 13:27:15  F:/Claude/OpenOutlook/.local/scan_soak_out12.pst NO_ERRORS folders=8 items=37 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_soak_out12.pst | No errors were found in this file.
+
+Folders found in this file: 8
+Items found in this file: 37
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-05 13:27:23  F:/Claude/OpenOutlook/.local/scan_soak_out13.pst NO_ERRORS folders=11 items=48 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_soak_out13.pst | No errors were found in this file.
+
+Folders found in this file: 11
+Items found in this file: 48
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-05 13:28:41  F:/Claude/OpenOutlook/.local/scan_new5.pst NO_ERRORS folders=5 items=0 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_new5.pst | No errors were found in this file.
+
+Folders found in this file: 5
+Items found in this file: 0
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-05 13:28:50  F:/Claude/OpenOutlook/.local/scan_so21.pst NO_ERRORS folders=9 items=73 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_so21.pst | No errors were found in this file.
+
+Folders found in this file: 9
+Items found in this file: 73
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-05 13:28:57  F:/Claude/OpenOutlook/.local/scan_so22.pst NO_ERRORS folders=10 items=56 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_so22.pst | No errors were found in this file.
+
+Folders found in this file: 10
+Items found in this file: 56
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK

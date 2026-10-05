@@ -75,7 +75,7 @@ public partial class MainWindow
         var mirrorPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var a in all)
         {
-            var supported = a.Provider == OAuthProvider.MicrosoftConsumers;
+            var supported = a.Provider is OAuthProvider.MicrosoftConsumers or OAuthProvider.Google;
             var path = MirrorLocations.PstPathFor(settings, a.AccountId, a.DisplayAddress);
             long size = 0;
             DateTime? last = null;

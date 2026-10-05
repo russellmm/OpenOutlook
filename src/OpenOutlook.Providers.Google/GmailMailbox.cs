@@ -68,6 +68,87 @@ public sealed class GmailMailbox
         return result;
     }
 
+    /// <summary>The labels without their message counts (one request, for the local mailbox copy).</summary>
+    public async Task<IReadOnlyList<GmailLabel>> ListLabelNamesAsync(CancellationToken cancellationToken = default)
+    {
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var json = await GetJsonAsync("/labels", token, cancellationToken).ConfigureAwait(false);
+        var labels = new List<GmailLabel>();
+        if (json.RootElement.TryGetProperty("labels", out var array) && array.ValueKind == JsonValueKind.Array && array.GetArrayLength() <= 500)
+            foreach (var item in array.EnumerateArray())
+            {
+                var id = OptionalString(item, "id");
+                var name = OptionalString(item, "name");
+                if (id is null || name is null || !ValidLabelId(id)) continue;
+                labels.Add(new GmailLabel(id, name, OptionalString(item, "type") == "system", null, null));
+            }
+        return labels;
+    }
+
+    /// <summary>
+    /// Ids of the messages of a label (null = all mail) that match a Gmail search query (for example "after:2026/01/01 is:unread"), newest first, up to
+    /// <paramref name="maxMessages"/>. Only ids are read: one request per 500 messages.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ListMessageIdsAsync(string? labelId, string? query, int maxMessages = 20_000, CancellationToken cancellationToken = default)
+    {
+        if (labelId is not null && !ValidLabelId(labelId)) throw new ArgumentException("An invalid Gmail label was supplied.", nameof(labelId));
+        if (query is not null && (query.Length > 512 || query.Any(char.IsControl))) throw new ArgumentException("An invalid Gmail query was supplied.", nameof(query));
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        var ids = new List<string>();
+        string? pageToken = null;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        do
+        {
+            var qs = "?maxResults=" + Math.Min(500, maxMessages - ids.Count);
+            if (labelId is not null) qs += "&labelIds=" + Uri.EscapeDataString(labelId);
+            if (!string.IsNullOrWhiteSpace(query)) qs += "&q=" + Uri.EscapeDataString(query);
+            if (labelId is TrashLabel or SpamLabel || (query?.Contains("in:anywhere") ?? false)) qs += "&includeSpamTrash=true";
+            if (pageToken is not null) qs += "&pageToken=" + Uri.EscapeDataString(pageToken);
+            using var json = await GetJsonAsync("/messages" + qs, token, cancellationToken).ConfigureAwait(false);
+            if (json.RootElement.TryGetProperty("messages", out var messages) && messages.ValueKind == JsonValueKind.Array)
+                foreach (var item in messages.EnumerateArray())
+                    if (OptionalString(item, "id") is { } id && ValidId(id) && ids.Count < maxMessages) ids.Add(id);
+            pageToken = OptionalString(json.RootElement, "nextPageToken");
+            if (pageToken is not null && (!ValidPageToken(pageToken) || !seen.Add(pageToken)))
+                throw new GmailReadException("Gmail returned an invalid pagination token.");
+        } while (pageToken is not null && ids.Count < maxMessages);
+        return ids;
+    }
+
+    private const int MaxRawJsonBytes = 40 * 1024 * 1024;
+
+    /// <summary>The complete message as RFC 822 bytes (an .eml), up to about 30 MB.</summary>
+    public async Task<byte[]> GetRawAsync(string messageId, CancellationToken cancellationToken = default)
+    {
+        if (!ValidId(messageId)) throw new ArgumentException("An invalid Gmail message ID was supplied.", nameof(messageId));
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var request = new HttpRequestMessage(HttpMethod.Get, Root + "/messages/" + messageId + "?format=raw");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await SendRetryAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
+        if (!response.IsSuccessStatusCode) throw new GmailReadException($"Gmail read failed with HTTP {(int)response.StatusCode}.", response.StatusCode);
+        if (response.Content.Headers.ContentLength > MaxRawJsonBytes) throw new GmailReadException("The message is larger than the supported size.");
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int n;
+        while ((n = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) != 0)
+        {
+            if (buffer.Length + n > MaxRawJsonBytes) throw new GmailReadException("The message is larger than the supported size.");
+            buffer.Write(chunk, 0, n);
+        }
+        buffer.Position = 0;
+        try
+        {
+            using var json = await JsonDocument.ParseAsync(buffer, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (OptionalString(json.RootElement, "id") != messageId) throw new GmailReadException("Gmail returned a different message.");
+            var raw = OptionalString(json.RootElement, "raw") ?? throw new GmailReadException("Gmail returned a message without data.");
+            return GmailMimeBuilder.FromBase64Url(raw);
+        }
+        catch (JsonException) { throw new GmailReadException("Gmail returned invalid JSON."); }
+        catch (FormatException) { throw new GmailReadException("Gmail returned invalid message data."); }
+    }
+
     /// <summary>Newest-first message ids of one label.</summary>
     public async Task<IReadOnlyList<string>> ListLabelMessageIdsAsync(string labelId, int maxMessages = 100, CancellationToken cancellationToken = default)
     {
@@ -190,7 +271,7 @@ public sealed class GmailMailbox
         using var request = new HttpRequestMessage(HttpMethod.Post, Root + "/labels");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Content = new StringContent(JsonSerializer.Serialize(new { name, labelListVisibility = "labelShow", messageListVisibility = "show" }), Encoding.UTF8, "application/json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        using var response = await SendRetryAsync(request, cancellationToken).ConfigureAwait(false);
         if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
         if (response.StatusCode == System.Net.HttpStatusCode.Conflict) throw new GmailReadException("A Gmail label with that name already exists.", response.StatusCode);
         if (!response.IsSuccessStatusCode)
@@ -215,7 +296,7 @@ public sealed class GmailMailbox
         using var request = new HttpRequestMessage(HttpMethod.Post, Root + relativePath);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Content = new StringContent(body is null ? "" : JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        using var response = await SendRetryAsync(request, ct).ConfigureAwait(false);
         if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
         if (!response.IsSuccessStatusCode)
             throw new GmailReadException(response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized
@@ -235,7 +316,7 @@ public sealed class GmailMailbox
         var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
         using var request = new HttpRequestMessage(HttpMethod.Get, Root + "/messages/" + messageId + "/attachments/" + Uri.EscapeDataString(attachmentId));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        using var response = await SendRetryAsync(request, cancellationToken).ConfigureAwait(false);
         if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
         if (!response.IsSuccessStatusCode) throw new GmailReadException($"Gmail read failed with HTTP {(int)response.StatusCode}.", response.StatusCode);
         if (response.Content.Headers.ContentLength > MaxAttachmentJsonBytes) throw new GmailReadException("The attachment is larger than the supported size.");
@@ -299,7 +380,7 @@ public sealed class GmailMailbox
         using var request = new HttpRequestMessage(method, Root + relativePath);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        using var response = await SendRetryAsync(request, ct).ConfigureAwait(false);
         if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
         if (!response.IsSuccessStatusCode)
             throw new GmailReadException(response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized
@@ -316,6 +397,46 @@ public sealed class GmailMailbox
         id.All(c => c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' or '-' or '=' or '.');
 
     // ---- internals ----
+
+    /// <summary>
+    /// Sends a request; when Gmail answers 429, 500, 502, 503 or a 403 that says the rate limit was exceeded, waits (Retry-After, else 1, 2, 4, 8 seconds) and sends it again,
+    /// up to four more times. A burst of requests (the mailbox copy lists many labels) otherwise ends in "HTTP 403" for a minute.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendRetryAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        var body = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+        var contentType = request.Content?.Headers.ContentType;
+        for (var attempt = 0; ; attempt++)
+        {
+            HttpRequestMessage current = request;
+            if (attempt > 0)
+            {
+                current = new HttpRequestMessage(request.Method, request.RequestUri);
+                foreach (var h in request.Headers) current.Headers.TryAddWithoutValidation(h.Key, h.Value);
+                if (body is not null) { current.Content = new ByteArrayContent(body); if (contentType is not null) current.Content.Headers.ContentType = contentType; }
+            }
+            var response = await _http.SendAsync(current, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            if (attempt >= 4 || !await IsRetryableAsync(response, ct).ConfigureAwait(false)) return response;
+            var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1 << attempt);
+            if (wait > TimeSpan.FromSeconds(30)) wait = TimeSpan.FromSeconds(30);
+            response.Dispose();
+            await Task.Delay(wait, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<bool> IsRetryableAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        var code = (int)response.StatusCode;
+        if (code is 429 or 500 or 502 or 503) return true;
+        if (code != 403) return false;
+        try
+        {
+            await response.Content.LoadIntoBufferAsync().ConfigureAwait(false);
+            var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return text.Contains("rateLimitExceeded", StringComparison.OrdinalIgnoreCase) || text.Contains("userRateLimitExceeded", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException) { return false; }
+    }
 
     private async Task<string> VerifiedTokenAsync(CancellationToken ct)
     {
@@ -337,7 +458,7 @@ public sealed class GmailMailbox
         ct.ThrowIfCancellationRequested();
         using var request = new HttpRequestMessage(HttpMethod.Get, Root + relativePath);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        using var response = await SendRetryAsync(request, ct).ConfigureAwait(false);
         if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
         if (!response.IsSuccessStatusCode) throw new GmailReadException($"Gmail read failed with HTTP {(int)response.StatusCode}.", response.StatusCode);
         if (response.Content.Headers.ContentLength > MaxResponseBytes) throw new GmailReadException("Gmail response exceeds the size limit.");

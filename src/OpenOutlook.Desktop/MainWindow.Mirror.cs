@@ -57,7 +57,7 @@ public partial class MainWindow
 
     private IEnumerable<ConnectedAccount> MirrorAccounts()
     {
-        try { return _accountRegistry.Load().Where(a => a.Provider == OAuthProvider.MicrosoftConsumers).ToList(); }
+        try { return _accountRegistry.Load().Where(a => a.Provider is OAuthProvider.MicrosoftConsumers or OAuthProvider.Google).ToList(); }
         catch (Exception) { return []; }
     }
 
@@ -95,10 +95,16 @@ public partial class MainWindow
                 StatusText.Text = $"The mailbox copy of {account.DisplayAddress} cannot be opened for writing.";
                 return;
             }
-            var session = GetMicrosoftSession(account);
-            var source = new GraphMirrorSource(new GraphMailFolderReader(_graphHttp, account.AccountId), new GraphMailboxSyncReader(_graphHttp, account.AccountId),
-                new GraphInboxReader(_graphHttp, account.AccountId), ct => session.GetAccessTokenAsync(ct),
-                account.CanWriteMicrosoftMail ? new GraphMailWriter(_graphHttp, account.AccountId) : null);       // a sign-in that may only read cannot send changes back
+            IMailSyncSource source;
+            if (account.Provider == OAuthProvider.Google)
+                source = new GmailMirrorSource(GetGmailMailbox(account), account.CanModifyGmail);                  // a sign-in that may only read cannot send changes back
+            else
+            {
+                var session = GetMicrosoftSession(account);
+                source = new GraphMirrorSource(new GraphMailFolderReader(_graphHttp, account.AccountId), new GraphMailboxSyncReader(_graphHttp, account.AccountId),
+                    new GraphInboxReader(_graphHttp, account.AccountId), ct => session.GetAccessTokenAsync(ct),
+                    account.CanWriteMicrosoftMail ? new GraphMailWriter(_graphHttp, account.AccountId) : null);
+            }
             var progress = new Progress<MirrorProgress>(p =>
             {
                 if (p.Phase == "messages" && p.Total > 0) StatusText.Text = $"Updating {account.DisplayAddress}: {p.Folder} ({p.Done + 1} of {p.Total})…";
@@ -129,7 +135,8 @@ public partial class MainWindow
             _mirrorStatus[account.AccountId] = notes.Count > 0 ? summary + "; " + string.Join("; ", notes) : summary;
             StatusText.Text = $"Mailbox copy of {account.DisplayAddress}: {summary}.";
         }
-        catch (GraphMailException e) when (e.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        catch (Exception e) when ((e is GraphMailException { StatusCode: System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden }) ||
+                                  (e is OpenOutlook.Providers.Google.GmailReadException { StatusCode: System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden }))
         {
             _mirrorStatus[account.AccountId] = "sign in again from Account Settings";
             StatusText.Text = $"The mailbox copy of {account.DisplayAddress} could not be updated: sign in again from Account Settings.";

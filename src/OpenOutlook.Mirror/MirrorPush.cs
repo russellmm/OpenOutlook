@@ -9,13 +9,16 @@ public interface IMailSyncSink
     bool CanPush { get; }
     Task SetReadAsync(string messageId, bool read, CancellationToken ct);
     Task SetFlaggedAsync(string messageId, bool flagged, CancellationToken ct);
-    /// <summary>Moves a message to another folder; the server may give it a new id, which is returned.</summary>
-    Task<string> MoveAsync(string messageId, string destinationFolderId, CancellationToken ct);
-    /// <summary>Removes a message for good (it is in Deleted Items already).</summary>
+    /// <summary>Moves a message from one folder to another; the server may give it a new id (Microsoft does, Gmail keeps it), which is returned.</summary>
+    Task<string> MoveAsync(string messageId, string fromFolderId, string destinationFolderId, CancellationToken ct);
+    /// <summary>Removes a message for good (it is in Deleted Items already). Throws <see cref="PushNotSupportedException"/> when the provider cannot (Gmail without the full-access scope).</summary>
     Task PurgeAsync(string messageId, CancellationToken ct);
     /// <summary>Creates a folder (parentId null = at the top of the mailbox); returns its id.</summary>
     Task<string> CreateFolderAsync(string? parentId, string name, CancellationToken ct);
 }
+
+/// <summary>The provider cannot do what the local copy asked (for example permanent deletion). The copy keeps the change as a local-only difference and does not retry it.</summary>
+public sealed class PushNotSupportedException(string message) : Exception(message);
 
 public enum LocalChangeKind { Read, Flag, Move, Purge }
 
@@ -192,7 +195,7 @@ public static class MirrorPush
                             if (!uint.TryParse(destination[LocalPrefix.Length..], out var targetNid) || !created.TryGetValue(targetNid, out var createdId)) continue;       // its folder could not be created yet: wait
                             destination = createdId;
                         }
-                        var newId = await sink.MoveAsync(m.RemoteId, destination, ct).ConfigureAwait(false);
+                        var newId = await sink.MoveAsync(m.RemoteId, change.FolderRemoteId, destination, ct).ConfigureAwait(false);
                         state.InTransaction(() =>
                         {
                             state.DeleteMessage(m.RemoteId, change.FolderRemoteId);
@@ -204,8 +207,16 @@ public static class MirrorPush
                     }
                     case LocalChangeKind.Purge:
                     {
-                        if (change.FolderRemoteId == deletedRemote) await sink.PurgeAsync(m.RemoteId, ct).ConfigureAwait(false);
-                        else if (deletedRemote is not null) await sink.MoveAsync(m.RemoteId, deletedRemote, ct).ConfigureAwait(false);       // removed outside Deleted Items: the server keeps it in Deleted Items
+                        if (change.FolderRemoteId == deletedRemote)
+                        {
+                            try { await sink.PurgeAsync(m.RemoteId, ct).ConfigureAwait(false); }
+                            catch (PushNotSupportedException)
+                            {
+                                state.UpsertMessage(m with { PstNid = 0 });                          // stays on the server (Gmail empties Trash itself); remembered so it is not downloaded again
+                                break;
+                            }
+                        }
+                        else if (deletedRemote is not null) await sink.MoveAsync(m.RemoteId, change.FolderRemoteId, deletedRemote, ct).ConfigureAwait(false);       // removed outside Deleted Items: the server keeps it in Deleted Items
                         state.DeleteMessage(m.RemoteId, change.FolderRemoteId);
                         touched.Add(change.FolderRemoteId);
                         if (deletedRemote is not null) touched.Add(deletedRemote);

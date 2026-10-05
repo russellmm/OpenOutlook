@@ -62,7 +62,7 @@ public sealed class MirrorPushTests : IDisposable
             var (f, i) = Find(id); Messages[f][i] = Messages[f][i] with { Flagged = flagged };
             return Task.CompletedTask;
         }
-        public Task<string> MoveAsync(string id, string dest, CancellationToken ct)
+        public Task<string> MoveAsync(string id, string from, string dest, CancellationToken ct)
         {
             Check(); Calls.Add($"move {id} {dest}");
             var (f, i) = Find(id);

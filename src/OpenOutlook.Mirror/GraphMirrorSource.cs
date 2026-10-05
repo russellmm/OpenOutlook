@@ -11,7 +11,7 @@ public sealed class GraphMirrorSource(GraphMailFolderReader folders, GraphMailbo
 
     public async Task SetReadAsync(string messageId, bool read, CancellationToken ct) => await Writer.SetReadAsync(await token(ct).ConfigureAwait(false), messageId, read, ct).ConfigureAwait(false);
     public async Task SetFlaggedAsync(string messageId, bool flagged, CancellationToken ct) => await Writer.SetFlagAsync(await token(ct).ConfigureAwait(false), messageId, flagged, ct).ConfigureAwait(false);
-    public async Task<string> MoveAsync(string messageId, string destinationFolderId, CancellationToken ct) => await Writer.MoveAsync(await token(ct).ConfigureAwait(false), messageId, destinationFolderId, ct).ConfigureAwait(false);
+    public async Task<string> MoveAsync(string messageId, string fromFolderId, string destinationFolderId, CancellationToken ct) => await Writer.MoveAsync(await token(ct).ConfigureAwait(false), messageId, destinationFolderId, ct).ConfigureAwait(false);
     public async Task PurgeAsync(string messageId, CancellationToken ct) => await Writer.DeletePermanentlyAsync(await token(ct).ConfigureAwait(false), messageId, ct).ConfigureAwait(false);
     public async Task<string> CreateFolderAsync(string? parentId, string name, CancellationToken ct) => (await Writer.CreateFolderAsync(await token(ct).ConfigureAwait(false), parentId, name, ct).ConfigureAwait(false)).Id;
 

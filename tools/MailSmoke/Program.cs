@@ -109,6 +109,39 @@ if (step == "renderlive" && mAcc is not null)
     catch (Exception ex) { Console.WriteLine("FAILED: " + ex); }
     return 0;
 }
+if (step == "livegmail" && gBox is not null)
+{
+    // livegmail: mirrors the last month of Gmail into a test copy, then changes the "[OpenOutlook test" message in the copy (read, star) and checks Gmail follows
+    var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "gmail-test");
+    Directory.CreateDirectory(dir);
+    var pstPath = System.IO.Path.Combine(dir, "copy.pst");
+    using var pst = File.Exists(pstPath) ? OpenOutlook.PstNative.PstEngineFactory.Open(pstPath, true) : OpenOutlook.PstNative.PstEngineFactory.Create(pstPath, gAcc!.DisplayAddress);
+    using var st = new OpenOutlook.Mirror.SyncStateStore(System.IO.Path.ChangeExtension(pstPath, ".sync"));
+    var src = new OpenOutlook.Mirror.GmailMirrorSource(gBox, true);
+    var opts = new OpenOutlook.Mirror.MirrorSyncOptions(1);
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    async Task<OpenOutlook.Mirror.MirrorSyncResult> Go(string label) { watch.Restart(); var r = await OpenOutlook.Mirror.MirrorSyncEngine.SyncAsync(src, pst, st, opts, null, CancellationToken.None); Console.WriteLine($"{label} ({watch.Elapsed.TotalSeconds:0.0}s): {r}"); return r; }
+    await Go("first sync");
+    Console.WriteLine("folders: " + string.Join(", ", pst.AllFolders().Select(f => f.Name + "(" + f.ContentCount + ")")));
+    async Task<GmailSummary?> OnServer() { var ids = await gBox.ListMessageIdsAsync("INBOX", "after:2026/09/01", 200); return (await gBox.GetSummariesAsync(ids)).FirstOrDefault(m => m.Subject.Contains("[OpenOutlook test") && m.Subject.Contains("Gmail to self")); }
+    var inbox = pst.AllFolders().First(f => f.Name == "Inbox");
+    var local = pst.GetMessages(inbox).FirstOrDefault(m => m.Subject.Contains("[OpenOutlook test") && m.Subject.Contains("Gmail to self"));
+    if (local is null) { Console.WriteLine("test message not in the copy's Inbox"); return 1; }
+    var before = await OnServer();
+    Console.WriteLine($"gmail before: unread={before!.IsUnread} starred={before.IsStarred}");
+    pst.SetReadState(local, before.IsUnread);                     // toggle: unread -> read, read -> unread
+    pst.SetFlagged(local, !before.IsStarred);
+    await Go("after read/star change");
+    var after = await OnServer();
+    Console.WriteLine($"gmail after:  unread={after!.IsUnread} starred={after.IsStarred}  (expected unread={!before.IsUnread} starred={!before.IsStarred})");
+    local = pst.GetMessages(inbox).First(m => m.Subject.Contains("Gmail to self") && m.Subject.Contains("[OpenOutlook test"));
+    pst.SetReadState(local, !before.IsUnread);
+    pst.SetFlagged(local, before.IsStarred);
+    await Go("revert");
+    var back = await OnServer();
+    Console.WriteLine($"gmail reverted: unread={back!.IsUnread} starred={back.IsStarred}; copy scan findings {pst.Scan().Findings.Count}");
+    return 0;
+}
 if (step == "livepush" && mAcc is not null)
 {
     // livepush: syncs a test copy of the Hotmail mailbox, then changes one of the "[OpenOutlook test" messages in the copy (read, flag, move) and checks the server follows

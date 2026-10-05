@@ -6,7 +6,7 @@
  *   R3 index   messages missing from Outlook's message index (node 0xE01) are appended to the bucket of the message they were copied from
  *              (found by comparing the properties of messages with the same conversation topic); the highest-NID field is raised
  *   R4 rowver  duplicate PidTagLtpRowVer values (0x67F3) get new store-wide unique values; dwUnique is kept above all of them
- *   R5 hwm     header NID high-water marks of types 5 and 31 must cover every node and sub-node
+ *   R5 hwm     header NID high-water marks (every node type except 6, 7, 0x10) must cover every node and sub-node
  *   R6 rowcells contents-table rows lack the row-only cells 0x0E17 (message status, 0) and 0x3013 (a per-row GUID) that Outlook writes; they
  *              are added (found by repairing files whose messages were imported by this library with SCANPST)
  * "no known issues" is not "SCANPST will find nothing". */
@@ -231,7 +231,8 @@ typedef struct { uint32_t mx[32]; opw *w; } hwmctx;
 static void hwm_note(hwmctx *c, uint32_t n) {
     unsigned t = n & 0x1F;
     uint32_t i = n >> 5;
-    if ((t == 5 || t == 0x1F) && i > c->mx[t]) c->mx[t] = i;
+    if (t == 0x06 || t == 0x07 || t == 0x10) return;             /* these hold NID-shaped values / are derived from their folder: not counters */
+    if (i > c->mx[t]) c->mx[t] = i;
 }
 static void hwm_walk(hwmctx *c, uint64_t bs, int depth) {
     if (depth > 4) return;

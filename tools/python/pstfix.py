@@ -100,7 +100,7 @@ class Fixer(O.Ops):
         r4 = self._rowvers(apply)
         rep['R4 duplicate / too-high row versions'] = r4
         r5 = self._hwm(apply)
-        rep['R5 header NID high-water marks too low (types 5, 31)'] = r5
+        rep['R5 header NID high-water marks too low'] = r5
         r6 = self._rowcells(apply)
         rep['R6 rows without the row cells 0x0E17 / 0x3013'] = r6
         if apply and any(rep.values()):
@@ -186,7 +186,7 @@ class Fixer(O.Ops):
 
         def note(n):
             t, i = n & 0x1F, n >> 5
-            if t in (5, 0x1F) and i > mx.get(t, 0):
+            if t not in (6, 7, 0x10) and i > mx.get(t, 0):      # 6, 7, 0x10 hold NID-shaped values, not counters
                 mx[t] = i
 
         def walk(bs, depth=0):

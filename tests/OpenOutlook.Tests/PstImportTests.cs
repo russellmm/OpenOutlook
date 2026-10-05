@@ -177,6 +177,7 @@ public sealed class PstImportTests
             Assert.Equal(0, repaired.Fixable);
             Assert.True(repaired.Findings.Count <= before.Findings.Count);
             Assert.Equal(0, e.Repair().Fixed);                    // a second repair has nothing to do
+            Assert.DoesNotContain(repaired.Findings, l => l.Contains("higher index"));   // R5 raises the header counter of every node type
         }
         finally { Cleanup(copy); }
     }

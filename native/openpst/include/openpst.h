@@ -303,7 +303,7 @@ typedef struct opst_fix_report {
     int32_t dangling_idmap;          /* R2: ID-map records pointing at deleted nodes */
     int32_t messages_not_indexed;    /* R3: messages missing from the message index (node 0xE01) */
     int32_t row_version_issues;      /* R4: duplicate / too high PidTagLtpRowVer values */
-    int32_t nid_mark_issues;         /* R5: header NID high-water marks that are too low (sub-node types) */
+    int32_t nid_mark_issues;         /* R5: header NID high-water marks that are too low (any node type) */
     int32_t rowcell_issues;          /* R6: contents-table rows without the row-only cells 0x0E17 / 0x3013 */
 } opst_fix_report;
 OPST_API int opst_fix(opst *p, int apply, opst_fix_report *report);

@@ -35,7 +35,8 @@ cp src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll /f/Claude/OpenOut
 2. Hotmail: unread counts in the Move picker only come from the folder list loaded at startup.
 3. Google consent screen shows "Home Assistant 13" (shared project): rename it or create a separate project and swap the client id/secret.
 4. PST engine: the 3 broken tables of `test-archive.pst` are not rebuilt by any rule; ANSI/4K files are read-only; the soak harness does not cover folder rename/move; Python fixer lacks R10.
-5. Plan backlog (section 11): Calendar/People/Tasks, categories, undo/redo, address book, rules, Graph write for archive-to-mailbox, packaging for Linux, fuzzing/ASAN CI, 1 GB perf pass.
+5. Offline mailbox mirror (PST per account, user-chosen location): see `offline-mirror-plan.md`.
+6. Plan backlog (section 11): Calendar/People/Tasks, categories, undo/redo, address book, rules, Graph write for archive-to-mailbox, packaging for Linux, fuzzing/ASAN CI, 1 GB perf pass.
 6. Linux: the app starts under Xvfb in WSL; real sign-in on Linux (libsecret keyring) has not been exercised by the owner yet.
 
 ## In progress: Gmail compose / reply / forward / attachments + new compose window (2026-10-05)

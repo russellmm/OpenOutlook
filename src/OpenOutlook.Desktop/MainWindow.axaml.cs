@@ -205,6 +205,7 @@ public sealed partial class MainWindow : Window
     {
         if (await TryHandlePstFlagActionAsync(action)) return;
         if (await TryHandlePstDeleteAsync(action)) return;
+        if (await TryHandleGmailActionAsync(action)) return;
         ConnectedAccount? account = _activeMicrosoftAccount;
         if (account is null && action == "new")
         {

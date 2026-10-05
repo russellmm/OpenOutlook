@@ -71,6 +71,7 @@ public partial class MainWindow
     private async Task MoveViaDialogAsync(bool copy)
     {
         InitMessageContextMenu();
+        if (_activeGmailFolder is not null) { await MoveGmailViaDialogAsync(copy); return; }
         if (_activePath is not { } path || _activeFolder is not { } folder)
         {
             StatusText.Text = "Select a message in an archive first.";

@@ -135,6 +135,65 @@ public sealed class GmailMailbox
         return new GmailContent(html, text, attachments, headers, OptionalString(root, "snippet"));
     }
 
+    // ---- changes (need the gmail.modify scope) ----
+
+    public const string UnreadLabel = "UNREAD", StarredLabel = "STARRED", InboxLabel = "INBOX", TrashLabel = "TRASH", SpamLabel = "SPAM";
+    private const int MaxBatch = 1000;
+
+    /// <summary>Adds and removes labels on messages. In Gmail a "move" is exactly this: add the destination label, remove the current one.</summary>
+    public async Task ModifyLabelsAsync(IReadOnlyList<string> messageIds, IReadOnlyList<string> addLabels, IReadOnlyList<string> removeLabels,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(messageIds);
+        if (messageIds.Count == 0) return;
+        if (messageIds.Any(id => !ValidId(id))) throw new ArgumentException("An invalid Gmail message ID was supplied.", nameof(messageIds));
+        if (addLabels.Concat(removeLabels).Any(l => !ValidLabelId(l))) throw new ArgumentException("An invalid Gmail label was supplied.");
+        if (addLabels.Count == 0 && removeLabels.Count == 0) return;
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        if (messageIds.Count == 1)
+        {
+            await PostJsonAsync("/messages/" + messageIds[0] + "/modify", new { addLabelIds = addLabels, removeLabelIds = removeLabels }, token, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        for (var i = 0; i < messageIds.Count; i += MaxBatch)
+            await PostJsonAsync("/messages/batchModify",
+                new { ids = messageIds.Skip(i).Take(MaxBatch).ToArray(), addLabelIds = addLabels, removeLabelIds = removeLabels }, token, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task SetReadAsync(IReadOnlyList<string> messageIds, bool read, CancellationToken cancellationToken = default) =>
+        read ? ModifyLabelsAsync(messageIds, [], [UnreadLabel], cancellationToken) : ModifyLabelsAsync(messageIds, [UnreadLabel], [], cancellationToken);
+
+    public Task SetStarredAsync(IReadOnlyList<string> messageIds, bool starred, CancellationToken cancellationToken = default) =>
+        starred ? ModifyLabelsAsync(messageIds, [StarredLabel], [], cancellationToken) : ModifyLabelsAsync(messageIds, [], [StarredLabel], cancellationToken);
+
+    /// <summary>Takes messages out of the inbox (they stay in All Mail and keep their other labels).</summary>
+    public Task ArchiveAsync(IReadOnlyList<string> messageIds, CancellationToken cancellationToken = default) =>
+        ModifyLabelsAsync(messageIds, [], [InboxLabel], cancellationToken);
+
+    /// <summary>Moves messages to Trash (Gmail deletes them for good after 30 days). Permanent deletion needs a broader scope and is not offered.</summary>
+    public async Task TrashAsync(IReadOnlyList<string> messageIds, CancellationToken cancellationToken = default)
+    {
+        if (messageIds.Any(id => !ValidId(id))) throw new ArgumentException("An invalid Gmail message ID was supplied.", nameof(messageIds));
+        if (messageIds.Count == 0) return;
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var id in messageIds)
+            await PostJsonAsync("/messages/" + id + "/trash", null, token, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task PostJsonAsync(string relativePath, object? body, string token, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        using var request = new HttpRequestMessage(HttpMethod.Post, Root + relativePath);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Content = new StringContent(body is null ? "" : JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
+        if (!response.IsSuccessStatusCode)
+            throw new GmailReadException(response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized
+                ? "Gmail did not allow this change. Sign in again from Account setup to allow organizing mail."
+                : $"Gmail change failed with HTTP {(int)response.StatusCode}.", response.StatusCode);
+    }
+
     // ---- internals ----
 
     private async Task<string> VerifiedTokenAsync(CancellationToken ct)

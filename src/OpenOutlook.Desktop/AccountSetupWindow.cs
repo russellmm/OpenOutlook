@@ -73,7 +73,7 @@ public sealed class AccountSetupWindow : Window
         content.Children.Add(_provider);
         content.Children.Add(new TextBlock
         {
-            Text = "Microsoft sign-in requests access to read, organize and send mail, plus read and edit your Microsoft contacts for the planned address book. OpenOutlook sends only when you press Send. Gmail remains read-only.",
+            Text = "Microsoft sign-in requests access to read, organize and send mail, plus read and edit your Microsoft contacts for the planned address book. OpenOutlook sends only when you press Send. Gmail sign-in allows reading and organizing mail (mark read, star, archive, trash, move to labels); it cannot send.",
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -164,7 +164,7 @@ public sealed class AccountSetupWindow : Window
             _registry.Save(prior); // Check writable private metadata storage before browser authorization.
             _status.Text = "Opening your system browser. Return here after approving the requested access…";
             var scopes = provider == OAuthProvider.Google
-                ? new[] { "https://www.googleapis.com/auth/gmail.readonly" }
+                ? new[] { "https://www.googleapis.com/auth/gmail.modify" }
                 : MicrosoftAccountPermissions.PlannedPersonalScopes;
             var identity = await DesktopAccountConnector.ConnectAsync(provider, clientId, scopes,
                 SystemAuthorizationBrowser.LaunchAsync,

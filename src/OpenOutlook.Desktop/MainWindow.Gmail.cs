@@ -11,8 +11,8 @@ using OpenOutlook.Providers.Microsoft;
 namespace OpenOutlook.Desktop;
 
 /// <summary>
-/// Gmail accounts in the folder tree (labels as folders) and in the message list / reading pane. Read-only for now (the account is connected with the
-/// gmail.readonly scope): rows reuse the mailbox row type of the Microsoft accounts, but no mail action is wired to them.
+/// Gmail accounts in the folder tree (labels as folders) and in the message list / reading pane. Rows reuse the mailbox row type of the Microsoft accounts. Mark read,
+/// star, archive, trash and move (label changes) need the gmail.modify scope; composing and sending are not available yet.
 /// </summary>
 public partial class MainWindow
 {
@@ -90,7 +90,7 @@ public partial class MainWindow
             var messages = summaries.Select(ToGraphMessage).ToList();
             _currentGraphMessages = messages;
             ShowGraphMessages(messages);
-            StatusText.Text = $"{messages.Count} newest {selection.Name} messages · {selection.Account.DisplayAddress} · read-only";
+            StatusText.Text = $"{messages.Count} newest {selection.Name} messages · {selection.Account.DisplayAddress} ";
         }
         catch (OperationCanceledException) { }
         catch (GmailReadException error)
@@ -125,11 +125,163 @@ public partial class MainWindow
                 $"Attachments: {string.Join(", ", content.Attachments.Select(a => a.FileName))} (saving Gmail attachments is not available yet)";
             HideFormatBar();
             SetMessageBody(content.Html, content.Html is null ? (content.Text ?? content.Snippet ?? "") : "");
-            StatusText.Text = _richRuns is null ? "Gmail message opened read-only." : "Gmail message opened in rich-text view.";
+            StatusText.Text = _richRuns is null ? "Gmail message opened." : "Gmail message opened in rich-text view.";
+            if (!message.IsRead && folder.Account.CanModifyGmail && _options.ReadPaneMarkOnView)
+                _ = MarkGmailReadAfterViewingAsync(folder, message, version);
         }
         catch (OperationCanceledException) { }
         catch (Exception)
         { if (version == _messageVersion) StatusText.Text = "Could not read this Gmail message. Try signing in again from Account setup."; }
+    }
+
+    // ---- actions (gmail.modify) ----
+
+    private bool _gmailActionBusy;
+
+    /// <summary>Mark read / unread, star, archive and trash for the selected Gmail messages. Returns false when the current folder is not a Gmail one.</summary>
+    private async Task<bool> TryHandleGmailActionAsync(string action)
+    {
+        if (_activeGmailFolder is not { } folder) return false;
+        var account = folder.Account;
+        if (action is "new" or "reply" or "replyAll" or "forward" or "editDraft")
+        {
+            StatusText.Text = "Composing, replying and forwarding are not available for Gmail yet.";
+            return true;
+        }
+        if (action is not ("read" or "unread" or "flag" or "unflag" or "archive" or "delete"))
+        {
+            StatusText.Text = "That action is not available for Gmail yet.";
+            return true;
+        }
+        if (!account.CanModifyGmail)
+        {
+            await ExplainMailActionAsync("This Gmail sign-in is read-only. Sign in again from Account setup to allow organizing mail.", account);
+            return true;
+        }
+        var messages = MessageList.SelectedItems.OfType<GraphMessageListRow>().Select(r => r.Message).DistinctBy(m => m.Id).ToArray();
+        if (messages.Length == 0) { StatusText.Text = "Select a Gmail message first."; return true; }
+        if (_gmailActionBusy) return true;
+        if (action == "archive" && folder.LabelId != GmailMailbox.InboxLabel)
+        { StatusText.Text = "Archive takes messages out of the Inbox; this folder is not the Inbox."; return true; }
+        if (action == "delete" && folder.LabelId == GmailMailbox.TrashLabel)
+        { StatusText.Text = "Gmail removes messages from Trash by itself after 30 days; deleting them permanently is not available."; return true; }
+        var ids = messages.Select(m => m.Id).ToArray();
+        var box = GetGmailMailbox(account);
+        _gmailActionBusy = true;
+        try
+        {
+            switch (action)
+            {
+                case "read": await box.SetReadAsync(ids, true); break;
+                case "unread": await box.SetReadAsync(ids, false); break;
+                case "flag": await box.SetStarredAsync(ids, true); break;
+                case "unflag": await box.SetStarredAsync(ids, false); break;
+                case "archive": await box.ArchiveAsync(ids); break;
+                case "delete": await box.TrashAsync(ids); break;
+            }
+            // The row changes are applied to the list that is still showing this folder.
+            if (_activeGmailFolder == folder) foreach (var message in messages) ApplyCompletedMailAction(message, action);
+            StatusText.Text = action switch
+            {
+                "delete" => messages.Length == 1 ? "Message moved to Trash." : $"{messages.Length} messages moved to Trash.",
+                "archive" => messages.Length == 1 ? "Message archived." : $"{messages.Length} messages archived.",
+                _ => "Gmail updated."
+            };
+            _ = RefreshGmailCountsAsync(account);
+        }
+        catch (GmailReadException error) { StatusText.Text = error.Message; }
+        catch (OperationCanceledException) { }
+        catch (Exception) { StatusText.Text = "Gmail change failed. Check the connection and retry."; }
+        finally { _gmailActionBusy = false; }
+        return true;
+    }
+
+    private async void RibbonMoveClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_activeGmailFolder is not null || _activePath is not null) await MoveViaDialogAsync(copy: false);
+        else StatusText.Text = "Select messages in an archive or a Gmail folder to move them. Moving Microsoft mailbox messages is planned.";
+    }
+
+    private Task RefreshGmailCountsAsync(ConnectedAccount account)
+    {
+        var root = FolderTree.Items.OfType<TreeViewItem>().FirstOrDefault(i => i.Tag is ConnectedAccount a && a.AccountId == account.AccountId);
+        return root is null ? Task.CompletedTask : LoadGmailLabelsAsync(account, root, CancellationToken.None);
+    }
+
+    /// <summary>"Move to Folder..." for Gmail: a move adds the destination label and removes the current one; "copy" only adds the label (Gmail messages can carry several).</summary>
+    private async Task MoveGmailViaDialogAsync(bool copy)
+    {
+        if (_activeGmailFolder is not { } folder) return;
+        var account = folder.Account;
+        if (!account.CanModifyGmail)
+        {
+            await ExplainMailActionAsync("This Gmail sign-in is read-only. Sign in again from Account setup to allow organizing mail.", account);
+            return;
+        }
+        var messages = MessageList.SelectedItems.OfType<GraphMessageListRow>().Select(r => r.Message).DistinctBy(m => m.Id).ToArray();
+        if (messages.Length == 0) { StatusText.Text = "Select a Gmail message first."; return; }
+        var root = FolderTree.Items.OfType<TreeViewItem>().FirstOrDefault(i => i.Tag is ConnectedAccount a && a.AccountId == account.AccountId);
+        // Sent, Drafts, Starred and Important are not places to move mail to.
+        var destinations = (root?.Items.OfType<TreeViewItem>().Select(i => i.Tag).OfType<GmailFolderSelection>() ?? [])
+            .Where(d => d.LabelId != folder.LabelId && d.LabelId is not ("SENT" or "DRAFT" or "STARRED" or "IMPORTANT")).ToList();
+        if (destinations.Count == 0) { StatusText.Text = "There is no other Gmail folder to move into."; return; }
+
+        var dialog = new Window
+        {
+            Title = $"{(copy ? "Add label to" : "Move")} {(messages.Length == 1 ? "message" : $"{messages.Length} messages")}",
+            Width = 380, Height = 360, WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var list = new ListBox();
+        foreach (var d in destinations) list.Items.Add(new ListBoxItem { Content = d.Name, Tag = d });
+        var ok = new Button { Content = copy ? "Add label" : "Move", IsEnabled = false };
+        var cancel = new Button { Content = "Cancel" };
+        list.SelectionChanged += (_, _) => ok.IsEnabled = list.SelectedItem is not null;
+        ok.Click += (_, _) => dialog.Close(true);
+        cancel.Click += (_, _) => dialog.Close(false);
+        dialog.Content = new StackPanel
+        {
+            Margin = new Avalonia.Thickness(14), Spacing = 10, Children =
+            {
+                list,
+                new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, Children = { ok, cancel } }
+            }
+        };
+        if (!await dialog.ShowDialog<bool>(this) || list.SelectedItem is not ListBoxItem { Tag: GmailFolderSelection dest }) return;
+        if (_gmailActionBusy) return;
+        _gmailActionBusy = true;
+        try
+        {
+            var ids = messages.Select(m => m.Id).ToArray();
+            var box = GetGmailMailbox(account);
+            // System labels the current folder cannot lose (Spam can; Trash and the others are handled by their own call).
+            var removeCurrent = !copy && folder.LabelId is not ("SENT" or "DRAFT" or "STARRED" or "IMPORTANT" or "TRASH");
+            if (dest.LabelId == GmailMailbox.TrashLabel) await box.TrashAsync(ids);
+            else await box.ModifyLabelsAsync(ids, [dest.LabelId], removeCurrent ? [folder.LabelId] : []);
+            var leaves = dest.LabelId == GmailMailbox.TrashLabel || removeCurrent;
+            if (leaves && _activeGmailFolder == folder) foreach (var message in messages) ApplyCompletedMailAction(message, "delete");
+            StatusText.Text = copy ? $"Added the label \"{dest.Name}\"." :
+                !removeCurrent && dest.LabelId != GmailMailbox.TrashLabel ? $"Added the label \"{dest.Name}\" ({folder.Name} cannot be removed from these messages)." :
+                messages.Length == 1 ? $"Message moved to {dest.Name}." : $"{messages.Length} messages moved to {dest.Name}.";
+            _ = RefreshGmailCountsAsync(account);
+        }
+        catch (GmailReadException error) { StatusText.Text = error.Message; }
+        catch (OperationCanceledException) { }
+        catch (Exception) { StatusText.Text = "Gmail change failed. Check the connection and retry."; }
+        finally { _gmailActionBusy = false; }
+    }
+
+    /// <summary>Viewing an unread message for the reading pane's wait time marks it read in Gmail (same option as for other mailboxes).</summary>
+    private async Task MarkGmailReadAfterViewingAsync(GmailFolderSelection folder, GraphInboxMessage message, long version)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(_options.ReadPaneWaitSeconds, 0, 300)));
+            if (version != _messageVersion || _activeGmailFolder != folder || _gmailActionBusy) return;
+            await GetGmailMailbox(folder.Account).SetReadAsync([message.Id], true);
+            if (_activeGmailFolder == folder) ApplyCompletedMailAction(message, "read");
+            _ = RefreshGmailCountsAsync(folder.Account);
+        }
+        catch (Exception) { /* marking read is best effort; the message stays unread */ }
     }
 
     private static GraphInboxMessage ToGraphMessage(GmailSummary s) => new(

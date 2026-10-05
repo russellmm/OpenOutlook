@@ -1,3 +1,4 @@
+using System.Net;
 using System.Reflection;
 using Xunit;
 using Avalonia.LogicalTree;
@@ -209,7 +210,7 @@ public sealed class MainWindowHeadlessTests
         try
         {
             var tree = window.FindControl<TreeView>("FolderTree")!;
-            var root = tree.Items.OfType<TreeViewItem>().Single(i => i.Tag is OpenOutlook.Auth.ConnectedAccount { Provider: OpenOutlook.Auth.OAuthProvider.Google });
+            var root = tree.Items.OfType<TreeViewItem>().Single(i => i.Tag is OpenOutlook.Auth.ConnectedAccount { AccountId: "gmail-account-1" });
             Assert.Equal("someone@gmail.test", root.Header?.ToString());
             var names = root.Items.OfType<TreeViewItem>().Select(i => i.Header?.ToString()).ToList();
             foreach (var expected in new[] { "Inbox", "Starred", "Sent", "Drafts", "Spam", "Trash" }) Assert.Contains(expected, names);
@@ -217,6 +218,112 @@ public sealed class MainWindowHeadlessTests
             await WaitUntil(() => window.FindControl<TextBlock>("StatusText")!.Text?.StartsWith("Could not load", StringComparison.Ordinal) == true, 8000);
             Shot(window, "06-gmail-tree");
             Assert.StartsWith("Could not load", window.FindControl<TextBlock>("StatusText")!.Text);
+        }
+        finally { window.Close(); }
+    }
+
+    /// <summary>A small stateful Gmail: labels per message, changed by modify / batchModify / trash.</summary>
+    private sealed class FakeGmail(Dictionary<string, HashSet<string>> labels) : HttpMessageHandler
+    {
+        public readonly List<string> Log = [];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath.Replace("/gmail/v1/users/me", "");
+            var body = request.Content is null ? "" : request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
+            if (path != "/profile") Log.Add($"{request.Method} {path}");
+            string json;
+            if (path == "/profile") json = """{"emailAddress":"me@example.org"}""";
+            else if (path == "/labels") json = """{"labels":[]}""";
+            else if (path == "/messages" && request.Method == HttpMethod.Get)
+            {
+                var label = System.Web.HttpUtility.ParseQueryString(request.RequestUri.Query)["labelIds"];
+                json = "{\"messages\":[" + string.Join(",", labels.Where(p => p.Value.Contains(label!)).Select(p => $"{{\"id\":\"{p.Key}\"}}")) + "]}";
+            }
+            else if (path.EndsWith("/modify", StringComparison.Ordinal) || path == "/messages/batchModify")
+            {
+                var doc = System.Text.Json.JsonDocument.Parse(body).RootElement;
+                var ids = path == "/messages/batchModify" ? doc.GetProperty("ids").EnumerateArray().Select(x => x.GetString()!) : [path.Split('/')[2]];
+                foreach (var id in ids)
+                {
+                    foreach (var l in doc.GetProperty("addLabelIds").EnumerateArray()) labels[id].Add(l.GetString()!);
+                    foreach (var l in doc.GetProperty("removeLabelIds").EnumerateArray()) labels[id].Remove(l.GetString()!);
+                }
+                json = "{}";
+            }
+            else if (path.EndsWith("/trash", StringComparison.Ordinal))
+            {
+                var id = path.Split('/')[2];
+                labels[id].Remove("INBOX"); labels[id].Add("TRASH");
+                json = "{}";
+            }
+            else if (path.StartsWith("/messages/", StringComparison.Ordinal))
+            {
+                var id = path.Split('/')[2];
+                var labelsJson = string.Join(",", labels[id].Select(l => "\"" + l + "\""));
+                json = "{\"id\":\"" + id + "\",\"threadId\":\"t\",\"labelIds\":[" + labelsJson + "],\"internalDate\":\"1700000000000\",\"sizeEstimate\":1500,\"snippet\":\"snippet " + id + "\"," +
+                       "\"payload\":{\"mimeType\":\"text/plain\",\"headers\":[{\"name\":\"From\",\"value\":\"Ann <ann@example.org>\"},{\"name\":\"Subject\",\"value\":\"Subject " + id + "\"},{\"name\":\"To\",\"value\":\"me@example.org\"}]," +
+                       "\"body\":{\"data\":\"aGVsbG8\"}}}";
+            }
+            else json = "{}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"), RequestMessage = request });
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Gmail_actions_change_the_server_and_the_list()
+    {
+        var labels = new Dictionary<string, HashSet<string>>
+        {
+            ["m1"] = ["INBOX", "UNREAD"], ["m2"] = ["INBOX", "UNREAD"], ["m3"] = ["INBOX"]
+        };
+        var server = new FakeGmail(labels);
+        var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.Google, "gmail-account-2", "me@example.org", "client", DateTimeOffset.UtcNow,
+            ["https://www.googleapis.com/auth/gmail.modify"]);
+        new OpenOutlook.Auth.ConnectedAccountRegistry().Upsert(account);
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var boxes = (System.Collections.IDictionary)typeof(MainWindow).GetField("_gmailBoxes", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            boxes[account.AccountId] = new OpenOutlook.Providers.Google.GmailMailbox(new HttpClient(server), _ => ValueTask.FromResult("tok"), "me@example.org");
+            var tree = window.FindControl<TreeView>("FolderTree")!;
+            var root = tree.Items.OfType<TreeViewItem>().Single(i => i.Tag is OpenOutlook.Auth.ConnectedAccount { Provider: OpenOutlook.Auth.OAuthProvider.Google });
+            tree.SelectedItem = root.Items.OfType<TreeViewItem>().First(i => i.Header?.ToString()?.StartsWith("Inbox", StringComparison.Ordinal) == true);
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            await WaitUntil(() => list.CollectionView?.Cast<object>().Count() == 3);
+            Shot(window, "07-gmail-inbox");
+
+            object Row(string id) => list.CollectionView!.Cast<object>().Single(r => r.GetType().GetProperty("Message")!.GetValue(r)!.GetType().GetProperty("Id")!.GetValue(r.GetType().GetProperty("Message")!.GetValue(r)) as string == id);
+            async Task Act(string action)
+            {
+                await Call<Task>(window, "ExecuteMailActionAsync", action);
+                Dispatcher.UIThread.RunJobs();
+            }
+            bool IsRead(object row) => (bool)row.GetType().GetProperty("Message")!.GetValue(row)!.GetType().GetProperty("IsRead")!.GetValue(row.GetType().GetProperty("Message")!.GetValue(row))!;
+
+            list.SelectedItem = Row("m1");
+            await Act("read");
+            Assert.DoesNotContain("UNREAD", labels["m1"]);
+            Assert.True(IsRead(Row("m1")));
+            await Act("unread");
+            Assert.Contains("UNREAD", labels["m1"]);
+            await Act("flag");
+            Assert.Contains("STARRED", labels["m1"]);
+
+            list.SelectedItem = Row("m2");
+            await Act("archive");
+            Assert.DoesNotContain("INBOX", labels["m2"]);
+            await WaitUntil(() => list.CollectionView!.Cast<object>().Count() == 2);
+
+            list.SelectedItem = Row("m3");
+            await Act("delete");
+            Assert.Contains("TRASH", labels["m3"]);
+            Assert.DoesNotContain("INBOX", labels["m3"]);
+            await WaitUntil(() => list.CollectionView!.Cast<object>().Count() == 1);
+            Shot(window, "08-gmail-after-actions");
+            Assert.Contains("POST /messages/m1/modify", server.Log);
         }
         finally { window.Close(); }
     }

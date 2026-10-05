@@ -169,7 +169,7 @@
                   <!-- Move -->
                   <Border Classes="olGroup">
                     <StackPanel Orientation="Horizontal">
-                      <Button Classes="olLarge" Tag="Move" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                      <Button Classes="olLarge" Tag="Move" Click="RibbonMoveClicked" ToolTip.Tip="Move the selected messages to another folder (archives and Gmail)">
                         <StackPanel><ContentControl Template="{StaticResource OlIconMove}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Move" /></StackPanel>
                       </Button>
                       <Button Classes="olLarge" Tag="Rules" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">

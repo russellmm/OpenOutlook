@@ -6,6 +6,10 @@ namespace OpenOutlook.Auth;
 public sealed record ConnectedAccount(OAuthProvider Provider, string AccountId, string DisplayAddress,
     string ClientId, DateTimeOffset ConnectedAt, string[]? RequestedScopes = null)
 {
+    /// <summary>Gmail changes (read/unread, star, archive, trash, labels) need gmail.modify; accounts connected read-only must sign in again.</summary>
+    public bool CanModifyGmail => Provider == OAuthProvider.Google &&
+        RequestedScopes?.Any(s => s.Equals("https://www.googleapis.com/auth/gmail.modify", StringComparison.OrdinalIgnoreCase) ||
+                                  s.Equals("https://mail.google.com/", StringComparison.OrdinalIgnoreCase)) == true;
     public bool CanWriteMicrosoftMail => Provider == OAuthProvider.MicrosoftConsumers &&
         RequestedScopes?.Contains("Mail.ReadWrite", StringComparer.OrdinalIgnoreCase) == true;
     public bool CanSendMicrosoftMail => CanWriteMicrosoftMail &&

@@ -139,11 +139,13 @@ public partial class MainWindow
     /// which takes a few hundred milliseconds on big folders). Any failure falls back to the sidecar overlay.</summary>
     private async Task PersistNativeReadAsync(string key, Action persist)
     {
+        var mailbox = MessageList.SelectedItem is GraphMessageListRow ? _activeMicrosoftAccount : null;
         try
         {
             await Task.Run(persist);
             _readOverrides.Remove(key);
             PersistReadState();
+            if (mailbox is not null) await RefreshMicrosoftFolderCountsAsync(mailbox, CancellationToken.None);    // the folder's unread number follows
             return;
         }
         catch (Exception exception) when (exception is PstCore.PstException or IOException or ObjectDisposedException or InvalidOperationException or GraphMailException or System.Net.Http.HttpRequestException)

@@ -4,7 +4,7 @@ Read this first when resuming. Longer background: `native-engine-status.md` (wha
 
 ## State
 - Repo `github.com/russellmm/OpenOutlook`, work branch `native-engine-phase0`, merged to `main` after every step (both point at the same commit). The app (Avalonia 11.2.3, .NET 8) reads and writes PST files through the vendored C library `native/openpst`, and has Hotmail (Microsoft Graph) and Gmail accounts.
-- Everything below is done and pushed; the published Windows build is `F:\\Claude\\OpenOutlook_win\\OpenOutlook.Desktop.exe` (+ `openpst.dll`, `openoutlook-oauth.json`).
+- Everything below is done and pushed; the published Windows build is `F:\Claude\OpenOutlook_win\OpenOutlook.Desktop.exe` (+ `openpst.dll`, `openoutlook-oauth.json`).
 
 ## Build, test, publish, push
 ```
@@ -19,7 +19,7 @@ dotnet publish src/OpenOutlook.Desktop -c Release -r win-x64 --self-contained -p
 cp src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll /f/Claude/OpenOutlook_win/
 ```
 - Soak test of the PST engine: `tools/PstSoak` (needs two SCANPST-clean files; see the design document), SCANPST driver `tools/python/run_scanpst2.ps1 -Repair`.
-- **Push:** this repo has its own credential helper (`.git/config`, `F:\\Claude\\git-cred-ghtoken.sh`) that reads the GitHub token from `F:\\Claude\\gh_token`, so Git Credential Manager never opens a sign-in window. Use `GCM_INTERACTIVE=never GIT_TERMINAL_PROMPT=0 git push origin native-engine-phase0:main`. If a push hangs, a stuck `git-credential-manager` process is waiting for a GUI sign-in: kill it. Never commit `gh_token`, `.secrets/`, or `openoutlook-oauth.json` (all ignored).
+- **Push:** this repo has its own credential helper (`.git/config`, `F:\Claude\git-cred-ghtoken.sh`) that reads the GitHub token from `F:\Claude\gh_token`, so Git Credential Manager never opens a sign-in window. Use `GCM_INTERACTIVE=never GIT_TERMINAL_PROMPT=0 git push origin native-engine-phase0:main`. If a push hangs, a stuck `git-credential-manager` process is waiting for a GUI sign-in: kill it. Never commit `gh_token`, `.secrets/`, or `openoutlook-oauth.json` (all ignored).
 - Credentials: Google client id/secret were provided in `.secrets/` and merged into `openoutlook-oauth.json` (source tree and next to the exe). The consent screen is in Testing mode: refresh tokens last 7 days, the Gmail address must be a test user.
 
 ## Gotchas learned

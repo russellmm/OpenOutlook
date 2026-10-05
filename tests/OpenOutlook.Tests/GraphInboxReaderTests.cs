@@ -42,6 +42,29 @@ public sealed class GraphInboxReaderTests
     }
 
     [Fact]
+    public async Task DownloadsTheRawMimeMessageForTheVerifiedAccountOnly()
+    {
+        var paths = new List<string>();
+        using var http = new HttpClient(new Handler(request =>
+        {
+            paths.Add(request.RequestUri!.AbsolutePath);
+            Assert.Equal("fake-access", request.Headers.Authorization?.Parameter);
+            return request.RequestUri.AbsolutePath switch
+            {
+                "/v1.0/me" => Json("""{"id":"verified-id"}"""),
+                "/v1.0/me/messages/message-1/$value" => new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new ByteArrayContent("Subject: raw\r\n\r\nbody"u8.ToArray()) },
+                _ => throw new Exception("Unexpected Graph path")
+            };
+        }));
+        var bytes = await new GraphInboxReader(http, "verified-id").GetMessageMimeAsync("fake-access", "message-1");
+        Assert.StartsWith("Subject: raw", System.Text.Encoding.ASCII.GetString(bytes));
+        Assert.Equal(["/v1.0/me", "/v1.0/me/messages/message-1/$value"], paths);
+        await Assert.ThrowsAsync<ArgumentException>(() => new GraphInboxReader(http, "verified-id").GetMessageMimeAsync("fake-access", "bad\nid"));
+        await Assert.ThrowsAsync<GraphMailException>(() => new GraphInboxReader(http, "someone-else").GetMessageMimeAsync("fake-access", "message-1"));
+    }
+
+    [Fact]
     public async Task DifferentAccountStopsBeforeMailboxRead()
     {
         var requests = 0;

@@ -42,6 +42,7 @@ public partial class MainWindow
         if (_moveDragWired) return;
         _moveDragWired = true;
         InitMessageContextMenu();
+        InitMessageListFileDrop();
         MessageList.AddHandler(PointerPressedEvent, MessageListDragPressed, RoutingStrategies.Tunnel);
         MessageList.AddHandler(PointerMovedEvent, MessageListDragMoved, RoutingStrategies.Tunnel);
         MessageList.AddHandler(PointerReleasedEvent, (_, _) => _messageDragCandidate = false, RoutingStrategies.Tunnel);
@@ -58,9 +59,12 @@ public partial class MainWindow
         moveItem.Click += async (_, _) => await MoveViaDialogAsync(copy: false);
         var copyItem = new MenuItem { Header = "Copy to Folder\u2026" };
         copyItem.Click += async (_, _) => await MoveViaDialogAsync(copy: true);
+        var archiveItem = new MenuItem { Header = "Copy to Archive Folder\u2026" };
+        archiveItem.Click += async (_, _) => await CopyToArchiveViaDialogAsync();
         var flyout = new MenuFlyout();
         flyout.Items.Add(moveItem);
         flyout.Items.Add(copyItem);
+        flyout.Items.Add(archiveItem);
         MessageList.ContextFlyout = flyout;
     }
 
@@ -165,12 +169,24 @@ public partial class MainWindow
                 e.DragEffects = DragDropEffects.Move;
                 e.Handled = true;
             }
+            else if (item.Tag is FolderSelection fileTarget && CanAcceptFileDrop(e.Data, fileTarget.Path))
+            {
+                e.DragEffects = DragDropEffects.Copy;
+                e.Handled = true;
+            }
             else
                 e.DragEffects = DragDropEffects.None;
         });
         item.AddHandler(DragDrop.DropEvent, async (_, e) =>
         {
             if (item.Tag is not FolderSelection sel) return;
+            if (CanAcceptFileDrop(e.Data, sel.Path))
+            {
+                e.DragEffects = DragDropEffects.Copy;
+                e.Handled = true;
+                await HandleFileDropAsync(e.Data, sel.Path, sel.Folder);
+                return;
+            }
             var payload = ParseMovePayload(e.Data);
             if (payload is null || !CanAcceptMovePayload(e.Data, sel)) { e.DragEffects = DragDropEffects.None; return; }
             e.DragEffects = DragDropEffects.Move;
@@ -182,14 +198,14 @@ public partial class MainWindow
                 var menu = new MenuFlyout();
                 var moveHere = new MenuItem { Header = "Move Here" };
                 var copyHere = new MenuItem { Header = "Copy Here" };
-                moveHere.Click += async (_, _) => await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder, copy: false);
-                copyHere.Click += async (_, _) => await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder, copy: true);
+                moveHere.Click += async (_, _) => await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder, copy: false, destPath: sel.Path);
+                copyHere.Click += async (_, _) => await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder, copy: true, destPath: sel.Path);
                 menu.Items.Add(moveHere);
                 menu.Items.Add(copyHere);
                 menu.ShowAt(item); // anchored to the folder that received the drop
             }
             else
-                await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder);
+                await MoveRowsToFolderAsync(payload.Value.Path, payload.Value.SourceFolderNid, payload.Value.Nids, sel.Folder, destPath: sel.Path);
         });
     }
 
@@ -215,12 +231,17 @@ public partial class MainWindow
         var payload = ParseMovePayload(data);
         if (payload is not { } p) return false;
         if (!_stores.ContainsKey(p.Path)) return false;
-        if (p.SourceFolderNid == target.Folder.Nid) return false; // same folder - nothing to do
-        return true;
+        if (p.Path == target.Path) return p.SourceFolderNid != target.Folder.Nid;           // same folder - nothing to do
+        return _stores.TryGetValue(target.Path, out var destination) && destination.CanWrite;   // another archive: copy across (and delete for a move)
     }
 
-    private async Task MoveRowsToFolderAsync(string path, uint sourceFolderNid, uint[] nids, MailFolder destFolder, bool copy = false)
+    private async Task MoveRowsToFolderAsync(string path, uint sourceFolderNid, uint[] nids, MailFolder destFolder, bool copy = false, string? destPath = null)
     {
+        if (destPath is not null && destPath != path)
+        {
+            await CopyBetweenArchivesAsync(path, sourceFolderNid, nids, destPath, destFolder, copy);
+            return;
+        }
         var store = EnsureWritableStore(path);
         if (store is null) return;
         IReadOnlyList<MailSummary> sourceMessages;

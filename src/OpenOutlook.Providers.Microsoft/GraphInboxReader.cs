@@ -121,6 +121,42 @@ public sealed class GraphInboxReader
         return content is null ? null : new GraphMessageBody(contentType!, content);
     }
 
+    /// <summary>Largest raw message (headers, bodies and attachments as MIME) that will be downloaded for copying into an archive.</summary>
+    public const int MaxMimeBytes = 64 * 1024 * 1024;
+
+    /// <summary>
+    /// The message exactly as MIME (an .eml): GET /me/messages/{id}/$value. This is what a copy of a mailbox message into a PST archive
+    /// imports, so nothing (inline pictures, attachments, headers) depends on Graph's JSON shape.
+    /// </summary>
+    public async Task<byte[]> GetMessageMimeAsync(string accessToken, string messageId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(messageId) || messageId.Length > 2048 || messageId.Any(char.IsControl))
+            throw new ArgumentException("Invalid message ID.", nameof(messageId));
+        if (string.IsNullOrWhiteSpace(accessToken) || accessToken.Any(char.IsControl))
+            throw new GraphMailException("A valid access token is required.");
+        await VerifyAccountAsync(accessToken, cancellationToken).ConfigureAwait(false);
+        var uri = new Uri(Origin + "/me/messages/" + Uri.EscapeDataString(messageId) + "/$value");
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (response.RequestMessage?.RequestUri != uri || (int)response.StatusCode is >= 300 and < 400)
+            throw new GraphMailException("Graph redirected a message download.");
+        if (!response.IsSuccessStatusCode)
+            throw new GraphMailException($"Graph message download failed with HTTP {(int)response.StatusCode}.", response.StatusCode);
+        if (response.Content.Headers.ContentLength > MaxMimeBytes)
+            throw new GraphMailException("The message is too large to copy.");
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[64 * 1024];
+        int count;
+        while ((count = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + count > MaxMimeBytes) throw new GraphMailException("The message is too large to copy.");
+            buffer.Write(chunk, 0, count);
+        }
+        return buffer.ToArray();
+    }
+
     private async Task VerifyAccountAsync(string token, CancellationToken cancellationToken)
     {
         using var json = await GetJsonAsync(new Uri(Origin + "/me?$select=id"), token, cancellationToken)

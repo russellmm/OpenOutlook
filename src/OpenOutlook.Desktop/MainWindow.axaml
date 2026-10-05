@@ -766,8 +766,8 @@
                 <Button Classes="olBsAction" Click="BsExportFolderClicked">
                   <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconExport}" Width="18" Height="18" /><TextBlock Text="Export all messages in the selected folder (.eml each)" VerticalAlignment="Center" /></StackPanel>
                 </Button>
-                <Button Classes="olBsAction" Click="RibbonPlaceholderClicked" Tag="Import">
-                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconImportR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Import from another mail application — planned" VerticalAlignment="Center" /></StackPanel>
+                <Button Classes="olBsAction" Click="ImportClicked" Tag="Import">
+                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconImportR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Import e-mail files (.eml) into the open archive folder" VerticalAlignment="Center" /></StackPanel>
                 </Button>
               </StackPanel>
               <TextBlock Classes="olBsBody" Margin="0,24,0,0" Foreground="{DynamicResource OlTextSecondary}" Text="Archives are editable at all times. Every first write makes an automatic backup copy next to the file, and every change is verified as it is saved." />

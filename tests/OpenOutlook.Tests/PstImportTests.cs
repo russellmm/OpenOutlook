@@ -163,4 +163,43 @@ public sealed class PstImportTests
         using var e = NativePstEngine.Open(path);
         Assert.Throws<PstCore.PstException>(() => e.ImportMessages(e.AllFolders().First(f => f.Name != "Root"), [new MailImport { Subject = "x" }]));
     }
+
+    [Fact]
+    public void Messages_copy_between_two_open_archives_and_a_move_removes_the_originals()
+    {
+        var path = Fixture();
+        if (path is null) return;
+        string a = TempCopy(path), b = TempCopy(path);
+        try
+        {
+            using var src = NativePstEngine.Open(a, write: true);
+            using var dst = NativePstEngine.Open(b, write: true);
+            var beforeDst = Findings(dst);
+            var from = src.AllFolders().Where(f => f.Name != "Root" && f.ContentCount >= 2 && f.Nid != src.DeletedItemsFolder()?.Nid).OrderByDescending(f => f.ContentCount).First();
+            var into = dst.AllFolders().Where(f => f.Name != "Root" && f.Nid != dst.DeletedItemsFolder()?.Nid).OrderBy(f => f.ContentCount).First();
+            var picked = src.GetMessages(from).Take(2).ToList();
+            int count0 = into.ContentCount;
+            var copies = src.CopyMessagesTo(dst, into, picked);
+            Assert.Equal(2, copies.Count);
+            Assert.Equal(count0 + 2, into.ContentCount);
+            Assert.Equal(2, from.ContentCount - src.GetMessages(from).Count + 2);          // the originals are still there
+            var rows = dst.GetMessages(into).ToDictionary(m => m.Nid);
+            for (int i = 0; i < 2; i++)
+            {
+                var copy = rows[copies[i].Nid];
+                Assert.Equal(picked[i].Subject, copy.Subject);
+                Assert.Equal(picked[i].Received, copy.Received);
+                var open = dst.OpenMessage(copy);
+                var original = src.OpenMessage(picked[i]);
+                Assert.Equal(original.BodyText, open.BodyText);
+                Assert.Equal(original.Attachments.Select(x => (x.FileName, x.Size)), open.Attachments.Select(x => (x.FileName, x.Size)));
+            }
+            Assert.Empty(Findings(dst).Except(beforeDst));
+            // a "move" is the copy followed by deleting the originals
+            foreach (var m in picked) src.DeleteMessage(m);
+            Assert.DoesNotContain(src.GetMessages(from), m => picked.Any(p => p.Nid == m.Nid));
+            Assert.Throws<PstCore.PstException>(() => src.CopyMessagesTo(src, from, picked));
+        }
+        finally { Cleanup(a); Cleanup(b); }
+    }
 }

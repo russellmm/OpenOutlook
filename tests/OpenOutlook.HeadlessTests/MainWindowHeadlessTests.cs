@@ -330,6 +330,14 @@ public sealed class MainWindowHeadlessTests
             await Act("flag");
             Assert.Contains("STARRED", labels["m1"]);
 
+            // double-click / pop-out opens the Gmail message in its own window
+            list.SelectedItem = Row("m1");
+            var contentField = typeof(MainWindow).GetField("_gmailContent", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            await WaitUntil(() => contentField.GetValue(window) is not null, 8000);
+            await Call<Task>(window, "OpenSelectedMessageWindowAsync");
+            Assert.Equal("Message opened in a separate window.", window.FindControl<TextBlock>("StatusText")!.Text);
+            foreach (var w in ((Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime?)Application.Current?.ApplicationLifetime)?.Windows.OfType<MessageWindow>().ToList() ?? []) w.Close();
+
             list.SelectedItem = Row("m2");
             await Act("archive");
             Assert.DoesNotContain("INBOX", labels["m2"]);

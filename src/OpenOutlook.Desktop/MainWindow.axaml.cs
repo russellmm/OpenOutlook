@@ -1778,7 +1778,7 @@ public sealed partial class MainWindow : Window
         try { await _messageSelectionTask; }
         catch (Exception) { /* The selection handler reports the read failure. */ }
         if (version != _messageVersion || !ReferenceEquals(selected, MessageList.SelectedItem)) return;
-        if (_activeMessage is null && _activeGraphMessage is null)
+        if (_activeMessage is null && _activeGraphMessage is null && !(_activeGmailFolder is not null && _gmailContent is not null))
         {
             StatusText.Text = "Could not open this message. Select it again and retry.";
             return;
@@ -1788,8 +1788,10 @@ public sealed partial class MainWindow : Window
         var account = _activeMicrosoftAccount;
         var graphMessage = _activeGraphMessage;
         MessageWindow? window = null;
+        var gmailFolder = _activeGmailFolder is { Account.CanSendGmail: true } g && _gmailContent is not null && _activeGraphMessage is null && _activeMessage is null ? g : null;
         Action<string>? respond = account is not null && graphMessage is not null
-            ? action => RespondFromMessageWindow(account, graphMessage.Id, action, window!) : null;
+            ? action => RespondFromMessageWindow(account, graphMessage.Id, action, window!)
+            : gmailFolder is not null ? action => _ = ComposeGmailAsync(gmailFolder, action) : null;
         window = new MessageWindow(SubjectText.Text ?? "Message", SenderText.Text ?? "",
             RecipientText.Text ?? "", _bodyPlain, _bodyHtml, images, _showOriginalHtml, respond);
         window.Show(this);

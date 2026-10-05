@@ -82,6 +82,12 @@ public partial class MainWindow
             key = GraphMessageKey(account.AccountId, graphRow.Message.Id);
             alreadyRead = graphRow.Message.IsRead;
             apply = read => graphRow.Update(graphRow.Message with { IsRead = read });
+            if (account.CanWriteMicrosoftMail)            // opening a message marks it read in the mailbox itself, so other clients (Outlook) see it
+            {
+                var messageId = graphRow.Message.Id;
+                var writer = new GraphMailWriter(_graphHttp, account.AccountId);
+                nativePersist = () => writer.SetReadAsync(GetMicrosoftSession(account).GetAccessTokenAsync().GetAwaiter().GetResult(), messageId, true).GetAwaiter().GetResult();
+            }
         }
         if (key is null || apply is null) return;
 
@@ -140,8 +146,8 @@ public partial class MainWindow
             PersistReadState();
             return;
         }
-        catch (Exception exception) when (exception is PstCore.PstException or IOException or ObjectDisposedException or InvalidOperationException)
-        { AppLog.Error("pst-edit", exception, "native mark-read failed; using local overlay instead"); }
+        catch (Exception exception) when (exception is PstCore.PstException or IOException or ObjectDisposedException or InvalidOperationException or GraphMailException or System.Net.Http.HttpRequestException)
+        { AppLog.Error("pst-edit", exception, "mark-read could not be written to the archive or mailbox; using local overlay instead"); }
         _readOverrides[key] = true;
         PersistReadState();
     }

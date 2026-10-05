@@ -452,6 +452,14 @@ public sealed partial class MainWindow : Window
                 });
                 if (readOnlyReason is not null) _readOnlyReasons[path] = readOnlyReason; else _readOnlyReasons.Remove(path);
                 AppLog.Note("pst-engine", $"{Path.GetFileName(path)} opened with the {(store is PstStore ? "managed (read-only reader)" : "native")} engine, {(store.CanWrite ? "editable" : "read-only")}" + (readOnlyReason is null ? "" : $" ({readOnlyReason})"));
+                if (store is NativePstEngine native)
+                {
+                    native.BackgroundWriteFailed += ex =>
+                    {
+                        AppLog.Error("pst-edit", ex, "background write of read/flag changes failed");
+                        Dispatcher.UIThread.Post(() => StatusText.Text = $"Changes to {Path.GetFileName(path)} could not be saved: {ex.Message}");
+                    };
+                }
                 if (store is NativePstEngine { RecoveredFromInterruptedWrite: true })
                     AppLog.Note("pst-engine", $"{Path.GetFileName(path)}: an interrupted write was rolled back from the journal");
             }

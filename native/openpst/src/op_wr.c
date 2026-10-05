@@ -971,6 +971,7 @@ static int opw_create(opst *p, opw **out) {
     if (!w) return NOMEM;
     w->p = p;
     w->crypt = p->crypt;
+    w->reconciled = p->reconciled;          /* reconciling walks both B-trees (hundreds of ms on a multi-GB file); once per handle is enough */
     int rc = op_file_pread(p->f, w->hdr, 564, 0);
     if (rc) { free(w); return rc; }
     load_header(w);
@@ -1008,6 +1009,7 @@ int op_txn_commit(opst *p) {
         }
         return rc;
     }
+    if (p->w->reconciled) p->reconciled = 1;
     opw_free_all(p->w);
     p->w = NULL;
     return op_reload(p);

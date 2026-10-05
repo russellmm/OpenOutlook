@@ -253,4 +253,36 @@ public sealed class PstEngineContractTests
                 return;
             }
     }
+
+    [Fact]
+    public void Read_and_flag_changes_are_written_behind_in_batches_and_survive_close()
+    {
+        var path = Fixture();
+        if (path is null || !NativeLibraryLoader.IsAvailable) return;
+        var copy = TempCopy(path);
+        try
+        {
+            uint folderNid;
+            List<(uint Nid, bool Read)> expected;
+            using (var e = NativePstEngine.Open(copy, write: true))
+            {
+                var folder = e.AllFolders().Where(f => f.Name != "Root").OrderByDescending(f => f.ContentCount).First();
+                folderNid = folder.Nid;
+                var msgs = e.GetMessages(folder).Take(40).ToList();
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                foreach (var m in msgs) e.SetReadState(m, !m.IsRead);       // queued: no file write per call
+                sw.Stop();
+                Assert.True(sw.ElapsedMilliseconds < 1000, $"queueing {msgs.Count} changes took {sw.ElapsedMilliseconds} ms");
+                expected = msgs.Select(m => (m.Nid, m.IsRead)).ToList();
+                // an opened message reports the queued state even before it is on disk
+                var opened = e.OpenMessage(new MailSummary { Nid = expected[0].Nid, FolderNid = folderNid });
+                Assert.Equal(expected[0].Read, opened.Summary.IsRead);
+                // dispose flushes
+            }
+            using var r = NativePstEngine.Open(copy);
+            var rows = r.GetMessages(r.FindFolder(folderNid)!).ToDictionary(m => m.Nid);
+            foreach (var (nid, read) in expected) Assert.Equal(read, rows[nid].IsRead);
+        }
+        finally { Cleanup(copy); }
+    }
 }

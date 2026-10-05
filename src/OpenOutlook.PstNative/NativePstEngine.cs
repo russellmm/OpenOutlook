@@ -26,6 +26,16 @@ namespace OpenOutlook.PstNative
         readonly string _path;
         bool _disposed;
 
+        // Read/flag changes are write-behind: applied to the objects the UI holds at once, written to the file in one native
+        // transaction after a short idle time (a commit costs ~100 ms of fsyncs however small it is). Anything that reads or
+        // restructures the file flushes first, and so do Dispose and Flush().
+        const int FlushDelayMs = 1500;
+        readonly Dictionary<uint, (int Read, int Flag)> _pending = new Dictionary<uint, (int, int)>();
+        readonly System.Threading.Timer _flushTimer;
+
+        /// <summary>Raised on a thread-pool thread when a background (write-behind) flush fails; the changes in it were not saved.</summary>
+        public event Action<Exception>? BackgroundWriteFailed;
+
         public PstHeader Header { get; }
         public string DisplayName { get; }
         public bool CanWrite => _write;
@@ -38,6 +48,7 @@ namespace OpenOutlook.PstNative
             _file = file;
             _write = write;
             _path = path;
+            _flushTimer = new System.Threading.Timer(_ => TimerFlush(), null, Timeout.Infinite, Timeout.Infinite);
             Header = PstStore.Inspect(path);
             string name = file.DisplayName.Trim();
             DisplayName = name.Length > 0 && name.Length <= 256 && !name.Any(char.IsControl)
@@ -141,6 +152,7 @@ namespace OpenOutlook.PstNative
         {
             lock (_gate)
             {
+                FlushPending();
                 return _file.Messages(folder.Nid)
                     .Where(r => (r.Nid >> 5) != 0) // a row with node index 0 is a dangling table row, never a message
                     .Select(r => ToSummary(folder.Nid, r))
@@ -182,6 +194,11 @@ namespace OpenOutlook.PstNative
                 if (received == DateTime.MinValue) received = sent;
                 summary.IsRead = (flags & 1) != 0;
                 summary.Flagged = m.Int(0x1090) != 0;
+                if (_pending.TryGetValue(summary.Nid, out var queued))
+                {
+                    if (queued.Read >= 0) summary.IsRead = queued.Read == 1;
+                    if (queued.Flag >= 0) summary.Flagged = queued.Flag != 0;
+                }
                 string subject = CleanSubject(m.Subject);
 
                 return new MailMessage
@@ -264,6 +281,7 @@ namespace OpenOutlook.PstNative
             }
             lock (_gate)
             {
+                FlushPending();
                 IReadOnlyList<PstSearchHit> hits;
                 try { hits = _file.Search(query, PstSearchFlags.Body); }
                 catch (OpenPst.PstException e) { throw new PstCore.PstException(e.Message, e); }
@@ -287,6 +305,7 @@ namespace OpenOutlook.PstNative
         {
             lock (_gate)
             {
+                FlushPending();
                 var r = _file.Check();
                 if (r.Problems == 0) return Array.Empty<string>();
                 return r.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -315,9 +334,11 @@ namespace OpenOutlook.PstNative
             RequireWrite();
             lock (_gate)
             {
-                Wrap(() => { _file.SetMessageState(new[] { message.Nid }, read ? 1 : 0); return 0; });
+                var had = _pending.TryGetValue(message.Nid, out var q);
+                _pending[message.Nid] = (read ? 1 : 0, had ? q.Flag : -1);
                 if (message.IsRead != read) AdjustUnread(message.FolderNid, read ? -1 : 1);
                 message.IsRead = read;
+                _flushTimer.Change(FlushDelayMs, Timeout.Infinite);
             }
         }
 
@@ -326,9 +347,36 @@ namespace OpenOutlook.PstNative
             RequireWrite();
             lock (_gate)
             {
-                Wrap(() => { _file.SetMessageState(new[] { message.Nid }, -1, flagged ? 2 : 0); return 0; });
+                var had = _pending.TryGetValue(message.Nid, out var q);
+                _pending[message.Nid] = (had ? q.Read : -1, flagged ? 2 : 0);
                 message.Flagged = flagged;
+                _flushTimer.Change(FlushDelayMs, Timeout.Infinite);
             }
+        }
+
+        /// <summary>Writes queued read/flag changes now (one native transaction per distinct state). Throws when the write fails.</summary>
+        public void Flush()
+        {
+            lock (_gate) FlushPending();
+        }
+
+        void FlushPending()
+        {
+            if (_pending.Count == 0 || _disposed) return;
+            var batch = _pending.ToList();
+            _pending.Clear();
+            _flushTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            foreach (var group in batch.GroupBy(kv => kv.Value))
+            {
+                var nids = group.Select(kv => kv.Key).ToList();
+                Wrap(() => { _file.SetMessageState(nids, group.Key.Read, group.Key.Flag); return 0; });
+            }
+        }
+
+        void TimerFlush()
+        {
+            try { lock (_gate) FlushPending(); }
+            catch (Exception e) { BackgroundWriteFailed?.Invoke(e); }
         }
 
         public void MoveMessage(MailSummary message, MailFolder destFolder)
@@ -336,6 +384,7 @@ namespace OpenOutlook.PstNative
             RequireWrite();
             lock (_gate)
             {
+                FlushPending();
                 Wrap(() => { _file.MoveMessages(new[] { message.Nid }, destFolder.Nid); return 0; });
                 message.FolderNid = destFolder.Nid;
                 SyncFolders();
@@ -347,6 +396,7 @@ namespace OpenOutlook.PstNative
             RequireWrite();
             lock (_gate)
             {
+                FlushPending();
                 Wrap(() => _file.CopyMessages(new[] { message.Nid }, destFolder.Nid));
                 SyncFolders();
             }
@@ -358,6 +408,7 @@ namespace OpenOutlook.PstNative
             RequireWrite();
             lock (_gate)
             {
+                FlushPending();
                 Wrap(() => { _file.PurgeMessages(new[] { message.Nid }); return 0; });
                 SyncFolders();
             }
@@ -368,6 +419,7 @@ namespace OpenOutlook.PstNative
             RequireWrite();
             lock (_gate)
             {
+                FlushPending();
                 name = name.Trim();
                 uint nid = Wrap(() => _file.CreateFolder(parentNid, name));
                 SyncFolders();
@@ -381,6 +433,7 @@ namespace OpenOutlook.PstNative
             RequireWrite();
             lock (_gate)
             {
+                FlushPending();
                 if (!_folders.TryGetValue(folderNid, out var folder))
                     throw new PstCore.PstException("That folder is no longer present; nothing was changed.");
                 if (folderNid == _root.Nid) throw new PstCore.PstException("The root of an archive cannot be deleted.");
@@ -438,9 +491,13 @@ namespace OpenOutlook.PstNative
             lock (_gate)
             {
                 if (_disposed) return;
+                Exception? flushError = null;
+                try { FlushPending(); } catch (Exception e) { flushError = e; }
                 _disposed = true;
+                _flushTimer.Dispose();
                 _file.Dispose();
                 if (_write) PstEditLock.Release(_path);
+                if (flushError != null) BackgroundWriteFailed?.Invoke(flushError);
             }
         }
     }

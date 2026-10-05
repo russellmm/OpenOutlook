@@ -111,6 +111,7 @@ struct opst {
     uint32_t    ipm_root, deleted;
     unsigned    store_cp;
     int         writable;
+    int         reconciled;      /* the allocation maps were reconciled with the B-trees by an earlier committed transaction of this handle */
     int         recovered;           /* a leftover journal was rolled back when the file was opened */
     int         journal_pending;     /* read-only open and a journal of an interrupted write exists: the file may be inconsistent */
     struct opw *w;               /* the current write transaction, if any */

@@ -2190,7 +2190,9 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void OpenInBrowserClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_bodyHtml is not { } html) return;
+        // Available in every "View as" format: the message's HTML is what the browser shows, whatever the pane is showing now.
+        var html = _bodyHtml ?? (string.IsNullOrWhiteSpace(_formatMessage?.BodyHtml) ? null : _formatMessage!.BodyHtml);
+        if (html is null) return;
         try
         {
             var path = BrowserDocumentWriter.Write(SafeHtmlDocument.Build(html, _inlineImageBytes));
@@ -2214,7 +2216,7 @@ public sealed partial class MainWindow : Window
         PopOutMessageButton.IsVisible = _richRuns is not null || !string.IsNullOrWhiteSpace(_bodyPlain);
         InteractiveReaderButton.IsVisible = _bodyHtml is not null && !_embeddedHtmlActive;
         PrintablePdfButton.IsVisible = PopOutMessageButton.IsVisible;
-        OpenInBrowserButton.IsVisible = _bodyHtml is not null;
+        OpenInBrowserButton.IsVisible = _bodyHtml is not null || !string.IsNullOrWhiteSpace(_formatMessage?.BodyHtml);
         ReaderZoomControls.IsVisible = _bodyHtml is not null;
         ZoomSlider.IsVisible = _bodyHtml is not null;
         UpdateZoomUi();

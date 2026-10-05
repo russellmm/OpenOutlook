@@ -6,10 +6,8 @@ using PstCore;
 namespace OpenOutlook.Tests;
 
 /// <summary>
-/// Engine contract tests. The managed engine is NOT the reference: on large archives it misreads rows of big
-/// contents tables (wrong sender / dates / read state on ~10% of messages of a 13k-message archive), so the native
-/// engine is checked against the message properties themselves, and against the managed engine only where the
-/// managed engine is reliable (folder tree, message id sets).
+/// Native engine contract tests against opt-in fixtures (OPENOUTLOOK_TEST_PST, a Unicode 512-byte-page PST): rows agree with the
+/// messages' own properties, edits are persisted and leave the integrity check unchanged, locking, write-behind batching.
 /// </summary>
 public sealed class PstEngineContractTests
 {
@@ -20,30 +18,6 @@ public sealed class PstEngineContractTests
     }
 
     [Fact]
-    public void Managed_store_implements_the_engine_contract()
-    {
-        Assert.True(typeof(IPstEngine).IsAssignableFrom(typeof(PstStore)));
-        Assert.True(typeof(IPstEngine).IsAssignableFrom(typeof(NativePstEngine)));
-        // The interface must not drift from PstStore's public instance surface.
-        var engine = typeof(IPstEngine).GetMembers().Where(m => m.MemberType is MemberTypes.Method or MemberTypes.Property)
-            .Select(m => m.Name).Where(n => n != "Dispose").ToHashSet();
-        var store = typeof(PstStore).GetMembers(BindingFlags.Public | BindingFlags.Instance)
-            .Where(m => m.MemberType is MemberTypes.Method or MemberTypes.Property)
-            .Select(m => m.Name).ToHashSet();
-        Assert.Empty(engine.Except(store));
-    }
-
-    [Fact]
-    public void Managed_engine_opens_fixture_through_the_interface()
-    {
-        var path = Fixture();
-        if (path is null) return;
-        using IPstEngine engine = PstStore.Open(path, writable: false);
-        Assert.NotEmpty(engine.AllFolders());
-        Assert.NotNull(engine.Root);
-    }
-
-    [Fact]
     public void Native_library_loads_when_present_and_matches_expected_version()
     {
         if (!NativeLibraryLoader.IsAvailable) return; // native library is optional
@@ -51,26 +25,21 @@ public sealed class PstEngineContractTests
     }
 
     [Fact]
-    public void Factory_uses_native_for_reading_and_editing_and_never_writes_with_the_managed_engine()
+    public void Factory_opens_native_read_only_and_editable()
     {
         var path = Fixture();
         if (path is null || !NativeLibraryLoader.IsAvailable) return;
-        using (var ro = PstEngineFactory.Open(path, writable: false, out var why))
+        using (var ro = PstEngineFactory.Open(path))
         {
             Assert.IsType<NativePstEngine>(ro);
-            Assert.Null(why);
             Assert.False(ro.CanWrite);
         }
         var copy = TempCopy(path);
         try
         {
             using (var rw = PstEngineFactory.Open(copy, writable: true))
-            {
-                Assert.IsType<NativePstEngine>(rw);
                 Assert.True(rw.CanWrite);
-            }
             using var edit = PstEngineFactory.OpenEditable(copy, out var roWhy);
-            Assert.IsType<NativePstEngine>(edit);
             Assert.True(edit.CanWrite);
             Assert.Null(roWhy);
         }
@@ -182,29 +151,6 @@ public sealed class PstEngineContractTests
         Assert.Throws<PstCore.PstException>(() => native.SetReadState(msg, true));
         Assert.Throws<PstCore.PstException>(() => native.DeleteMessage(msg));
         Assert.Throws<PstCore.PstException>(() => native.CreateFolder(folder.Nid, "x"));
-    }
-
-    [Fact]
-    public void Native_and_managed_engines_agree_on_folders_and_message_ids()
-    {
-        var path = Fixture();
-        if (path is null || !NativeLibraryLoader.IsAvailable) return;
-        using var managed = PstStore.Open(path, writable: false);
-        using var native = NativePstEngine.Open(path);
-        var m = managed.AllFolders().ToDictionary(f => f.Nid);
-        var diffs = new List<string>();
-        foreach (var nf in native.AllFolders())
-        {
-            // Every native folder must exist in the managed tree. (The reverse is not required: the managed engine also
-            // lists folders that are missing from their parent's hierarchy table, which the native check reports.)
-            if (!m.TryGetValue(nf.Nid, out var mf)) { diffs.Add($"folder {nf.Nid:x} ({nf.Name}) missing in managed"); continue; }
-            if (nf.Name != mf.Name) diffs.Add($"folder {nf.Nid:x} name [{nf.Name}] vs [{mf.Name}]");
-            if (nf.ContentCount != mf.ContentCount) diffs.Add($"folder {nf.Nid:x} count {nf.ContentCount} vs {mf.ContentCount}");
-            var nids = native.GetMessages(nf).Select(x => x.Nid).OrderBy(x => x).ToArray();
-            var mids = managed.GetMessages(mf).Select(x => x.Nid).OrderBy(x => x).ToArray();
-            if (!nids.SequenceEqual(mids)) diffs.Add($"folder {nf.Nid:x} message ids differ: {nids.Length} vs {mids.Length}");
-        }
-        Assert.True(diffs.Count == 0, string.Join("\n", diffs.Take(20)));
     }
 
     [Fact]

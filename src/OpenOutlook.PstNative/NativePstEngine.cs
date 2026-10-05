@@ -548,63 +548,34 @@ namespace OpenOutlook.PstNative
     }
 
     /// <summary>
-    /// Opens a PST with the native OpenPST engine. The original managed engine is not used for writing: it is only a temporary
-    /// read-only reader for files the native library cannot open yet (ANSI, 4K-page) or when the native library is missing.
-    /// Set OPENOUTLOOK_ENGINE=managed to force the managed reader (read-only).
+    /// Opens a PST with the native OpenPST engine - the only PST engine (the original managed one was retired). Unicode files with
+    /// 512-byte pages can be edited; ANSI and 4K-page files (and files that are not writable or are locked by another window) open
+    /// read-only.
     /// </summary>
     public static class PstEngineFactory
     {
-        static bool ManagedForced =>
-            string.Equals(Environment.GetEnvironmentVariable("OPENOUTLOOK_ENGINE"), "managed", StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>Read-only open (native when possible).</summary>
-        public static IPstEngine Open(string path) => Open(path, writable: false, out _);
+        /// <summary>Read-only open.</summary>
+        public static IPstEngine Open(string path) => NativePstEngine.Open(path);
 
         /// <summary>
-        /// Opens for writing (native only). Throws <see cref="PstCore.PstException"/> when the archive is locked by another
-        /// window, not writable, unsupported by the native engine, or the native library is missing.
+        /// Opens for writing. Throws <see cref="PstCore.PstException"/> when the archive is locked by another window, not writable, an
+        /// ANSI / 4K-page file, or the native library is missing.
         /// </summary>
-        public static IPstEngine Open(string path, bool writable) => Open(path, writable, out _);
-
-        /// <param name="fallbackReason">Why the managed reader was used instead of the native engine (null when native was chosen).</param>
-        public static IPstEngine Open(string path, bool writable, out string? fallbackReason)
-        {
-            fallbackReason = null;
-            if (writable)
-            {
-                if (ManagedForced || !NativeLibraryLoader.IsAvailable)
-                    throw new PstCore.PstException("Editing needs the native OpenPST engine, which is not available.");
-                return NativePstEngine.Open(path, write: true);
-            }
-            if (ManagedForced) { fallbackReason = "managed reader forced by OPENOUTLOOK_ENGINE"; return PstStore.Open(path, false); }
-            if (!NativeLibraryLoader.IsAvailable) { fallbackReason = "native library unavailable"; return PstStore.Open(path, false); }
-            try { return NativePstEngine.Open(path); }
-            catch (PstCore.PstException e)
-            {
-                fallbackReason = e.Message;
-                return PstStore.Open(path, false);
-            }
-        }
+        public static IPstEngine Open(string path, bool writable) => NativePstEngine.Open(path, writable);
 
         /// <summary>
-        /// The app's normal open: editable by default (always-edit mode). When the archive cannot be opened for writing
-        /// (locked by another window, read-only file or media) it opens read-only and <paramref name="readOnlyReason"/> says why;
-        /// files the native engine does not support are opened with the temporary managed reader, read-only.
+        /// The app's normal open: editable by default (always-edit mode). When the archive cannot be opened for writing it opens
+        /// read-only and <paramref name="readOnlyReason"/> says why. Throws when the file cannot be read at all.
         /// </summary>
         public static IPstEngine OpenEditable(string path, out string? readOnlyReason)
         {
             readOnlyReason = null;
-            if (ManagedForced || !NativeLibraryLoader.IsAvailable)
-            {
-                readOnlyReason = ManagedForced ? "managed reader forced by OPENOUTLOOK_ENGINE" : "native library unavailable";
-                return PstStore.Open(path, false);
-            }
             try { return NativePstEngine.Open(path, write: true); }
             catch (PstCore.PstException writeError)
             {
+                var readOnly = NativePstEngine.Open(path);           // throws when the file is unreadable too
                 readOnlyReason = writeError.Message;
-                try { return NativePstEngine.Open(path); }
-                catch (PstCore.PstException) { return PstStore.Open(path, false); }
+                return readOnly;
             }
         }
     }

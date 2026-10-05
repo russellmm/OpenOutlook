@@ -84,22 +84,3 @@ internal static class WebUtilityLite
         return $"<html><body style=\"font-family:Segoe UI,sans-serif;font-size:14px\">{enc}</body></html>";
     }
 }
-
-internal static class MailFlags
-{
-    public const int Read = 0x0001;
-    public const int HasAttach = 0x0010;
-}
-
-internal static class StringProps
-{
-    public static string Best(PropertyBag bag, Encoding? ansi, params ushort[] ids)
-    {
-        foreach (var id in ids)
-        {
-            var s = bag.GetString(id, ansi);
-            if (!string.IsNullOrWhiteSpace(s)) return s.Trim();
-        }
-        return "";
-    }
-}

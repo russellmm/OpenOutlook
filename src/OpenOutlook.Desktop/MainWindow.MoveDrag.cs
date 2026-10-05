@@ -15,7 +15,7 @@ namespace OpenOutlook.Desktop;
 /// <summary>
 /// Drag messages onto archive folders to move them (Editing Mode only). The drop target accepts our
 /// own text payload only, checks the destination store is writable, and runs every message through
-/// PstStore.MoveMessage - the same validated re-link engine the Delete-to-Deleted-Items path uses.
+/// IPstEngine.MoveMessage - the same native re-link engine the Delete-to-Deleted-Items path uses.
 /// Read-only archives show a drop of none: no move can start against them.
 /// </summary>
 public partial class MainWindow

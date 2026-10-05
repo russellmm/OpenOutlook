@@ -451,7 +451,7 @@ public sealed partial class MainWindow : Window
                     return opened;
                 });
                 if (readOnlyReason is not null) _readOnlyReasons[path] = readOnlyReason; else _readOnlyReasons.Remove(path);
-                AppLog.Note("pst-engine", $"{Path.GetFileName(path)} opened with the {(store is PstStore ? "managed (read-only reader)" : "native")} engine, {(store.CanWrite ? "editable" : "read-only")}" + (readOnlyReason is null ? "" : $" ({readOnlyReason})"));
+                AppLog.Note("pst-engine", $"{Path.GetFileName(path)} opened, {(store.CanWrite ? "editable" : "read-only")}" + (readOnlyReason is null ? "" : $" ({readOnlyReason})"));
                 if (store is NativePstEngine native)
                 {
                     native.BackgroundWriteFailed += ex =>

@@ -1,8 +1,7 @@
 namespace PstCore;
 
 /// <summary>
-/// The PST engine contract the UI codes against. <see cref="PstStore"/> (managed) implements it today; a native
-/// OpenPST-backed engine will implement it in a later phase. Members mirror <see cref="PstStore"/> exactly.
+/// The PST engine contract the UI codes against. The native OpenPST library implements it (OpenOutlook.PstNative.NativePstEngine).
 /// </summary>
 public interface IPstEngine : IDisposable
 {

@@ -15,6 +15,7 @@ set(OPST_SOURCES
     src/op_platform.c
     src/op_util.c
     src/op_ndb.c
+    src/op_inflate.c
     src/op_ltp.c
     src/op_rtf.c
     src/op_search.c
@@ -72,6 +73,12 @@ if(OPST_BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_basic.c)
     add_executable(test_basic tests/test_basic.c)
     target_link_libraries(test_basic PRIVATE openpst_static)
     add_test(NAME basic COMMAND test_basic)
+endif()
+
+if(OPST_BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_formats.c)
+    add_executable(test_formats tests/test_formats.c)
+    target_link_libraries(test_formats PRIVATE openpst_static)
+    add_test(NAME formats COMMAND test_formats)
 endif()
 
 if(OPST_BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_write.c)

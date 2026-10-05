@@ -25,6 +25,7 @@ int op_heap_get(const opheap *h, uint32_t hid, const uint8_t **d, size_t *n) {
     static const uint8_t empty[1] = {0};
     unsigned idx = (hid >> 5) & 0x7FF;
     size_t blk = hid >> 16;
+    if (h->p->fmt == OP_FMT_UNI4K) blk >>= 3;        /* 4K files: every data block (up to 64 KB) is one heap page and takes 8 block indexes */
     if (idx == 0) { *d = empty; *n = 0; return 0; }
     if (blk >= h->bl.n) return op_err(OPST_E_FORMAT, "HID 0x%x: heap block missing", hid);
     const opbuf *b = &h->bl.b[blk];
@@ -170,7 +171,7 @@ int op_pc_value(oppc *pc, oppc_prop *pr) {
 }
 
 /* ---- table context ------------------------------------------------------------------------------------------------- */
-typedef struct { uint32_t *id, *ix; size_t n, cap; } rowvec;
+typedef struct { uint32_t *id, *ix; size_t n, cap; unsigned ce; } rowvec;     /* ce: width of a row index (4; 2 in ANSI files) */
 static int row_cb(void *ctx, const uint8_t *k, const uint8_t *v) {
     rowvec *rv = (rowvec *)ctx;
     if (rv->n == rv->cap) {
@@ -183,13 +184,14 @@ static int row_cb(void *ctx, const uint8_t *k, const uint8_t *v) {
         rv->ix = b; rv->cap = nc;
     }
     rv->id[rv->n] = op_u32(k);
-    rv->ix[rv->n] = op_u32(v);
+    rv->ix[rv->n] = rv->ce == 2 ? op_u16(v) : op_u32(v);
     rv->n++;
     return 0;
 }
 
 int op_tc_open(opst *p, const opnode *node, optc *tc) {
     memset(tc, 0, sizeof *tc);
+    tc->blkmax = p->blk_data_max ? p->blk_data_max : 8176;
     int rc = op_heap_open(p, node, &tc->heap);
     if (rc) return rc;
     if (tc->heap.client_sig != 0x7C) {
@@ -213,10 +215,14 @@ int op_tc_open(opst *p, const opnode *node, optc *tc) {
         tc->cols[i].ibdata = op_u16(c + 4); tc->cols[i].cbdata = c[6]; tc->cols[i].ibit = c[7];
     }
     if (hnid_rows == 0 || hid_rowindex == 0 || tc->rowsize == 0) return 0;
-    rowvec rv = {NULL, NULL, 0, 0};
+    rowvec rv = {NULL, NULL, 0, 0, 4};
     unsigned ck, ce;
+    {
+        const uint8_t *bh; size_t bn;
+        if (op_heap_get(&tc->heap, hid_rowindex, &bh, &bn) == 0 && bn >= 8 && bh[0] == 0xB5 && bh[2] == 2) rv.ce = 2;
+    }
     rc = op_bth_walk(&tc->heap, hid_rowindex, &ck, &ce, row_cb, &rv);
-    if (rc == 0 && (ck != 4 || ce != 4)) rc = op_err(OPST_E_FORMAT, "unexpected row index BTH geometry on node 0x%x", node->nid);
+    if (rc == 0 && (ck != 4 || (ce != 4 && ce != 2))) rc = op_err(OPST_E_FORMAT, "unexpected row index BTH geometry on node 0x%x", node->nid);
     if (rc) { free(rv.id); free(rv.ix); op_tc_close(tc); return rc; }
     tc->rowid = rv.id; tc->rowidx = rv.ix; tc->nrows = rv.n;
     if ((hnid_rows & 0x1F) == 0) {
@@ -248,7 +254,7 @@ const uint8_t *op_tc_row(const optc *tc, size_t i) {
         if (off + tc->rowsize > tc->rowheap_n) return NULL;
         return tc->rowheap + off;
     }
-    uint32_t rpb = (8192 - 16) / tc->rowsize;
+    uint32_t rpb = tc->blkmax / tc->rowsize;
     if (rpb == 0) return NULL;
     size_t bi = ridx / rpb;
     uint64_t off = (uint64_t)(ridx % rpb) * tc->rowsize;

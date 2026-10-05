@@ -669,8 +669,8 @@ int opw_add_block(opw *w, const uint8_t *data, size_t cb, int internal, unsigned
     if (rc) return rc;
     uint8_t *buf = (uint8_t *)calloc(1, size);
     if (!buf) return NOMEM;
-    if (w->crypt == 1 && !internal) for (size_t i = 0; i < cb; i++) buf[i] = w->mpbb_r[data[i]];
-    else if (cb) memcpy(buf, data, cb);
+    if (cb) memcpy(buf, data, cb);
+    if (!internal) op_crypt_block(w->crypt, 1, buf, cb, (uint32_t)bid);
     uint8_t *t = buf + size - 16;
     wr16(t, (unsigned)cb); wr16(t + 2, sig_of(ib, bid)); wr32(t + 4, op_crc(buf, cb)); wr64(t + 8, bid);
     rc = opw_write(w, ib, buf, size);

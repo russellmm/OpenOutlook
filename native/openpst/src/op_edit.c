@@ -559,10 +559,7 @@ static int leaf_rec(opw *w, uint64_t bid, hblocks *out, int depth) {
     int rc = opw_read_block_raw(w, bid, &raw);
     if (rc) return rc;
     if (!(bid & 2)) {
-        if (w->crypt == 1) {
-            const uint8_t *t = op_mpbb_table();
-            for (size_t i = 0; i < raw.n; i++) raw.p[i] = t[raw.p[i]];
-        }
+        op_crypt_block(w->crypt, 0, raw.p, raw.n, (uint32_t)bid);
         return hb_push(out, raw.p, raw.n);
     }
     if (raw.n < 8 || raw.p[0] != 1) { free(raw.p); return BAD("expected an XBLOCK"); }

@@ -410,6 +410,10 @@ static int check_rowvers(chk *c, ops *o, const tabvec *tabs) {
 int opst_check(opst *p, opst_check_report *rep, char *text, size_t text_cap) {
     if (!p || !rep) return op_err(OPST_E_ARG, "null argument");
     memset(rep, 0, sizeof *rep);
+    if (p->fmt != OP_FMT_UNI512) {            /* the checks walk the Unicode 512-byte-page structures */
+        if (text && text_cap) snprintf(text, text_cap, "the integrity check is not available for ANSI and 4K-page files\n");
+        return 0;
+    }
     bbuf out = {0};
     chk c = {&out, rep};
     ops o;

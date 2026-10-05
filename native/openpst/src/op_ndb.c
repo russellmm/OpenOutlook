@@ -25,19 +25,42 @@ static int bbt_push(opst *p, const op_bbt_ent *e) {
     return 0;
 }
 
+/* one B-tree page. Layouts: Unicode 512 - 488 bytes of entries, cEnt/cEntMax/cbEnt/cLevel at 488, trailer at 496 (CRC over 496);
+   ANSI - 496 bytes of entries, counts at 496, trailer at 500 (CRC at 508 over the first 500 bytes), 32-bit fields;
+   Unicode 4K - 4056 bytes of entries, 16-bit cEnt/cEntMax at 4056, cbEnt/cLevel at 4060, trailer at 4072 (CRC over 4072). */
 static int load_tree(opst *p, uint64_t ib, uint8_t ptype, int nbt, int depth) {
-    uint8_t page[512];
+    uint8_t page[4096];
+    size_t psz = p->fmt == OP_FMT_UNI4K ? 4096 : 512;
     if (depth > 8) return op_err(OPST_E_FORMAT, "B-tree too deep");
-    if (ib + 512 > p->fsize) return op_err(OPST_E_FORMAT, "B-tree page at 0x%llx is outside the file", (unsigned long long)ib);
-    int rc = op_file_pread(p->f, page, 512, ib);
+    if (ib + psz > p->fsize) return op_err(OPST_E_FORMAT, "B-tree page at 0x%llx is outside the file", (unsigned long long)ib);
+    int rc = op_file_pread(p->f, page, psz, ib);
     if (rc) return rc;
-    if (page[496] != ptype || page[497] != ptype) return op_err(OPST_E_FORMAT, "B-tree page type mismatch at 0x%llx", (unsigned long long)ib);
-    if (op_u32(page + 500) != op_crc(page, 496)) p->page_crc_errors++;
-    unsigned cent = page[488], cbent = page[490], clevel = page[491];
-    if (cbent < 24 || cent * cbent > 488) return op_err(OPST_E_FORMAT, "bad B-tree page at 0x%llx", (unsigned long long)ib);
+    unsigned cent, cbent, clevel, esz_area, toff, crc_off, crc_len;
+    if (p->fmt == OP_FMT_ANSI)        { cent = page[496]; cbent = page[498]; clevel = page[499]; esz_area = 496; toff = 500; crc_off = 508; crc_len = 500; }
+    else if (p->fmt == OP_FMT_UNI4K)  { cent = op_u16(page + 4056); cbent = page[4060]; clevel = page[4061]; esz_area = 4056; toff = 4072; crc_off = 4076; crc_len = 4072; }
+    else                              { cent = page[488]; cbent = page[490]; clevel = page[491]; esz_area = 488; toff = 496; crc_off = 500; crc_len = 496; }
+    if (page[toff] != ptype || page[toff + 1] != ptype) return op_err(OPST_E_FORMAT, "B-tree page type mismatch at 0x%llx", (unsigned long long)ib);
+    if (op_u32(page + crc_off) != op_crc(page, crc_len)) p->page_crc_errors++;
+    unsigned minent = p->fmt == OP_FMT_ANSI ? 12 : 24;
+    if (cbent < minent || cent * cbent > esz_area) return op_err(OPST_E_FORMAT, "bad B-tree page at 0x%llx", (unsigned long long)ib);
     for (unsigned i = 0; i < cent; i++) {
         const uint8_t *e = page + i * cbent;
-        if (clevel > 0) {
+        if (p->fmt == OP_FMT_ANSI) {
+            if (clevel > 0) {                                    /* BTENTRY: key(4) bid(4) ib(4) */
+                rc = load_tree(p, op_u32(e + 8), ptype, nbt, depth + 1);
+                if (rc) return rc;
+            } else if (nbt) {                                    /* NBTENTRY: nid(4) bidData(4) bidSub(4) nidParent(4) */
+                op_nbt_ent n;
+                n.nid = op_u32(e); n.bd = op_u32(e + 4); n.bs = op_u32(e + 8); n.parent = op_u32(e + 12);
+                rc = nbt_push(p, &n);
+                if (rc) return op_err(rc, "out of memory");
+            } else {                                             /* BBTENTRY: bid(4) ib(4) cb(2) cRef(2) */
+                op_bbt_ent b;
+                b.bid = op_u32(e) & ~(uint64_t)1; b.ib = op_u32(e + 4); b.cb = op_u16(e + 8);
+                rc = bbt_push(p, &b);
+                if (rc) return op_err(rc, "out of memory");
+            }
+        } else if (clevel > 0) {
             rc = load_tree(p, op_u64(e + 16), ptype, nbt, depth + 1);
             if (rc) return rc;
         } else if (nbt) {
@@ -98,8 +121,26 @@ int op_read_raw(opst *p, uint64_t bid, opbuf *out) {
     if (!out->p) return op_err(OPST_E_NOMEM, "out of memory");
     out->n = e->cb;
     int rc = op_file_pread(p->f, out->p, e->cb, e->ib);
-    if (rc) { free(out->p); out->p = NULL; out->n = 0; }
-    return rc;
+    if (rc) { free(out->p); out->p = NULL; out->n = 0; return rc; }
+    if (p->fmt == OP_FMT_UNI4K && e->cb >= 2) {
+        /* 4K files keep a 24-byte trailer at the end of the 512-aligned block: cb(2) sig(2) crc(4) bid(8) flags(2) cbUncompressed(2) pad(4).
+           A block whose cbUncompressed differs from cb is a zlib stream (starts 0x78) that inflates to cbUncompressed bytes. */
+        uint8_t t[24];
+        uint64_t tot = ((uint64_t)e->cb + 24 + 511) / 512 * 512;
+        if (e->ib + tot <= p->fsize && op_file_pread(p->f, t, 24, e->ib + tot - 24) == 0) {
+            unsigned unc = op_u16(t + 18);
+            if (unc && unc != e->cb && out->p[0] == 0x78) {
+                uint8_t *u = (uint8_t *)malloc(unc);
+                if (!u) { free(out->p); out->p = NULL; out->n = 0; return op_err(OPST_E_NOMEM, "out of memory"); }
+                if (op_zinflate(out->p, e->cb, u, unc) != 0) {
+                    free(u); free(out->p); out->p = NULL; out->n = 0;
+                    return op_err(OPST_E_FORMAT, "block 0x%llx is compressed and cannot be decompressed", (unsigned long long)bid);
+                }
+                free(out->p); out->p = u; out->n = unc;
+            }
+        }
+    }
+    return 0;
 }
 
 static int blocks_push(opblocks *bl, opbuf b) {
@@ -115,16 +156,16 @@ static int blocks_rec(opst *p, uint64_t bid, opblocks *bl, int depth) {
     int rc = op_read_raw(p, bid, &b);
     if (rc) return rc;
     if (!(bid & 2)) {
-        if (p->crypt == 1) for (size_t i = 0; i < b.n; i++) b.p[i] = op_mpbb_i[b.p[i]];
+        op_crypt_block(p->crypt, 0, b.p, b.n, (uint32_t)bid);
         rc = blocks_push(bl, b);
         if (rc) { free(b.p); return op_err(rc, "out of memory"); }
         return 0;
     }
     if (depth > 3 || b.n < 8 || b.p[0] != 1) { free(b.p); return op_err(OPST_E_FORMAT, "expected an XBLOCK for block 0x%llx", (unsigned long long)bid); }
-    unsigned cent = op_u16(b.p + 2);
-    if (8 + (size_t)cent * 8 > b.n) { free(b.p); return op_err(OPST_E_FORMAT, "XBLOCK 0x%llx is truncated", (unsigned long long)bid); }
+    unsigned cent = op_u16(b.p + 2), bw = p->fmt == OP_FMT_ANSI ? 4 : 8;      /* width of a BID */
+    if (8 + (size_t)cent * bw > b.n) { free(b.p); return op_err(OPST_E_FORMAT, "XBLOCK 0x%llx is truncated", (unsigned long long)bid); }
     for (unsigned i = 0; i < cent; i++) {
-        rc = blocks_rec(p, op_u64(b.p + 8 + 8 * i), bl, depth + 1);
+        rc = blocks_rec(p, bw == 4 ? op_u32(b.p + 8 + 4 * i) : op_u64(b.p + 8 + 8 * i), bl, depth + 1);
         if (rc) { free(b.p); return rc; }
     }
     free(b.p);
@@ -161,10 +202,11 @@ static int subs_rec(opst *p, uint64_t bid, opsubs *s, size_t *cap, int depth) {
     if (rc) return rc;
     if (depth > 3 || b.n < 8 || b.p[0] != 2) { free(b.p); return op_err(OPST_E_FORMAT, "expected an SLBLOCK/SIBLOCK for block 0x%llx", (unsigned long long)bid); }
     unsigned clevel = b.p[1], cent = op_u16(b.p + 2);
-    size_t esz = clevel == 0 ? 24 : 16;
-    if (8 + (size_t)cent * esz > b.n) { free(b.p); return op_err(OPST_E_FORMAT, "subnode block 0x%llx is truncated", (unsigned long long)bid); }
+    int ansi = p->fmt == OP_FMT_ANSI;                      /* 4-byte fields, no padding after the 4-byte header */
+    size_t esz = ansi ? (clevel == 0 ? 12 : 8) : (clevel == 0 ? 24 : 16), hdr = ansi ? 4 : 8;
+    if (hdr + (size_t)cent * esz > b.n) { free(b.p); return op_err(OPST_E_FORMAT, "subnode block 0x%llx is truncated", (unsigned long long)bid); }
     for (unsigned i = 0; i < cent; i++) {
-        const uint8_t *e = b.p + 8 + esz * i;
+        const uint8_t *e = b.p + hdr + esz * i;
         if (clevel == 0) {
             if (s->n == *cap) {
                 size_t nc = *cap ? *cap * 2 : 16;
@@ -173,9 +215,10 @@ static int subs_rec(opst *p, uint64_t bid, opsubs *s, size_t *cap, int depth) {
                 s->e = t; *cap = nc;
             }
             opsub *d = &s->e[s->n++];
-            d->nid = (uint32_t)(op_u64(e) & 0xFFFFFFFFu); d->bd = op_u64(e + 8); d->bs = op_u64(e + 16);
+            if (ansi) { d->nid = op_u32(e); d->bd = op_u32(e + 4); d->bs = op_u32(e + 8); }
+            else { d->nid = (uint32_t)(op_u64(e) & 0xFFFFFFFFu); d->bd = op_u64(e + 8); d->bs = op_u64(e + 16); }
         } else {
-            rc = subs_rec(p, op_u64(e + 8), s, cap, depth + 1);
+            rc = subs_rec(p, ansi ? op_u32(e + 4) : op_u64(e + 8), s, cap, depth + 1);
             if (rc) { free(b.p); return rc; }
         }
     }
@@ -237,13 +280,21 @@ static int load_all(opst *p) {
     if (rc) return rc;
     if (memcmp(p->header, "!BDN", 4) != 0) return op_err(OPST_E_FORMAT, "not a PST file (bad signature)");
     p->ver = op_u16(p->header + 10);
-    if (p->ver < 23) return op_err(OPST_E_UNSUPPORTED, "ANSI PST files (wVer=%u) are not supported", p->ver);
-    if (p->ver >= 36) return op_err(OPST_E_UNSUPPORTED, "4K-page PST files (wVer=%u) are not supported", p->ver);
-    p->crypt = p->header[0x201];
-    if (p->crypt != 0 && p->crypt != 1) return op_err(OPST_E_UNSUPPORTED, "encryption method %d is not supported", p->crypt);
-    rc = load_tree(p, op_u64(p->header + 224), 0x81, 1, 0);
+    uint64_t nbt_ib, bbt_ib;
+    if (p->ver == 14 || p->ver == 15) {                  /* ANSI: ROOT at 0xA4, 32-bit fields, bCryptMethod at 0x1CD */
+        p->fmt = OP_FMT_ANSI; p->blk_data_max = 8180;
+        nbt_ib = op_u32(p->header + 0xA4 + 24); bbt_ib = op_u32(p->header + 0xA4 + 32);
+        p->crypt = p->header[0x1CD];
+    } else if (p->ver >= 23) {                           /* Unicode: ROOT at 0xB4; 4K pages from wVer 36 */
+        p->fmt = p->ver >= 36 ? OP_FMT_UNI4K : OP_FMT_UNI512;
+        p->blk_data_max = p->fmt == OP_FMT_UNI4K ? 65512 : 8176;
+        nbt_ib = op_u64(p->header + 224); bbt_ib = op_u64(p->header + 240);
+        p->crypt = p->header[0x201];
+    } else return op_err(OPST_E_UNSUPPORTED, "unsupported PST version (wVer=%u)", p->ver);
+    if (p->crypt != 0 && p->crypt != 1 && p->crypt != 2) return op_err(OPST_E_UNSUPPORTED, "encryption method 0x%02x is not supported (Windows Information Protection?)", p->crypt);
+    rc = load_tree(p, nbt_ib, 0x81, 1, 0);
     if (rc) return rc;
-    rc = load_tree(p, op_u64(p->header + 240), 0x80, 0, 0);
+    rc = load_tree(p, bbt_ib, 0x80, 0, 0);
     if (rc) return rc;
     op_qsort(p->nbt, p->nnbt, sizeof *p->nbt, cmp_nbt);
     op_qsort(p->bbt, p->nbbt, sizeof *p->bbt, cmp_bbt);
@@ -253,6 +304,27 @@ static int load_all(opst *p) {
 
 int op_reload(opst *p) { return load_all(p); }
 const uint8_t *op_mpbb_table(void) { return op_mpbb_i; }
+
+/* MS-PST 5.1 (permutation: decode with mpbbI, encode with mpbbR) and 5.2 (cyclic, a symmetric cipher keyed by the low DWORD of the block's BID) */
+void op_crypt_block(int method, int encode, uint8_t *p, size_t n, uint32_t key) {
+    if (method == 1) {
+        const uint8_t *t = encode ? op_mpbb_R : op_mpbb_i;
+        for (size_t i = 0; i < n; i++) p[i] = t[p[i]];
+    } else if (method == 2) {
+        uint16_t w = (uint16_t)(key ^ (key >> 16));
+        for (size_t i = 0; i < n; i++, w++) {
+            uint8_t b = p[i];
+            b = (uint8_t)(b + (uint8_t)w);
+            b = op_mpbb_R[b];
+            b = (uint8_t)(b + (uint8_t)(w >> 8));
+            b = op_mpbb_S[b];
+            b = (uint8_t)(b - (uint8_t)(w >> 8));
+            b = op_mpbb_i[b];
+            b = (uint8_t)(b - (uint8_t)w);
+            p[i] = b;
+        }
+    }
+}
 int op_journal_recover(const char *path, int *recovered);      /* op_wr.c */
 
 int opst_open(const char *path, unsigned flags, opst **out) {
@@ -281,6 +353,12 @@ int opst_open(const char *path, unsigned flags, opst **out) {
     }
     rc = load_all(p);
     if (rc) { opst_close(p); return rc; }
+    if (writable && p->fmt != OP_FMT_UNI512) {
+        int ver = (int)p->ver;
+        opst_close(p);
+        return op_err(OPST_E_UNSUPPORTED, "%s PST files (wVer=%d) can be read but not edited; editing supports Unicode files with 512-byte pages (wVer 23)",
+                      ver >= 36 ? "4K-page" : "ANSI", ver);
+    }
     *out = p;
     return 0;
 }
@@ -305,6 +383,11 @@ int opst_verify(opst *p, opst_verify_report *rep, char *text, size_t cap) {
     size_t tl = 0;
     if (text && cap) text[0] = 0;
 #define NOTE(...) do { rep->problems++; if (text && tl + 1 < cap) { int w_ = snprintf(text + tl, cap - tl, __VA_ARGS__); if (w_ > 0) tl += (size_t)w_ < cap - tl ? (size_t)w_ : cap - tl - 1; } } while (0)
+    if (p->fmt != OP_FMT_UNI512) {            /* ANSI / 4K: only the B-tree page CRCs, which the loader already counted */
+        rep->blocks = p->nbbt;
+        if (p->page_crc_errors) { rep->crc_errors += p->page_crc_errors; NOTE("%llu B-tree page CRC mismatches\n", (unsigned long long)p->page_crc_errors); }
+        return 0;
+    }
     const uint8_t *h = p->header;
     if (op_u32(h + 4) != op_crc(h + 8, 471)) NOTE("header partial CRC mismatch\n");
     if (op_u32(h + 0x20C) != op_crc(h + 8, 516)) NOTE("header full CRC mismatch\n");

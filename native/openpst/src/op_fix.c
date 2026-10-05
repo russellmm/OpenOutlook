@@ -415,6 +415,7 @@ int opst_fix(opst *p, int apply, opst_fix_report *rep) {
     opst_fix_report local;
     if (!p) return op_err(OPST_E_ARG, "null argument");
     if (!rep) rep = &local;
+    if (p->fmt != OP_FMT_UNI512) return op_err(OPST_E_UNSUPPORTED, "the fixer supports Unicode files with 512-byte pages only");
     ops o;
     int rc;
     if (apply) {

@@ -49,7 +49,7 @@ namespace OpenOutlook.PstNative
             _write = write;
             _path = path;
             _flushTimer = new System.Threading.Timer(_ => TimerFlush(), null, Timeout.Infinite, Timeout.Infinite);
-            Header = PstStore.Inspect(path);
+            Header = ReadHeader(path);
             string name = file.DisplayName.Trim();
             DisplayName = name.Length > 0 && name.Length <= 256 && !name.Any(char.IsControl)
                 ? name : System.IO.Path.GetFileNameWithoutExtension(path);
@@ -86,6 +86,35 @@ namespace OpenOutlook.PstNative
             }
         }
 
+        /// <summary>The file header, read here (not through the managed engine) so that ANSI, 4K-page and OST files work too.</summary>
+        static PstHeader ReadHeader(string path)
+        {
+            var b = new byte[0x240];
+            using (var fs = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete))
+            {
+                int got = 0, n;
+                while (got < b.Length && (n = fs.Read(b, got, b.Length - got)) > 0) got += n;
+                if (got < 0x210) throw new PstCore.PstException("File is too small to be a PST.");
+            }
+            ushort wVer = BitConverter.ToUInt16(b, 10);
+            bool unicode = wVer >= 23;
+            return new PstHeader
+            {
+                Path = path,
+                Format = unicode ? PstFormatKind.Unicode : PstFormatKind.Ansi,
+                WVer = wVer,
+                WVerClient = BitConverter.ToUInt16(b, 12),
+                CryptMethod = (PstCryptMethod)(unicode ? b[0x201] : b[0x1CD]),
+                FileEof = unicode ? BitConverter.ToUInt64(b, 0xB4 + 4) : BitConverter.ToUInt32(b, 0xA4 + 4),
+                NbtRootBid = unicode ? BitConverter.ToUInt64(b, 0xB4 + 36) : BitConverter.ToUInt32(b, 0xA4 + 20),
+                NbtRootIb = unicode ? BitConverter.ToUInt64(b, 0xB4 + 44) : BitConverter.ToUInt32(b, 0xA4 + 24),
+                BbtRootBid = unicode ? BitConverter.ToUInt64(b, 0xB4 + 52) : BitConverter.ToUInt32(b, 0xA4 + 28),
+                BbtRootIb = unicode ? BitConverter.ToUInt64(b, 0xB4 + 60) : BitConverter.ToUInt32(b, 0xA4 + 32),
+                AMapValid = unicode ? b[0xB4 + 68] : b[0xA4 + 36],
+                Unique = BitConverter.ToUInt32(b, 0x28),
+            };
+        }
+
         void Load(MailFolder parent)
         {
             foreach (var f in _file.Children(parent.Nid))
@@ -118,7 +147,7 @@ namespace OpenOutlook.PstNative
 
         static string CleanSubject(string s) => string.IsNullOrWhiteSpace(s) ? "(no subject)" : s.Trim();
 
-        static MailSummary ToSummary(uint folderNid, PstMessageRow r)
+        static MailSummary ToSummary(uint folderNid, PstMessageRow r, string? from = null)
         {
             var nid = r.Nid;
             if ((nid & 0x1F) != 4) nid = (nid & 0xFFFFFFE0) | 4;
@@ -129,7 +158,7 @@ namespace OpenOutlook.PstNative
                 Nid = nid,
                 FolderNid = folderNid,
                 Subject = CleanSubject(r.Subject),
-                From = r.Sender,
+                From = from ?? r.Sender,
                 To = r.To,
                 Received = received == DateTime.MinValue ? sent : received,
                 Sent = sent,
@@ -148,14 +177,30 @@ namespace OpenOutlook.PstNative
             catch (OpenPst.PstException e) { throw new PstCore.PstException($"Message 0x{nid:X} could not be opened: {e.Message}", e); }
         }
 
+        string SenderOf(PstMessageRow r)
+        {
+            try
+            {
+                using var m = _file.OpenMessage(r.Nid);
+                var name = m.SenderName.Trim();
+                if (name.Length == 0) name = (m.Str(0x0042) ?? "").Trim();
+                if (name.Length == 0) name = m.SenderEmail.Trim();
+                return name;
+            }
+            catch (OpenPst.PstException) { return r.Sender; }
+        }
+
         public IReadOnlyList<MailSummary> GetMessages(MailFolder folder)
         {
             lock (_gate)
             {
                 FlushPending();
+                // 4K-page (OST) tables carry a bogus sender column (it points at the message's change key), so the sender is read
+                // from the message itself there; everywhere else the table row is right.
+                bool fromMessage = Header.WVer >= 36;
                 return _file.Messages(folder.Nid)
                     .Where(r => (r.Nid >> 5) != 0) // a row with node index 0 is a dangling table row, never a message
-                    .Select(r => ToSummary(folder.Nid, r))
+                    .Select(r => ToSummary(folder.Nid, r, fromMessage ? SenderOf(r) : null))
                     .OrderByDescending(m => m.Received == DateTime.MinValue ? m.Sent : m.Received)
                     .ToList();
             }

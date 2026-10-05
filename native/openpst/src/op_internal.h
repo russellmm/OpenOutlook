@@ -93,15 +93,28 @@ void   op_arr_free(void *arr);
 /* convert an offset stored in a pointer field to a real pointer */
 #define OP_FIX(l, field) ((field) = (const char *)((l)->pool + (size_t)(uintptr_t)(field)))
 
+/* zlib (RFC 1950) -> exactly `want` bytes; 0 on success, -1 on any error (op_inflate.c) */
+int op_zinflate(const uint8_t *in, size_t n, uint8_t *out, size_t want);
+
+/* block encryption: method 0 none, 1 permutation, 2 cyclic (keyed by the low 32 bits of the block's BID); in place */
+void op_crypt_block(int method, int encode, uint8_t *p, size_t n, uint32_t key);
+
 /* ---- NDB layer ----------------------------------------------------------------------------------------------- */
 typedef struct { uint32_t nid; uint32_t parent; uint64_t bd, bs; } op_nbt_ent;
 typedef struct { uint64_t bid; uint64_t ib; uint16_t cb; } op_bbt_ent;
+
+/* file formats: only OP_FMT_UNI512 can be written; the other two are read-only */
+#define OP_FMT_UNI512 0       /* Unicode, 512-byte pages (wVer 23) */
+#define OP_FMT_ANSI   1       /* ANSI, 32-bit BIDs and file offsets (wVer 14, 15) */
+#define OP_FMT_UNI4K  2       /* Unicode, 4096-byte pages and 24-byte trailers (wVer 36, 37) */
 
 struct opst {
     opfile     *f;
     char       *path;
     uint64_t    fsize;
     unsigned    ver;
+    int         fmt;             /* OP_FMT_xxx */
+    unsigned    blk_data_max;    /* largest data block payload: 8176 (Unicode), 8180 (ANSI), 65512 (4K) */
     int         crypt;
     uint8_t     header[564];
     op_nbt_ent *nbt;  size_t nnbt, capnbt;
@@ -179,6 +192,7 @@ typedef struct {
     uint32_t   *rowid;
     uint32_t   *rowidx;
     opblocks    rowblocks;  int rows_in_sub;
+    unsigned    blkmax;                      /* data block payload size of the file (rows per block = blkmax / rowsize) */
     const uint8_t *rowheap;  size_t rowheap_n;
 } optc;
 int  op_tc_open(opst *p, const opnode *node, optc *tc);

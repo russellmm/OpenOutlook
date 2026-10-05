@@ -321,6 +321,7 @@ int xc_copy(ops *dst, opst *srcp, const uint32_t *nids, size_t n, uint32_t dest,
 int opst_msgs_copy_to(opst *src, const uint32_t *nids, size_t n, opst *dst, uint32_t dest, uint32_t *new_nids) {
     if (!src || !dst || (!nids && n)) return op_err(OPST_E_ARG, "null argument");
     if (!dst->writable) return op_err(OPST_E_STATE, "the destination file was opened read-only (use OPST_OPEN_WRITE)");
+    if (src->fmt != OP_FMT_UNI512) return op_err(OPST_E_UNSUPPORTED, "copying out of ANSI and 4K-page files is not supported yet");
     if (op_path_same(src->path, dst->path)) return op_err(OPST_E_ARG, "source and destination are the same file (use opst_msgs_copy)");
     ops o;
     int rc = ops_begin(dst, &o);

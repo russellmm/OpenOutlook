@@ -142,7 +142,7 @@ static int put_receive_table(ops *o) {
     if (!rc) { wr32(b, OP_NID_ROOT); rc = tc_set_cell(&t, 0, tc_col(&t, 0x6605), b, 4); }
     if (!rc) { wr32(b, 1); rc = tc_set_cell(&t, 0, tc_col(&t, 0x67F2), b, 4); }
     if (!rc) { wr32(b, ops_next_row_ver(o)); rc = tc_set_cell(&t, 0, tc_col(&t, 0x67F3), b, 4); }
-    hblocks heap, rows;
+    hblocks heap = {0, 0}, rows = {0, 0};
     uint32_t rn = 0;
     if (!rc) rc = tc_build(&t, &heap, &rows, &rn);
     uint64_t bd = 0, bs = 0;

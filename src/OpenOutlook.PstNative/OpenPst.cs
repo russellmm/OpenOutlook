@@ -86,7 +86,7 @@ namespace OpenPst
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern void opst_free_hits(IntPtr arr);
 
         [StructLayout(LayoutKind.Sequential)] internal struct PurgeStats { public int folders, messages; }
-        [StructLayout(LayoutKind.Sequential)] internal struct FixReport { public int rows_without_ids, dangling_idmap, messages_not_indexed, row_version_issues, nid_mark_issues, rowcell_issues, amap_issues, folder_issues, refs_issues, rowsync_issues; }
+        [StructLayout(LayoutKind.Sequential)] internal struct FixReport { public int rows_without_ids, dangling_idmap, messages_not_indexed, row_version_issues, nid_mark_issues, rowcell_issues, amap_issues, folder_issues, refs_issues, rowsync_issues, table_issues; }
         [StructLayout(LayoutKind.Sequential)] internal struct CheckReport { public int problems, refs, nids, tables, idmap, xblocks, rowver, subnodes, rowcells, amap, folders; }
 
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_recovered(IntPtr p);
@@ -203,7 +203,7 @@ namespace OpenPst
         public List<PstImportRecipient> Recipients { get; } = new List<PstImportRecipient>();
         public List<PstImportAttachment> Attachments { get; } = new List<PstImportAttachment>();
     }
-    public sealed record PstFixReport(int RowsWithoutIds, int DanglingIdMapRecords, int MessagesNotIndexed, int RowVersionIssues, int NidMarkIssues, int RowCellIssues = 0, int AmapIssues = 0, int FolderIssues = 0, int RefsIssues = 0, int RowSyncIssues = 0)
+    public sealed record PstFixReport(int RowsWithoutIds, int DanglingIdMapRecords, int MessagesNotIndexed, int RowVersionIssues, int NidMarkIssues, int RowCellIssues = 0, int AmapIssues = 0, int FolderIssues = 0, int RefsIssues = 0, int RowSyncIssues = 0, int TableIssues = 0)
     {
         public int Total => RowsWithoutIds + DanglingIdMapRecords + MessagesNotIndexed + RowVersionIssues + NidMarkIssues;
     }
@@ -541,7 +541,7 @@ namespace OpenPst
         {
             var r = new Native.FixReport();
             Native.Check(Native.opst_fix(H, apply ? 1 : 0, ref r));
-            return new PstFixReport(r.rows_without_ids, r.dangling_idmap, r.messages_not_indexed, r.row_version_issues, r.nid_mark_issues, r.rowcell_issues, r.amap_issues, r.folder_issues, r.refs_issues, r.rowsync_issues);
+            return new PstFixReport(r.rows_without_ids, r.dangling_idmap, r.messages_not_indexed, r.row_version_issues, r.nid_mark_issues, r.rowcell_issues, r.amap_issues, r.folder_issues, r.refs_issues, r.rowsync_issues, r.table_issues);
         }
 
         /// <summary>Read-only scan-style checks (a stand-in for much of SCANPST). <see cref="PstCheckResult.Text"/> has one line per finding.</summary>

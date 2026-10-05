@@ -313,6 +313,7 @@ typedef struct opst_fix_report {
     int32_t folder_issues;           /* R8: incomplete folders and hierarchy rows that do not mirror their folder */
     int32_t refs_issues;             /* R9: orphan blocks and blocks with a wrong reference count */
     int32_t rowsync_issues;          /* R10: contents-table row cells (size, flags, delivery time) that differ from the message */
+    int32_t table_issues;            /* R11: contents rows of messages that do not exist or live in another folder, and folder counts that differ from the rows */
 } opst_fix_report;
 OPST_API int opst_fix(opst *p, int apply, opst_fix_report *report);
 

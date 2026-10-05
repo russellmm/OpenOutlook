@@ -302,7 +302,7 @@ int row_fill_missing(tctx *tc, size_t r, pcprops *mp, int apply) {
         unsigned pid = tc->cols[c].pid, pt = tc->cols[c].ptype;
         int skipit = 0;
         for (size_t k = 0; k < sizeof skip / sizeof *skip; k++) if (skip[k] == pid) skipit = 1;
-        if (skipit || tc->rows[r].present[c]) continue;
+        if (skipit || (tc->rows[r].present[c] && tc->rows[r].cell[c].n)) continue;           /* an empty cell is a missing one when the message has a value */
         pcprop *p = pcprops_find(mp, pid);
         const uint8_t *val = NULL;
         size_t vn = 0;
@@ -321,6 +321,128 @@ int row_fill_node(opw *w, tctx *tc, uint32_t rowid) {
     int ri = tc_find(tc, rowid), rc = 0;
     if (ri >= 0) { int n = row_fill_missing(tc, (size_t)ri, &mp, 1); if (n < 0) rc = -n; }
     pcprops_free(&mp);
+    return rc;
+}
+
+/* ---- R11: contents rows that point at nothing or at another folder's message, and folder counts that differ from the rows ---------------------------------------- */
+static int folders_cb(void *ctx, const uint8_t *e) {
+    u32vec *f = (u32vec *)ctx;
+    uint32_t nid = (uint32_t)(op_u64(e) & 0xFFFFFFFFu);
+    if ((nid & 0x1F) != 2) return 0;
+    if (f->n == f->cap) {
+        size_t nc = f->cap ? f->cap * 2 : 64;
+        uint32_t *t = (uint32_t *)realloc(f->v, nc * sizeof *t);
+        if (!t) return OPST_E_NOMEM;
+        f->v = t; f->cap = nc;
+    }
+    f->v[f->n++] = nid;
+    return 0;
+}
+
+typedef struct { uint32_t nid, parent; } r11ref;
+typedef struct { r11ref *v; size_t n, cap; } r11msgs;
+static int r11_msgs_cb(void *ctx, const uint8_t *e) {
+    r11msgs *m = (r11msgs *)ctx;
+    uint32_t nid = (uint32_t)(op_u64(e) & 0xFFFFFFFFu);
+    if ((nid & 0x1F) != 4) return 0;
+    if (m->n == m->cap) {
+        size_t nc = m->cap ? m->cap * 2 : 256;
+        r11ref *t = (r11ref *)realloc(m->v, nc * sizeof *t);
+        if (!t) return OPST_E_NOMEM;
+        m->v = t; m->cap = nc;
+    }
+    m->v[m->n].nid = nid; m->v[m->n].parent = op_u32(e + 24); m->n++;
+    return 0;
+}
+
+/* A row whose message node does not exist (row id 0 included) or whose message belongs, by its node's parent, to another folder is removed (the
+   message is listed in the table of its own folder; R8 adds the row there when it is missing). Then the folder's content and unread counts (property
+   context and the hierarchy row) are set to what the table holds. Returns the number of problems found (fixed when apply). */
+static int fix_tables(ops *o, int apply, int *count) {
+    opw *w = o->w;
+    u32vec fl = {0, 0, 0};
+    r11msgs ml = {0, 0, 0};
+    int rc = bt_items(w, 1, folders_cb, &fl);
+    if (!rc) rc = bt_items(w, 1, r11_msgs_cb, &ml);
+    *count = 0;
+    for (size_t i = 0; i < fl.n && !rc; i++) {
+        uint32_t f = fl.v[i], tn = (f & ~0x1Fu) | 0xE;
+        nbt_e te;
+        if (opw_node(w, tn, &te) != 0) continue;
+        tctx tc;
+        if (ed_load_tc(w, tn, &tc) != 0) {                          /* a table that cannot be read at all (early-writer damage): replaced by an empty one, the rows come back below */
+            (*count)++;
+            nbt_e fe;
+            if (apply && opw_node(w, f, &fe) == 0) {
+                rc = opw_node_del(w, tn);
+                if (!rc) rc = fo_make_tables(o, f, fe.parent, 1);
+            }
+            continue;
+        }
+        if (tc.ncols == 0) { tc_free(&tc); continue; }               /* an empty table node (no data at all): R8 rebuilds it first */
+        int dirty = 0;
+        for (size_t r = tc.nrows; r-- > 0 && !rc;) {
+            nbt_e me;
+            int gone = opw_node(w, tc.rows[r].rowid, &me) != 0;
+            if (!gone && me.parent == f) continue;
+            (*count)++;
+            if (apply) { rc = tc_remove(&tc, tc.rows[r].rowid); dirty = 1; }
+        }
+        for (size_t k = 0; k < ml.n && !rc; k++) {                 /* messages of this folder that its table does not list */
+            if (ml.v[k].parent != f || tc_find(&tc, ml.v[k].nid) >= 0) continue;
+            (*count)++;
+            if (!apply) continue;
+            pcprops mp;
+            rc = tc_add_row(&tc, ml.v[k].nid);
+            if (!rc) {                                                   /* the row's own id and version cells, which every table row carries */
+                int ri = tc_find(&tc, ml.v[k].nid), c2 = tc_col(&tc, 0x67F2), c3 = tc_col(&tc, 0x67F3);
+                uint8_t b4[4];
+                if (ri >= 0 && c2 >= 0) { wr32(b4, ml.v[k].nid); rc = tc_set_cell(&tc, (size_t)ri, c2, b4, 4); }
+                if (!rc && ri >= 0 && c3 >= 0) { wr32(b4, ops_next_row_ver(o)); rc = tc_set_cell(&tc, (size_t)ri, c3, b4, 4); }
+            }
+            if (!rc && pcprops_get_ex(w, ml.v[k].nid, &mp, 1) == 0) {
+                int ri = tc_find(&tc, ml.v[k].nid);
+                static const unsigned pids[3] = {0x0E08, 0x0E07, 0x0E06};
+                for (int q = 0; q < 3 && !rc && ri >= 0; q++) {
+                    int ci = tc_col(&tc, pids[q]);
+                    pcprop *pp = pcprops_find(&mp, pids[q]);
+                    if (ci >= 0 && pp && pp->v.n == (q == 2 ? 8u : 4u)) rc = tc_set_cell(&tc, (size_t)ri, ci, pp->v.p, pp->v.n);
+                }
+                if (!rc && ri >= 0) { int n = row_fill_missing(&tc, (size_t)ri, &mp, 1); if (n < 0) rc = -n; }
+                pcprops_free(&mp);
+            }
+            dirty = 1;
+        }
+        if (!rc && dirty) rc = ed_store_tc(w, tn, &tc);
+        if (!rc) {
+            int64_t unread = 0, rows = (int64_t)tc.nrows;
+            int cf = tc_col(&tc, 0x0E07);
+            if (cf >= 0) for (size_t r = 0; r < tc.nrows; r++) if (tc.rows[r].present[cf] && tc.rows[r].cell[cf].n >= 4 && !(op_u32(tc.rows[r].cell[cf].p) & 1)) unread++;
+            if (!apply) {                                            /* a dry run did not remove the rows: count what would remain */
+                for (size_t r = 0; r < tc.nrows; r++) {
+                    nbt_e me;
+                    if (opw_node(w, tc.rows[r].rowid, &me) != 0 || me.parent != f) {
+                        rows--;
+                        if (cf >= 0 && tc.rows[r].present[cf] && tc.rows[r].cell[cf].n >= 4 && !(op_u32(tc.rows[r].cell[cf].p) & 1)) unread--;
+                    }
+                }
+            }
+            pcprops pp;
+            if (pcprops_get_ex(w, f, &pp, 1) == 0) {
+                pcprop *pc = pcprops_find(&pp, 0x3602), *pu = pcprops_find(&pp, 0x3603);
+                int dc = 0, du = 0;
+                if (pc && pc->v.n >= 4 && (int64_t)(int32_t)op_u32(pc->v.p) != rows) dc = (int)(rows - (int32_t)op_u32(pc->v.p));
+                if (pu && pu->v.n >= 4 && (int64_t)(int32_t)op_u32(pu->v.p) != unread) du = (int)(unread - (int32_t)op_u32(pu->v.p));
+                if (dc || du) {
+                    (*count)++;
+                    if (apply) rc = ops_counts(o, f, dc, du);
+                }
+                pcprops_free(&pp);
+            }
+        }
+        tc_free(&tc);
+    }
+    free(fl.v); free(ml.v);
     return rc;
 }
 
@@ -501,11 +623,12 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
             pcprops mp;
             if (pcprops_get_ex(w, tc.rows[r].rowid, &mp, 1) != 0) continue;       /* no readable message: the other rules deal with that */
             for (int k = 0; k < 3 && !rc; k++) {
-                if (cols[k] < 0 || !tc.rows[r].present[cols[k]] || !tc.rows[r].cell[cols[k]].n) continue;
+                if (cols[k] < 0) continue;
                 pcprop *p = pcprops_find(&mp, pids[k]);
                 size_t want = k == 2 ? 8 : 4;
-                if (!p || p->v.n != want || tc.rows[r].cell[cols[k]].n != want) continue;
-                if (memcmp(p->v.p, tc.rows[r].cell[cols[k]].p, want) == 0) continue;
+                if (!p || p->v.n != want) continue;
+                int has_cell = tc.rows[r].present[cols[k]] && tc.rows[r].cell[cols[k]].n == want;
+                if (has_cell && memcmp(p->v.p, tc.rows[r].cell[cols[k]].p, want) == 0) continue;         /* absent / empty cell: the message's value is added */
                 rep->rowsync_issues++;
                 if (apply) { rc = tc_set_cell(&tc, r, cols[k], p->v.p, want); dirty = 1; }
             }
@@ -530,6 +653,12 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
 
     free(tabs.v);
     bb_free(&blob);
+    /* ---- R11 ---- (before R8, which adds the rows a message needs in its own folder) */
+    if (!rc) {
+        int n = 0;
+        rc = fix_tables(o, apply, &n);
+        rep->table_issues = n;
+    }
     /* ---- R8 ---- */
     if (!rc) {
         int nf = 0;
@@ -549,7 +678,7 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
         }
         refsfix_free(&rf);
     }
-    if (!rc && apply && (rep->rowsync_issues || rep->refs_issues || rep->amap_issues || rep->folder_issues || rep->rowcell_issues || rep->rows_without_ids || rep->dangling_idmap || rep->messages_not_indexed || rep->row_version_issues || rep->nid_mark_issues)) {
+    if (!rc && apply && (rep->rowsync_issues || rep->table_issues || rep->refs_issues || rep->amap_issues || rep->folder_issues || rep->rowcell_issues || rep->rows_without_ids || rep->dangling_idmap || rep->messages_not_indexed || rep->row_version_issues || rep->nid_mark_issues)) {
         rc = ops_note_max_message_nid(o, NULL, 0, NULL, 0, NULL, 0);
     }
     return rc;
@@ -570,5 +699,24 @@ int opst_fix(opst *p, int apply, opst_fix_report *rep) {
     rc = fix_run(&o, apply, rep);
     if (!apply) { ops_end_ro(&o); return rc; }
     if (rc) { ops_abort(&o); return rc; }
-    return ops_commit(&o);
+    rc = ops_commit(&o);
+    /* some repairs make others possible (a rebuilt table needs its rows, then their id cells, then their row cells): repeat until a pass finds nothing,
+       at most four more times; the report is the first pass's */
+    for (int again = 0; again < 4 && !rc; again++) {
+        opst_fix_report next;
+        ops o2;
+        rc = ops_begin_ro(p, &o2);
+        if (rc) break;
+        rc = fix_run(&o2, 0, &next);
+        ops_end_ro(&o2);
+        if (rc) break;
+        if (!(next.rows_without_ids || next.dangling_idmap || next.messages_not_indexed || next.row_version_issues || next.nid_mark_issues || next.rowcell_issues ||
+              next.amap_issues || next.folder_issues || next.refs_issues || next.rowsync_issues || next.table_issues)) break;
+        rc = ops_begin(p, &o2);
+        if (rc) break;
+        rc = fix_run(&o2, 1, &next);
+        if (rc) { ops_abort(&o2); break; }
+        rc = ops_commit(&o2);
+    }
+    return rc;
 }

@@ -52,3 +52,27 @@ Items found in this file: 73
 Folders found in this file: 10
 Items found in this file: 56
  | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-05 13:44:36  F:/Claude/OpenOutlook/.local/scan_ta.pst ERRORS    folders=10 items=11 log:110 lines, 59 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_ta.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 10
+Items found in this file: 11
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-05 13:44:46  F:/Claude/OpenOutlook/.local/scan_r2.pst NO_ERRORS folders=9 items=10 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_r2.pst | No errors were found in this file.
+
+Folders found in this file: 9
+Items found in this file: 10
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-05 13:45:25  F:/Claude/OpenOutlook/.local/scan_ta2.pst NO_ERRORS folders=10 items=11 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_ta2.pst | No errors were found in this file.
+
+Folders found in this file: 10
+Items found in this file: 11
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-05 13:45:33  F:/Claude/OpenOutlook/.local/scan_r22.pst NO_ERRORS folders=9 items=10 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan_r22.pst | No errors were found in this file.
+
+Folders found in this file: 9
+Items found in this file: 10
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK

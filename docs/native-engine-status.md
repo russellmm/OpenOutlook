@@ -59,6 +59,7 @@ Run a soak: `PstSoak clean.pst --second clean2.pst --seed 1 --ops 300 --keep out
 `opst_create(path, display_name, &p)` writes a new empty Unicode PST (never overwrites; nothing is left behind on failure) and returns it open for writing; the CLI has `openpst NEW.pst create "Name"`, .NET has `PstEngineFactory.Create(path, name)`. Validated against SCANPST: the blank file and soaked files made from it (seeds 11, 12, 13, 21, 22: 150-200 operations each, 33-73 items, 8-11 folders) are NO_ERRORS, and the node set / header counters were compared with a blank file Outlook 2024 made (`blank.pst`). Rule 36 in the design document lists what the file contains and which SCANPST messages each missing node produces. Tests: `PstCreateTests` (4).
 
 ## Status
+- 2026-10-05: fixer rule R11 (design rule 37); `rmarrash_2.pst` and `test-archive.pst` repaired to SCANPST NO_ERRORS (originals kept in `.local/originals`, not in git); `test_write` 168 checks pass on both.
 - 8 soak seeds (300-400 operations): no checker findings; SCANPST NO_ERRORS on every result.
 - Tests: `test_write` 168 checks pass; .NET 417 pass, 6 known Windows-only failures (5 unix-permission cache tests, 1 loopback socket test); 4 headless UI tests pass.
 
@@ -68,7 +69,6 @@ Run a soak: `PstSoak clean.pst --second clean2.pst --seed 1 --ops 300 --keep out
 - Old imports keep their old conversation index (the fixer repairs rows, not already-written indexes).
 - R10 and the amap/folders checks are not in the Python fixer/checker for every case.
 - Soak does not yet cover folder rename/move.
-- The 3 tables of `test-archive.pst` (early-writer damage) are not rebuilt by any rule.
 - Roadmap (plan section 11): more ribbon features, Graph write, 1 GB perf pass, fuzzing/ASAN CI, packaging.
 
 ## Later work (2026-10-05): online accounts, drag and drop, UI fixes

@@ -101,6 +101,23 @@ namespace OpenPst
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msgs_copy_to(IntPtr src, uint[] nids, UIntPtr n, IntPtr dst, uint dest, uint[]? newNids);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msgs_delete(IntPtr p, uint[] nids, UIntPtr n, out UIntPtr moved, out UIntPtr purged);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msgs_purge(IntPtr p, uint[] nids, UIntPtr n);
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct ImportRecipient { public IntPtr name, email; public int type; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct ImportAttachment { public IntPtr filename, mime, content_id, data; public UIntPtr len; public int hidden; public long modified; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct ImportMsg
+        {
+            public IntPtr message_class, subject, sender_name, sender_email, body_text, body_html, transport_headers, message_id;
+            public long sent, received;
+            public int importance, read;
+            public IntPtr recipients; public UIntPtr nrecipients;
+            public IntPtr attachments; public UIntPtr nattachments;
+        }
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msgs_import(IntPtr p, uint folder, [In] ImportMsg[] msgs, UIntPtr n, [Out] uint[] nids);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msgs_set_state(IntPtr p, uint[] nids, UIntPtr n, int read, int flag);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_fix(IntPtr p, int apply, ref FixReport r);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_check(IntPtr p, ref CheckReport r, byte[] text, UIntPtr cap);
@@ -159,6 +176,32 @@ namespace OpenPst
     public sealed record PstAttachment(uint Index, uint Nid, string FileName, string MimeType, string ContentId, long Size, int Method, bool Hidden = false);
 
     public sealed record PstDeleteResult(bool Permanent, int Folders, int Messages);
+
+    /// <summary>A recipient of an imported message. Type: 1 To, 2 Cc, 3 Bcc.</summary>
+    public sealed record PstImportRecipient(string Name, string Email, int Type);
+
+    /// <summary>An attachment of an imported message. ContentId (without angle brackets) marks an inline picture.</summary>
+    public sealed record PstImportAttachment(string FileName, string MimeType, string ContentId, byte[] Data, bool Hidden = false, DateTime? Modified = null);
+
+    /// <summary>Plain fields of a message to file into a PST folder (an EML file, a Graph message, ...). Text is UTF-16 here, UTF-8 in the library.</summary>
+    public sealed class PstImportMessage
+    {
+        public string MessageClass { get; set; } = "IPM.Note";
+        public string Subject { get; set; } = "";
+        public string SenderName { get; set; } = "";
+        public string SenderEmail { get; set; } = "";
+        public string BodyText { get; set; } = "";
+        public string BodyHtml { get; set; } = "";
+        public string TransportHeaders { get; set; } = "";
+        public string MessageId { get; set; } = "";
+        public DateTime? Sent { get; set; }
+        public DateTime? Received { get; set; }
+        /// <summary>0 low, 1 normal, 2 high.</summary>
+        public int Importance { get; set; } = 1;
+        public bool Read { get; set; }
+        public List<PstImportRecipient> Recipients { get; } = new List<PstImportRecipient>();
+        public List<PstImportAttachment> Attachments { get; } = new List<PstImportAttachment>();
+    }
     public sealed record PstFixReport(int RowsWithoutIds, int DanglingIdMapRecords, int MessagesNotIndexed, int RowVersionIssues, int NidMarkIssues)
     {
         public int Total => RowsWithoutIds + DanglingIdMapRecords + MessagesNotIndexed + RowVersionIssues + NidMarkIssues;
@@ -393,6 +436,86 @@ namespace OpenPst
             var a = Arr(nids);
             Native.Check(Native.opst_msgs_set_state(H, a, (UIntPtr)a.Length, read, flag));
         }
+        /// <summary>Files a message built from plain fields into <paramref name="folder"/> (one atomic transaction) and returns its NID.</summary>
+        public uint ImportMessage(uint folder, PstImportMessage message) => ImportMessages(folder, new[] { message })[0];
+
+        /// <summary>
+        /// Files several messages into <paramref name="folder"/> in ONE atomic transaction (one contents-table rewrite) and returns their NIDs.
+        /// Everything is held in memory until the commit: keep a batch to a few dozen MB of payload.
+        /// </summary>
+        public uint[] ImportMessages(uint folder, IReadOnlyList<PstImportMessage> messages)
+        {
+            if (messages == null) throw new ArgumentNullException(nameof(messages));
+            if (messages.Count == 0) return new uint[0];
+            var owned = new List<IntPtr>();
+            var pins = new List<GCHandle>();
+            IntPtr Utf8(string text)
+            {
+                if (string.IsNullOrEmpty(text)) return IntPtr.Zero;
+                var ptr = Marshal.StringToCoTaskMemUTF8(text);
+                owned.Add(ptr);
+                return ptr;
+            }
+            IntPtr Pin(byte[] bytes)
+            {
+                if (bytes == null || bytes.Length == 0) return IntPtr.Zero;
+                var handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+                pins.Add(handle);
+                return handle.AddrOfPinnedObject();
+            }
+            long FileTime(DateTime? t) => t.HasValue && t.Value > DateTime.MinValue ? t.Value.ToUniversalTime().ToFileTimeUtc() : 0;
+            var blocks = new List<IntPtr>();           // AllocHGlobal arrays of recipients / attachments
+            try
+            {
+                int rsz = Marshal.SizeOf<Native.ImportRecipient>(), asz = Marshal.SizeOf<Native.ImportAttachment>();
+                var native = new Native.ImportMsg[messages.Count];
+                for (int m = 0; m < messages.Count; m++)
+                {
+                    var message = messages[m] ?? throw new ArgumentNullException(nameof(messages));
+                    var msg = new Native.ImportMsg
+                    {
+                        message_class = Utf8(message.MessageClass), subject = Utf8(message.Subject), sender_name = Utf8(message.SenderName),
+                        sender_email = Utf8(message.SenderEmail), body_text = Utf8(message.BodyText), body_html = Utf8(message.BodyHtml),
+                        transport_headers = Utf8(message.TransportHeaders), message_id = Utf8(message.MessageId),
+                        sent = FileTime(message.Sent), received = FileTime(message.Received), importance = message.Importance, read = message.Read ? 1 : 0,
+                    };
+                    if (message.Recipients.Count > 0)
+                    {
+                        var recipients = Marshal.AllocHGlobal(rsz * message.Recipients.Count);
+                        blocks.Add(recipients);
+                        for (int i = 0; i < message.Recipients.Count; i++)
+                            Marshal.StructureToPtr(new Native.ImportRecipient { name = Utf8(message.Recipients[i].Name), email = Utf8(message.Recipients[i].Email), type = message.Recipients[i].Type }, recipients + i * rsz, false);
+                        msg.recipients = recipients; msg.nrecipients = (UIntPtr)message.Recipients.Count;
+                    }
+                    if (message.Attachments.Count > 0)
+                    {
+                        var attachments = Marshal.AllocHGlobal(asz * message.Attachments.Count);
+                        blocks.Add(attachments);
+                        for (int i = 0; i < message.Attachments.Count; i++)
+                        {
+                            var a = message.Attachments[i];
+                            Marshal.StructureToPtr(new Native.ImportAttachment
+                            {
+                                filename = Utf8(a.FileName), mime = Utf8(a.MimeType), content_id = Utf8(a.ContentId), data = Pin(a.Data),
+                                len = (UIntPtr)(a.Data?.Length ?? 0), hidden = a.Hidden ? 1 : 0, modified = FileTime(a.Modified)
+                            }, attachments + i * asz, false);
+                        }
+                        msg.attachments = attachments; msg.nattachments = (UIntPtr)message.Attachments.Count;
+                    }
+                    native[m] = msg;
+                }
+                var nids = new uint[messages.Count];
+                Native.Check(Native.opst_msgs_import(H, folder, native, (UIntPtr)native.Length, nids));
+                return nids;
+            }
+            finally
+            {
+                foreach (var ptr in owned) Marshal.FreeCoTaskMem(ptr);
+                foreach (var h in pins) h.Free();
+                foreach (var block in blocks) Marshal.FreeHGlobal(block);
+            }
+        }
+
         public void PurgeMessages(IReadOnlyList<uint> nids)
         {
             var a = Arr(nids);

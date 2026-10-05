@@ -113,6 +113,24 @@ int opst_msgs_set_state(opst *p, const uint32_t *nids, size_t n, int read, int f
     return finish(&o, rc);
 }
 
+int opst_msgs_import(opst *p, uint32_t folder, const opst_import_msg *msgs, size_t n, uint32_t *nids) {
+    if (!msgs || !nids) return op_err(OPST_E_ARG, "null argument");
+    for (size_t i = 0; i < n; i++)
+        if ((msgs[i].nrecipients && !msgs[i].recipients) || (msgs[i].nattachments && !msgs[i].attachments)) return op_err(OPST_E_ARG, "null argument");
+    ops o;
+    int rc = begin(p, &o);
+    if (rc) return rc;
+    rc = ops_import_msgs(&o, folder, msgs, n, nids);
+    return finish(&o, rc);
+}
+
+int opst_msg_import(opst *p, uint32_t folder, const opst_import_msg *msg, uint32_t *nid_out) {
+    uint32_t nid = 0;
+    int rc = opst_msgs_import(p, folder, msg, 1, &nid);
+    if (!rc && nid_out) *nid_out = nid;
+    return rc;
+}
+
 int opst_msgs_delete(opst *p, const uint32_t *nids, size_t n, size_t *moved, size_t *purged) {
     if (!nids && n) return op_err(OPST_E_ARG, "null argument");
     ops o;

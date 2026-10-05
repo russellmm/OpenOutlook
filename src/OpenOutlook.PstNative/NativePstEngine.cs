@@ -470,6 +470,108 @@ namespace OpenOutlook.PstNative
             }
         }
 
+        /// <summary>Largest payload (bodies + attachments) written in one transaction: the transaction keeps its pages in memory until commit.</summary>
+        const long ImportBatchBytes = 48L * 1024 * 1024;
+        const int ImportBatchMessages = 200;
+
+        public IReadOnlyList<MailSummary> ImportMessages(MailFolder folder, IReadOnlyList<MailImport> messages,
+            IProgress<int>? progress = null, CancellationToken cancellationToken = default)
+        {
+            RequireWrite();
+            var summaries = new List<MailSummary>(messages.Count);
+            lock (_gate)
+            {
+                FlushPending();
+                try
+                {
+                    int i = 0;
+                    while (i < messages.Count)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var batch = new List<PstImportMessage>();
+                        long bytes = 0;
+                        int start = i;
+                        while (i < messages.Count && batch.Count < ImportBatchMessages && (batch.Count == 0 || bytes < ImportBatchBytes))
+                        {
+                            var m = ToNative(messages[i]);
+                            bytes += 1024 + m.BodyText.Length * 2L + m.BodyHtml.Length * 2L + m.Attachments.Sum(a => (long)a.Data.Length);
+                            batch.Add(m);
+                            i++;
+                        }
+                        var nids = Wrap(() => _file.ImportMessages(folder.Nid, batch));
+                        for (int k = 0; k < batch.Count; k++) summaries.Add(ToSummary(folder.Nid, nids[k], messages[start + k]));
+                        progress?.Report(i);
+                    }
+                }
+                finally { if (summaries.Count > 0) SyncFolders(); }
+            }
+            return summaries;
+        }
+
+        public IReadOnlyList<MailSummary> CopyMessagesTo(IPstEngine destination, MailFolder destFolder, IReadOnlyList<MailSummary> messages)
+        {
+            if (destination is not NativePstEngine dest) throw new PstCore.PstException("Messages can only be copied between archives opened by the native engine.");
+            if (ReferenceEquals(dest, this)) throw new PstCore.PstException("Source and destination are the same archive.");
+            dest.RequireWrite();
+            if (messages.Count == 0) return Array.Empty<MailSummary>();
+            // lock both archives, always in the same order, so two copies in opposite directions cannot deadlock
+            var (first, second) = string.CompareOrdinal(_path, dest._path) <= 0 ? (this, dest) : (dest, this);
+            lock (first._gate)
+            lock (second._gate)
+            {
+                FlushPending();
+                dest.FlushPending();
+                var nids = messages.Select(m => m.Nid).ToList();
+                var created = Wrap(() => _file.CopyMessagesTo(dest._file, nids, destFolder.Nid));
+                dest.SyncFolders();
+                var result = new List<MailSummary>(messages.Count);
+                for (int i = 0; i < messages.Count; i++)
+                {
+                    var s = messages[i];
+                    result.Add(new MailSummary
+                    {
+                        Nid = created[i], FolderNid = destFolder.Nid, Subject = s.Subject, From = s.From, To = s.To, Received = s.Received, Sent = s.Sent,
+                        IsRead = s.IsRead, HasAttachment = s.HasAttachment, Flagged = s.Flagged, Size = s.Size, MessageClass = s.MessageClass, Importance = s.Importance,
+                    });
+                }
+                return result;
+            }
+        }
+
+        static PstImportMessage ToNative(MailImport m)
+        {
+            var n = new PstImportMessage
+            {
+                MessageClass = m.MessageClass, Subject = m.Subject, SenderName = m.SenderName, SenderEmail = m.SenderEmail,
+                BodyText = m.BodyText, BodyHtml = m.BodyHtml, TransportHeaders = m.TransportHeaders, MessageId = m.MessageId,
+                Sent = m.Sent, Received = m.Received, Importance = m.Importance, Read = m.Read,
+            };
+            foreach (var r in m.Recipients) n.Recipients.Add(new PstImportRecipient(r.Name, r.Email, (int)r.Kind));
+            foreach (var a in m.Attachments) n.Attachments.Add(new PstImportAttachment(a.FileName, a.MimeType, a.ContentId, a.Data, a.Hidden, a.Modified));
+            return n;
+        }
+
+        static MailSummary ToSummary(uint folderNid, uint nid, MailImport m)
+        {
+            var sent = m.Sent?.ToLocalTime() ?? DateTime.MinValue;
+            var received = m.Received?.ToLocalTime() ?? sent;
+            return new MailSummary
+            {
+                Nid = nid,
+                FolderNid = folderNid,
+                Subject = CleanSubject(m.Subject),
+                From = string.IsNullOrWhiteSpace(m.SenderName) ? m.SenderEmail : m.SenderName,
+                To = string.Join("; ", m.Recipients.Where(r => r.Kind == RecipientKind.To).Select(r => string.IsNullOrWhiteSpace(r.Name) ? r.Email : r.Name)),
+                Received = received == DateTime.MinValue ? sent : received,
+                Sent = sent,
+                IsRead = m.Read,
+                HasAttachment = m.Attachments.Count > 0,
+                Size = (int)Math.Min(1024L + m.BodyText.Length + m.BodyHtml.Length + m.Attachments.Sum(a => (long)a.Data.Length), int.MaxValue),
+                MessageClass = m.MessageClass,
+                Importance = m.Importance,
+            };
+        }
+
         public MailFolder CreateFolder(uint parentNid, string name)
         {
             RequireWrite();

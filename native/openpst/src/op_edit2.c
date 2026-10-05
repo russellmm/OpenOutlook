@@ -374,7 +374,8 @@ int pc_build(const pcprops *props, hblocks *out) {
         const pcprop *p = &sorted[i];
         uint32_t val;
         int fs = fixed_size(p->ptype);
-        if (fs && fs <= 4) { uint8_t b[4] = {0, 0, 0, 0}; memcpy(b, p->v.p, p->v.n < 4 ? p->v.n : 4); val = op_u32(b); }
+        if (fs && fs <= 4) { uint8_t b[4] = {0, 0, 0, 0}; if (p->v.n) memcpy(b, p->v.p, p->v.n < 4 ? p->v.n : 4); val = op_u32(b); }
+        else if (p->ext_nid) val = p->ext_nid;                 /* stored in a subnode */
         else if (p->v.n == 0) val = 0;
         else { val = nxt << 5; nxt++; var[nvar++] = i; }
         wr16(keys[i], p->pid);

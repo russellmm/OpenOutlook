@@ -976,6 +976,8 @@ static int opw_create(opst *p, opw **out) {
     if (rc) { free(w); return rc; }
     load_header(w);
     w->nsec = (uint32_t)((w->eof - OPW_AMAP0) / OPW_SECT);
+    rc = w_cap_secs(w, w->nsec ? w->nsec : 1);          /* the per-section arrays exist even when the transaction allocates nothing (commit walks them) */
+    if (rc) { free(w); return rc; }
     const uint8_t *fwd = op_mpbb_table();
     for (int i = 0; i < 256; i++) w->mpbb_r[fwd[i]] = (uint8_t)i;       /* inverse permutation (encode) */
     *out = w;

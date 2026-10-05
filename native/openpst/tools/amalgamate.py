@@ -7,7 +7,7 @@ import os, re, sys
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = os.path.join(root, 'src')
 order = ['op_platform.c', 'op_util.c', 'op_ndb.c', 'op_inflate.c', 'op_ltp.c', 'op_rtf.c', 'op_search.c', 'op_wr.c', 'op_edit.c', 'op_edit2.c', 'op_ops.c',
-         'op_folders.c', 'op_api_w.c', 'op_npm.c', 'op_xcopy.c', 'op_fix.c', 'op_check.c', 'op_test.c', 'op_msg.c']
+         'op_folders.c', 'op_api_w.c', 'op_npm.c', 'op_xcopy.c', 'op_import.c', 'op_fix.c', 'op_check.c', 'op_test.c', 'op_msg.c']
 version = open(os.path.join(root, 'include', 'openpst.h')).read()
 m = re.search(r'OPST_VERSION_MAJOR (\d+).*?OPST_VERSION_MINOR (\d+).*?OPST_VERSION_PATCH (\d+)', version, re.S)
 

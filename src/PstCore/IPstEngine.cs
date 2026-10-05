@@ -27,6 +27,19 @@ public interface IPstEngine : IDisposable
     void CopyMessage(MailSummary message, MailFolder destFolder);
     void DeleteMessage(MailSummary message);
     MailFolder CreateFolder(uint parentNid, string name);
+
+    /// <summary>
+    /// Files messages (EML files, Graph messages, ...) into a folder and returns their summaries. Large batches are written in several
+    /// atomic transactions (each is all-or-nothing; a cancel or failure keeps the transactions already committed).
+    /// </summary>
+    /// <summary>
+    /// Copies messages of this archive into a folder of ANOTHER open archive (both editable-native), translating named properties.
+    /// Returns the new summaries in the destination; the originals are untouched (a "move" deletes them afterwards).
+    /// </summary>
+    IReadOnlyList<MailSummary> CopyMessagesTo(IPstEngine destination, MailFolder destFolder, IReadOnlyList<MailSummary> messages);
+
+    IReadOnlyList<MailSummary> ImportMessages(MailFolder folder, IReadOnlyList<MailImport> messages,
+        IProgress<int>? progress = null, CancellationToken cancellationToken = default);
     void DeleteFolder(uint folderNid);
 
     IReadOnlyList<string> VerifyIntegrity();

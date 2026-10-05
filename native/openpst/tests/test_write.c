@@ -166,6 +166,98 @@ int main(void) {
         (void)unread_before;
         CHECK(findings(p) == base_findings);
     }
+    /* import: a message built from plain fields (long text body, HTML, 3 recipients, a 20 KB attachment and an inline picture) */
+    {
+        size_t blen = 20000, hlen = 9000;
+        char *body = (char *)malloc(blen + 1), *html = (char *)malloc(hlen + 1);
+        uint8_t *att = (uint8_t *)malloc(20000);
+        CHECK(body && html && att);
+        for (size_t i = 0; i < blen; i++) body[i] = (i % 80 == 79) ? '\n' : (char)('a' + (i % 26));
+        body[blen] = 0;
+        memcpy(body, "caf\xC3\xA9 \xE2\x82\xAC start ", 14);
+        for (size_t i = 0; i < hlen; i++) html[i] = (char)('A' + (i % 26));
+        memcpy(html, "<html><body><p>Hi <img src=\"cid:pic1@x\"></p>", 44);
+        html[hlen] = 0;
+        for (size_t i = 0; i < 20000; i++) att[i] = (uint8_t)(i * 7 + (i >> 8));
+        static const uint8_t pic[] = {0x89, 'P', 'N', 'G', 13, 10, 26, 10, 1, 2, 3, 4, 5};
+        opst_import_recipient rc3[3] = {{"Ann Example", "ann@example.test", 1}, {"", "bob@example.test", 2}, {"Cy", "cy@example.test", 3}};
+        opst_import_attachment at[2];
+        memset(at, 0, sizeof at);
+        at[0].filename = "data.bin"; at[0].mime = "application/octet-stream"; at[0].data = att; at[0].len = 20000;
+        at[1].filename = "pic.png"; at[1].mime = "image/png"; at[1].content_id = "pic1@x"; at[1].data = pic; at[1].len = sizeof pic;
+        opst_import_msg im;
+        memset(&im, 0, sizeof im);
+        im.subject = "RE: Imported \xC3\xA9 test"; im.sender_name = "Dan Sender"; im.sender_email = "dan@example.test";
+        im.body_text = body; im.body_html = html; im.transport_headers = "Received: from x\r\nSubject: imported\r\n";
+        im.message_id = "<imp-1@example.test>"; im.sent = 132550353630000000LL; im.importance = 2;
+        im.recipients = rc3; im.nrecipients = 3; im.attachments = at; im.nattachments = 2;
+        opst_folder_info fi0, fi1;
+        char nb3[64];
+        CHECK(opst_folder_info_get(p, f1, &fi0, nb3, sizeof nb3) == 0);
+        uint32_t inid = 0;
+        CHECK(opst_msg_import(p, f1, &im, &inid) == 0 && inid != 0 && (inid & 0x1F) == 4);
+        CHECK(opst_folder_info_get(p, f1, &fi1, nb3, sizeof nb3) == 0 && fi1.content_count == fi0.content_count + 1 && fi1.unread_count == fi0.unread_count + 1);
+        CHECK(findings(p) == base_findings);
+        opst_msg *im2;
+        CHECK(opst_msg_open(p, inid, &im2) == 0);
+        if (im2) {
+            const char *sj = opst_msg_str(im2, OPST_PID_SUBJECT);
+            CHECK(sj && strcmp(sj, "RE: Imported \xC3\xA9 test") == 0);
+            const char *tp = opst_msg_str(im2, 0x0070);
+            CHECK(tp && strcmp(tp, "Imported \xC3\xA9 test") == 0);
+            const char *sn = opst_msg_str(im2, 0x0C1A);
+            CHECK(sn && strcmp(sn, "Dan Sender") == 0);
+            size_t bl = 0;
+            const char *bt = opst_msg_body(im2, OPST_BODY_TEXT, &bl);
+            CHECK(bt && bl == strlen(body) && memcmp(bt, body, bl) == 0);
+            const char *bh = opst_msg_body(im2, OPST_BODY_HTML, &bl);
+            CHECK(bh && bl == hlen && memcmp(bh, html, bl) == 0);
+            const char *hd = opst_msg_str(im2, 0x007D);
+            CHECK(hd && strncmp(hd, "Received: from x", 16) == 0);
+            CHECK(opst_msg_i64(im2, 0x0E07, 0) == 0x10 && opst_msg_i64(im2, 0x0017, 9) == 2);
+            opst_recipient *rl; size_t nrl;
+            CHECK(opst_msg_recipients(im2, &rl, &nrl) == 0 && nrl == 3);
+            if (nrl == 3) {
+                CHECK(rl[0].type == 1 && strcmp(rl[0].name, "Ann Example") == 0 && strcmp(rl[0].email, "ann@example.test") == 0);
+                CHECK(rl[1].type == 2 && strcmp(rl[1].email, "bob@example.test") == 0);
+                CHECK(rl[2].type == 3 && strcmp(rl[2].name, "Cy") == 0);
+                opst_free_recipients(rl);
+            }
+            opst_attachment *al; size_t nal;
+            CHECK(opst_msg_attachments(im2, &al, &nal) == 0 && nal == 2);
+            if (nal == 2) {
+                CHECK(strcmp(al[0].filename, "data.bin") == 0 && al[1].cid && strcmp(al[1].cid, "pic1@x") == 0);
+                const uint8_t *ad; size_t an;
+                CHECK(opst_attachment_data(im2, al[0].index, &ad, &an) == 0 && an == 20000 && memcmp(ad, att, 20000) == 0);
+                CHECK(opst_attachment_data(im2, al[1].index, &ad, &an) == 0 && an == sizeof pic && memcmp(ad, pic, an) == 0);
+                opst_free_attachments(al);
+            }
+            opst_msg_close(im2);
+        }
+        opst_msg_row *ir; size_t nir = 0;
+        CHECK(opst_messages(p, f1, &ir, &nir) == 0);
+        int seen = 0;
+        for (size_t k = 0; k < nir; k++) if (ir[k].nid == inid) { seen = 1; CHECK(strcmp(ir[k].sender, "Dan Sender") == 0 && ir[k].has_attachments && !(ir[k].flags & 1)); }
+        CHECK(seen);
+        opst_free_messages(ir);
+        size_t one = 1;
+        CHECK(opst_msgs_set_state(p, &inid, one, 1, -1) == 0);            /* it behaves like any other message afterwards */
+        CHECK(opst_msgs_set_state(p, &inid, one, -1, 2) == 0);            /* flag: the imported message has no flag property yet */
+        {
+            opst_msg_row *fr; size_t nfr = 0;
+            CHECK(opst_messages(p, f1, &fr, &nfr) == 0);
+            /* the row only carries the flag when the folder's table has a flag-status column (this test folder is cloned from a table that may not) */
+            for (size_t k = 0; k < nfr; k++) if (fr[k].nid == inid) CHECK(fr[k].flags & 1);
+            opst_free_messages(fr);
+            opst_msg *fm;
+            CHECK(opst_msg_open(p, inid, &fm) == 0);
+            if (fm) { CHECK(opst_msg_i64(fm, 0x1090, 0) == 2); opst_msg_close(fm); }
+        }
+        CHECK(opst_msgs_move(p, &inid, one, f2) == 0);
+        CHECK(opst_msgs_purge(p, &inid, one) == 0);
+        CHECK(findings(p) == base_findings);
+        free(body); free(html); free(att);
+    }
     opst_folder_info fi;
     char nb[64];
     CHECK(opst_folder_info_get(p, f1, &fi, nb, sizeof nb) == 0 && fi.content_count == 3);

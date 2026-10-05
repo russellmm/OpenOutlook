@@ -27,6 +27,7 @@ set(OPST_SOURCES
     src/op_api_w.c
     src/op_npm.c
     src/op_xcopy.c
+    src/op_import.c
     src/op_fix.c
     src/op_check.c
     src/op_test.c
@@ -66,6 +67,8 @@ if(OPST_BUILD_TOOLS)
         target_link_libraries(openpst_cli PRIVATE shell32)
     endif()
     set_target_properties(openpst_cli PROPERTIES OUTPUT_NAME openpst)
+    add_executable(inspect_msg tools/inspect_msg.c)
+    target_link_libraries(inspect_msg PRIVATE openpst_static)
 endif()
 
 if(OPST_BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_basic.c)

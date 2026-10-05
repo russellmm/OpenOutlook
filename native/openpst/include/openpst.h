@@ -252,6 +252,43 @@ OPST_API int opst_msgs_delete(opst *p, const uint32_t *nids, size_t n, size_t *m
 /* read: -1 unchanged, 0 unread, 1 read.  flag: -1 unchanged, else PidTagFlagStatus (0 none, 1 complete, 2 flagged).
    Updates the messages, their contents-table rows and the unread counts of their folders in one transaction. */
 OPST_API int opst_msgs_set_state(opst *p, const uint32_t *nids, size_t n, int read, int flag);
+/* ---- importing a message built from plain fields (an EML file, a Graph message, ...) ---------------------------------------------- */
+typedef struct opst_import_recipient {
+    const char *name;                /* display name (UTF-8), may be empty */
+    const char *email;               /* SMTP address */
+    int32_t     type;                /* 1 To, 2 Cc, 3 Bcc */
+} opst_import_recipient;
+typedef struct opst_import_attachment {
+    const char    *filename;
+    const char    *mime;             /* e.g. "image/png", may be NULL */
+    const char    *content_id;       /* Content-ID of an inline picture (without <>), NULL / "" otherwise */
+    const uint8_t *data;
+    size_t         len;
+    int32_t        hidden;
+    int64_t        modified;         /* FILETIME, 0 = now */
+} opst_import_attachment;
+typedef struct opst_import_msg {
+    const char *message_class;       /* default "IPM.Note" */
+    const char *subject;
+    const char *sender_name;
+    const char *sender_email;
+    const char *body_text;           /* UTF-8, either or both of the bodies */
+    const char *body_html;           /* UTF-8 */
+    const char *transport_headers;   /* the internet headers, if known */
+    const char *message_id;          /* Message-ID header value */
+    int64_t     sent;                /* FILETIME, 0 = now */
+    int64_t     received;            /* FILETIME, 0 = same as sent */
+    int32_t     importance;          /* 0 low, 1 normal, 2 high */
+    int32_t     read;                /* 1 = already read */
+    const opst_import_recipient  *recipients;  size_t nrecipients;
+    const opst_import_attachment *attachments; size_t nattachments;
+} opst_import_msg;
+/* Files the message into `folder` (one transaction) and returns its NID. */
+OPST_API int opst_msg_import(opst *p, uint32_t folder, const opst_import_msg *msg, uint32_t *nid_out);
+/* Files n messages into `folder` in ONE transaction (one contents-table rewrite): much faster than n single imports. nids has n entries.
+   Everything is held in memory until the commit, so callers should keep a batch to a few dozen MB of payload. */
+OPST_API int opst_msgs_import(opst *p, uint32_t folder, const opst_import_msg *msgs, size_t n, uint32_t *nids);
+
 OPST_API int opst_msgs_purge(opst *p, const uint32_t *nids, size_t n);
 
 /* copy messages of `src` (only read) into a folder of ANOTHER file `dst` (must be opened with OPST_OPEN_WRITE): named properties are

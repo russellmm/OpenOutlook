@@ -139,7 +139,7 @@ int  hbuild_patch_bth_leaf(hbuild *b, uint32_t hid, const kv *recs, size_t n, un
 int  build_bth(hbuild *b, unsigned cbkey, unsigned cbent, const kv *recs, size_t n, uint32_t hdr_hid, uint32_t *out_hdr_hid);
 
 /* ---- property contexts (heap-stored values only) --------------------------------------------------------------------- */
-typedef struct { uint16_t pid, ptype; bbuf v; } pcprop;
+typedef struct { uint16_t pid, ptype; bbuf v; uint32_t ext_nid; } pcprop;      /* ext_nid != 0: the value is in the subnode with that nid (v is unused) */
 typedef struct { pcprop *p; size_t n, cap; } pcprops;
 void pcprops_free(pcprops *p);
 int  pcprops_get(opw *w, uint32_t nid, pcprops *out);
@@ -208,6 +208,7 @@ uint32_t ops_next_row_ver(ops *o);
 int  ops_counts(ops *o, uint32_t folder, int d_cnt, int d_unread);
 int  ops_unread(const pcprops *vals);
 int  ops_set_msg_state(ops *o, const uint32_t *nids, size_t n, int read, int flag);
+int  ops_import_msgs(ops *o, uint32_t folder, const opst_import_msg *msgs, size_t n, uint32_t *nids);
 int  ops_move_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, size_t *moved);
 int  ops_copy_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, int share, int ids, int fresh, uint32_t *new_nids);
 int  ops_purge_msgs(ops *o, const uint32_t *nids, size_t n);

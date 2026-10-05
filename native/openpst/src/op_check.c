@@ -542,11 +542,17 @@ static int check_rowcells(chk *c, ops *o, const tabvec *tabs) {
         tctx tc;
         if (ed_load_tc(o->w, tabs->v[ti], &tc) != 0) continue;
         int c17 = tc_col(&tc, 0x0E17), c30 = tc_col(&tc, 0x3013);
-        size_t miss = 0;
+        size_t miss = 0, short_rows = 0;
         for (size_t r = 0; r < tc.nrows; r++) {
             rows++;
             if ((c17 >= 0 && !tc.rows[r].present[c17]) || (c30 >= 0 && !tc.rows[r].present[c30])) miss++;
+            pcprops mp;
+            if (pcprops_get_ex(o->w, tc.rows[r].rowid, &mp, 1) == 0) {
+                if (row_fill_missing(&tc, r, &mp, 0) > 0) short_rows++;
+                pcprops_free(&mp);
+            }
         }
+        if (short_rows) note(c, &probs, "  contents table 0x%x: %zu of %zu rows lack cells for columns of the table that the message has a value for (SCANPST: Contents Table row doesn't match sub-object)", tabs->v[ti], short_rows, tc.nrows);
         if (miss) note(c, &probs, "  contents table 0x%x: %zu of %zu rows lack the row cells 0x0E17 / 0x3013 that Outlook writes (SCANPST adds them)", tabs->v[ti], miss, tc.nrows);
         tc_free(&tc);
     }

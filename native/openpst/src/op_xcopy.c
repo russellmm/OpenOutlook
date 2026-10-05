@@ -289,6 +289,7 @@ int xc_copy(ops *dst, opst *srcp, const uint32_t *nids, size_t n, uint32_t dest,
             if (!rc) rc = idmap_add(im, g, nn);
         }
         if (!rc) rc = tc_add_by_pid(&dtc, nn, &vals);
+        if (!rc) rc = row_fill_node(w, &dtc, nn);
         if (!rc) { cnt++; unread += ops_unread(&vals); if (new_nids) new_nids[cnt - 1] = nn; }
         pcprops_free(&vals);
     }

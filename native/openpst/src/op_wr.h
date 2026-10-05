@@ -86,6 +86,7 @@ int  opw_xblock(opw *w, int level, const uint64_t *ids, size_t n, uint32_t total
 int  opw_add_ref(opw *w, uint64_t bid);
 int  opw_release(opw *w, uint64_t bid);
 int  opw_bbt_drop(opw *w, uint64_t bid);                       /* BBT entry removed and its space freed; children untouched */
+int  opw_tree_bytes(opw *w, uint64_t bid, uint64_t *out, int depth);
 int  opw_bbt_set_cref(opw *w, uint64_t bid, unsigned cref);
 typedef struct { uint64_t *orphan; size_t norphan, caporphan; uint64_t *fix_bid; unsigned *fix_cref; size_t nfix, capfix; } refsfix;
 int  refs_collect(opw *w, refsfix *out);                       /* op_check.c: orphan blocks and blocks whose reference count is wrong */
@@ -253,6 +254,11 @@ int  xc_copy(ops *dst, opst *src, const uint32_t *nids, size_t n, uint32_t dest,
 
 int  fo_create(ops *o, uint32_t parent, const char *name, const char *cls, uint32_t *nid);
 int  fo_rename(ops *o, uint32_t nid, const char *name);
+/* every cell a contents row must carry: for each column of the table the row lacks, the message's own value, else the default SCANPST writes
+   (0x0E03 empty, 0x1080 -1, 0x300B a 16-byte key). apply = 0 only counts. Returns the number of cells added / missing, or a negative error. */
+int  row_fill_missing(tctx *tc, size_t r, pcprops *mp, int apply);
+int  row_fill_node(opw *w, tctx *tc, uint32_t rowid);
+int  ops_set_i32(ops *o, uint32_t nid, unsigned pid, uint32_t v);
 int  fo_repair_all(ops *o, int apply, int *found, void (*say)(void *, const char *), void *ctx);
 int  fo_move(ops *o, uint32_t nid, uint32_t dest, int *moved);
 int  fo_purge(ops *o, uint32_t nid, opst_purge_stats *st);

@@ -441,12 +441,26 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
         wr32(w->hdr + 44 + 4 * 4, idx);
         rc = opw_node_put(w, nn, bd, bs, folder);
     }
+    if (!rc) {
+        /* PidTagMessageSize as SCANPST computes it: the stored size of the message's data and subnode trees minus 40 bytes (measured, not estimated;
+           the estimate above is only the placeholder that makes the property exist with the right width) */
+        uint64_t real = 0;
+        rc = opw_tree_bytes(w, bd, &real, 0);
+        if (!rc && bs) rc = opw_tree_bytes(w, bs, &real, 0);
+        if (!rc) {
+            if (real > 40) real -= 40;
+            if (real > 0x7FFFFFFF) real = 0x7FFFFFFF;
+            rc = ops_set_i32(o, nn, 0x0E08, (uint32_t)real);
+            if (!rc) rc = p_i32(&p, 0x0E08, (int32_t)real);
+        }
+    }
 
     /* the row in the folder's contents table: every column the table has and the message has a value for */
     if (!rc) {
         pcprops row = {0};
         for (size_t i = 0; i < p.n && !rc; i++) {
             if (p.p[i].ext_nid) continue;                       /* large values are not table columns */
+            if ((p.p[i].ptype == 0x1F || p.p[i].ptype == 0x1E) && p.p[i].v.n == 0) continue;   /* an empty string is no row cell (SCANPST drops it) */
             rc = pcprops_set(&row, p.p[i].pid, p.p[i].ptype, p.p[i].v.p, p.p[i].v.n);
         }
         if (!rc) rc = p_i32(&row, 0x67F2, (int32_t)nn);
@@ -478,6 +492,10 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
             }
         }
         if (!rc) rc = tc_add_by_pid(dtc, nn, &row);
+        if (!rc) {                                                   /* every other column of this folder's table gets its cell too (Outlook's rows are complete) */
+            int ri = tc_find(dtc, nn);
+            if (ri >= 0) { int added = row_fill_missing(dtc, (size_t)ri, &p, 1); if (added < 0) rc = -added; }
+        }
         pcprops_free(&row);
     }
     if (!rc) {

@@ -295,6 +295,35 @@ static int uset_add(u32hash *s, uint32_t v, int *was_there) {
 
 typedef struct { uint32_t nid; tctx tc; int ci; } rvtab;
 
+int row_fill_missing(tctx *tc, size_t r, pcprops *mp, int apply) {
+    static const unsigned skip[] = {0x0E17, 0x3013, 0x67F2, 0x67F3, 0x0E30, 0x0E33, 0x0E34, 0x0E1B, 0x0E08, 0x0E07, 0x0E06};   /* row-only cells and the ones R10 compares */
+    int n = 0;
+    for (size_t c = 0; c < tc->ncols; c++) {
+        unsigned pid = tc->cols[c].pid, pt = tc->cols[c].ptype;
+        int skipit = 0;
+        for (size_t k = 0; k < sizeof skip / sizeof *skip; k++) if (skip[k] == pid) skipit = 1;
+        if (skipit || tc->rows[r].present[c]) continue;
+        pcprop *p = pcprops_find(mp, pid);
+        const uint8_t *val = NULL;
+        size_t vn = 0;
+        if (p && !p->ext_nid && p->ptype == pt) { val = p->v.p; vn = p->v.n; }
+        if (!val && !vn) continue;
+        n++;
+        if (apply) { int rc = tc_set_cell(tc, r, (int)c, val, vn); if (rc) return -rc; }
+    }
+    return n;
+}
+
+/* completes a row just added to a contents table (moved / copied / imported from a table with other columns) from its message */
+int row_fill_node(opw *w, tctx *tc, uint32_t rowid) {
+    pcprops mp;
+    if (pcprops_get_ex(w, rowid, &mp, 1) != 0) return 0;
+    int ri = tc_find(tc, rowid), rc = 0;
+    if (ri >= 0) { int n = row_fill_missing(tc, (size_t)ri, &mp, 1); if (n < 0) rc = -n; }
+    pcprops_free(&mp);
+    return rc;
+}
+
 int fix_run(ops *o, int apply, opst_fix_report *rep) {
     opw *w = o->w;
     memset(rep, 0, sizeof *rep);
@@ -460,8 +489,6 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
         if (!rc && dirty) rc = ed_store_tc(w, tabs.v[ti], &tc);
         tc_free(&tc);
     }
-    free(tabs.v);
-    bb_free(&blob);
     /* ---- R10 ---- */
     for (size_t ti = 0; ti < tabs.n && !rc; ti++) {
         if ((tabs.v[ti] & 0x1F) != 0xE) continue;
@@ -482,12 +509,19 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
                 rep->rowsync_issues++;
                 if (apply) { rc = tc_set_cell(&tc, r, cols[k], p->v.p, want); dirty = 1; }
             }
+            if (!rc) {
+                int added = row_fill_missing(&tc, r, &mp, apply);
+                if (added < 0) rc = -added;
+                else if (added) { rep->rowsync_issues += added; dirty = dirty || apply; }
+            }
             pcprops_free(&mp);
         }
         if (!rc && dirty) rc = ed_store_tc(w, tabs.v[ti], &tc);
         tc_free(&tc);
     }
 
+    free(tabs.v);
+    bb_free(&blob);
     /* ---- R8 ---- */
     if (!rc) {
         int nf = 0;

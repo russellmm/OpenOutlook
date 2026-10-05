@@ -782,6 +782,32 @@ int opw_bbt_drop(opw *w, uint64_t bid) {
     return rc;
 }
 
+/* total stored size (cb) of a block tree: the block itself and, for internal blocks, everything below it; subnode trees include the data of
+   every subnode and of their own subnode trees. SCANPST compares PidTagMessageSize with this (minus 40 bytes) for the message's data + subnode trees. */
+int opw_tree_bytes(opw *w, uint64_t bid, uint64_t *out, int depth) {
+    if (!bid) return 0;
+    if (depth > 8) return CORRUPT("block tree too deep");
+    bbt_e e;
+    int rc = opw_bbt_entry(w, bid, &e);
+    if (rc) return rc;
+    *out += e.cb;
+    if (!(bid & 2)) return 0;
+    uint8_t *d = (uint8_t *)malloc(e.cb ? e.cb : 1);
+    if (!d) return NOMEM;
+    rc = opw_read(w, e.ib, e.cb, d);
+    if (rc) { free(d); return rc; }
+    unsigned bt = d[0], lvl = d[1], cent = op_u16(d + 2);
+    for (unsigned i = 0; i < cent && !rc; i++) {
+        if (bt == 1 && 8 + (size_t)(i + 1) * 8 <= e.cb) rc = opw_tree_bytes(w, op_u64(d + 8 + 8 * i), out, depth + 1);
+        else if (bt == 2 && lvl == 0 && 8 + (size_t)(i + 1) * 24 <= e.cb) {
+            rc = opw_tree_bytes(w, op_u64(d + 8 + 24 * i + 8), out, depth + 1);
+            if (!rc) rc = opw_tree_bytes(w, op_u64(d + 8 + 24 * i + 16), out, depth + 1);
+        } else if (bt == 2 && lvl != 0 && 8 + (size_t)(i + 1) * 16 <= e.cb) rc = opw_tree_bytes(w, op_u64(d + 8 + 16 * i + 8), out, depth + 1);
+    }
+    free(d);
+    return rc;
+}
+
 int opw_bbt_set_cref(opw *w, uint64_t bid, unsigned cref) {
     bbt_e e;
     int rc = opw_bbt_entry(w, bid, &e);

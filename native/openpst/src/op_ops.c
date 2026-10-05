@@ -341,6 +341,7 @@ int ops_move_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, size_t 
             if (rc) break;
             rc = tc_remove(&stc, m);
             if (!rc) rc = tc_add_by_pid(&dtc, m, &vals);
+            if (!rc) rc = row_fill_node(w, &dtc, m);
             nbt_e e = {0};
             if (!rc) rc = opw_node(w, m, &e);
             if (!rc) rc = opw_node_put(w, m, e.bd, e.bs, dest);
@@ -364,6 +365,7 @@ int ops_move_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, size_t 
 /* ---- read / flag state ------------------------------------------------------------------------------------------------------------- */
 /* read-modify-write of an int32 property of a node's property context, in place: new = (old & andmask) | ormask.
    *found = 0 when the property is absent (nothing changed). */
+int ops_set_i32(ops *o, uint32_t nid, unsigned pid, uint32_t v);
 static int ops_pc_rmw(ops *o, uint32_t nid, unsigned pid, uint32_t andmask, uint32_t ormask, int create, uint32_t *oldv, uint32_t *newv, int *found) {
     opw *w = o->w;
     *found = 0;
@@ -418,6 +420,12 @@ store:
     rc = opw_node_put(w, nid, new_bd, e.bs, e.parent);
     if (!rc) rc = opw_release(w, e.bd);
     return rc;
+}
+
+int ops_set_i32(ops *o, uint32_t nid, unsigned pid, uint32_t v) {
+    uint32_t a = 0, b = 0;
+    int f = 0;
+    return ops_pc_rmw(o, nid, pid, 0u, v, 0, &a, &b, &f);
 }
 
 /* read: -1 unchanged, 0 unread, 1 read.  flag: -1 unchanged, else PidTagFlagStatus (0 none, 1 complete, 2 flagged).
@@ -564,6 +572,7 @@ int ops_copy_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, int sha
                 }
             }
             if (!rc) rc = tc_add_by_pid(&dtc, nn, &vals);
+            if (!rc) rc = row_fill_node(w, &dtc, nn);
             if (!rc) {
                 cnt++; unread += ops_unread(&vals);
                 if (new_nids) new_nids[cnt - 1] = nn;

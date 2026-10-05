@@ -28,8 +28,30 @@ public partial class MainWindow
     private bool _portraitReading;
     private GridLength[]? _savedPaneWidths;
 
+    private bool AnyFullWindowOverlayOpen =>
+        BackstageHost.IsVisible || OptionsHost.IsVisible || EditorOptionsHost.IsVisible || ReadingPaneHost.IsVisible;
+
+    /// <summary>The interactive HTML view is a native web control: it is drawn by the operating system above everything Avalonia paints, so the File screen,
+    /// Options and their dialogs cannot cover it. It is hidden while any of them is open and comes back when the last one closes.</summary>
+    private void InitializeWebViewOverlayGuard()
+    {
+        void Apply()
+        {
+            if (!_webViewAvailable) return;
+            var show = _embeddedHtmlActive && !AnyFullWindowOverlayOpen;
+            if (MainHtmlWebView.IsVisible != show) MainHtmlWebView.IsVisible = show;
+        }
+        foreach (var host in new Control[] { BackstageHost, OptionsHost, EditorOptionsHost, ReadingPaneHost })
+            host.PropertyChanged += (_, e) => { if (e.Property == Visual.IsVisibleProperty) Apply(); };
+        MainHtmlWebView.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == Visual.IsVisibleProperty && MainHtmlWebView.IsVisible && AnyFullWindowOverlayOpen) MainHtmlWebView.IsVisible = false;
+        };
+    }
+
     private void InitializeReadingOptions()
     {
+        InitializeWebViewOverlayGuard();
         // Tunnel: the grid itself would otherwise consume Space (it toggles row selection).
         MessageList.AddHandler(KeyDownEvent, MessageListKeyDownTunnel, RoutingStrategies.Tunnel);
         MessageList.AddHandler(TappedEvent, MessageListTappedForPortrait, RoutingStrategies.Bubble, handledEventsToo: true);

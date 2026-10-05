@@ -327,4 +327,35 @@ public sealed class MainWindowHeadlessTests
         }
         finally { window.Close(); }
     }
+
+    [AvaloniaFact]
+    public async Task Native_web_view_is_hidden_while_the_file_screen_or_options_are_open()
+    {
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var webViewField = typeof(MainWindow).GetField("_webViewAvailable", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            if (!(bool)webViewField.GetValue(window)!) return;                 // no web view on this system: nothing can overlay
+            typeof(MainWindow).GetField("_embeddedHtmlActive", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, true);
+            var web = window.FindControl<Control>("MainHtmlWebView")!;
+            var backstage = window.FindControl<Control>("BackstageHost")!;
+            var options = window.FindControl<Control>("OptionsHost")!;
+            web.IsVisible = true;
+            Assert.True(web.IsVisible);
+            backstage.IsVisible = true;
+            Assert.False(web.IsVisible);                                        // the File screen must not be covered by the native view
+            web.IsVisible = true;
+            Assert.False(web.IsVisible);                                        // and nothing may bring it back on top while it is open
+            backstage.IsVisible = false;
+            Assert.True(web.IsVisible);                                         // closing returns the message
+            options.IsVisible = true;
+            Assert.False(web.IsVisible);
+            options.IsVisible = false;
+            Assert.True(web.IsVisible);
+            await Task.CompletedTask;
+        }
+        finally { window.Close(); }
+    }
 }

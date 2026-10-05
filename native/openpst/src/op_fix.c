@@ -306,7 +306,7 @@ int row_fill_missing(tctx *tc, size_t r, pcprops *mp, int apply) {
         pcprop *p = pcprops_find(mp, pid);
         const uint8_t *val = NULL;
         size_t vn = 0;
-        if (p && !p->ext_nid && p->ptype == pt) { val = p->v.p; vn = p->v.n; }
+        if (p && !p->ext_nid && p->ptype == pt && p->v.n) { val = p->v.p; vn = p->v.n; }      /* an empty value is no row cell */
         if (!val && !vn) continue;
         n++;
         if (apply) { int rc = tc_set_cell(tc, r, (int)c, val, vn); if (rc) return -rc; }
@@ -508,6 +508,14 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
                 if (memcmp(p->v.p, tc.rows[r].cell[cols[k]].p, want) == 0) continue;
                 rep->rowsync_issues++;
                 if (apply) { rc = tc_set_cell(&tc, r, cols[k], p->v.p, want); dirty = 1; }
+            }
+            if (!rc) {                                   /* 0x3013 = the conversation GUID of the message */
+                int c3 = tc_col(&tc, 0x3013);
+                pcprop *cp = pcprops_find(&mp, 0x71);
+                if (c3 >= 0 && cp && cp->v.n >= 22 && (!tc.rows[r].present[c3] || tc.rows[r].cell[c3].n != 16 || memcmp(tc.rows[r].cell[c3].p, cp->v.p + 6, 16) != 0)) {
+                    rep->rowsync_issues++;
+                    if (apply) { rc = tc_set_cell(&tc, r, c3, cp->v.p + 6, 16); dirty = 1; }
+                }
             }
             if (!rc) {
                 int added = row_fill_missing(&tc, r, &mp, apply);

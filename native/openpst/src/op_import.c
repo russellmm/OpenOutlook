@@ -353,7 +353,7 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
         uint8_t g2[16];
         rc = op_random(g2, 16);
         conv[0] = 1;
-        uint64_t t5 = (uint64_t)now >> 16;
+        uint64_t t5 = (uint64_t)now >> 24;                 /* the top 40 bits of the FILETIME, as Outlook writes them */
         for (int i = 0; i < 5; i++) conv[1 + i] = (uint8_t)(t5 >> (8 * (4 - i)));
         memcpy(conv + 6, g2, 16);
     }
@@ -492,6 +492,7 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
             }
         }
         if (!rc) rc = tc_add_by_pid(dtc, nn, &row);
+        if (!rc) rc = row_sync_conv_id(w, dtc, nn);
         if (!rc) {                                                   /* every other column of this folder's table gets its cell too (Outlook's rows are complete) */
             int ri = tc_find(dtc, nn);
             if (ri >= 0) { int added = row_fill_missing(dtc, (size_t)ri, &p, 1); if (added < 0) rc = -added; }
@@ -522,8 +523,8 @@ int ops_import_msgs(ops *o, uint32_t folder, const opst_import_msg *msgs, size_t
     tctx dtc;
     int rc = ed_load_tc(w, dtc_nid, &dtc);
     if (rc) return rc;
-    keyednid *keys = (keyednid *)calloc(n, sizeof *keys);
-    if (!keys) { tc_free(&dtc); return NOMEM; }
+    keyednid *keys = (keyednid *)calloc(n, sizeof *keys), *all = (keyednid *)calloc(2 * n, sizeof *all);
+    if (!keys || !all) { free(keys); free(all); tc_free(&dtc); return NOMEM; }
     int unread = 0;
     for (size_t i = 0; i < n && !rc; i++) {
         rc = import_one(o, folder, &dtc, &msgs[i], &nids[i], &keys[i]);
@@ -533,10 +534,14 @@ int ops_import_msgs(ops *o, uint32_t folder, const opst_import_msg *msgs, size_t
     if (!rc) rc = ops_counts(o, folder, (int)n, unread);
     if (!rc) {
         size_t nk = 0;
-        for (size_t i = 0; i < n; i++) if (keys[i].key) keys[nk++] = keys[i];     /* every imported message carries a conversation index */
-        rc = ops_note_max_message_nid(o, NULL, 0, NULL, 0, keys, nk);
+        for (size_t i = 0; i < n; i++) {
+            uint32_t k2;
+            if (keys[i].key) all[nk++] = keys[i];                                  /* every imported message carries a conversation index */
+            if (row_conv_key(&dtc, nids[i], &k2) && k2 != keys[i].key) { all[nk].key = k2; all[nk].nid = nids[i]; nk++; }
+        }
+        rc = ops_note_max_message_nid(o, NULL, 0, NULL, 0, all, nk);
     }
-    free(keys);
+    free(keys); free(all);
     tc_free(&dtc);
     return rc;
 }

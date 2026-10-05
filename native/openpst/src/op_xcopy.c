@@ -219,6 +219,9 @@ int xc_copy(ops *dst, opst *srcp, const uint32_t *nids, size_t n, uint32_t dest,
     uint32_t dtc_nid = (dest & ~0x1Fu) | 0x0E;
     tctx dtc = {0};
     if (!rc) rc = ed_load_tc(w, dtc_nid, &dtc);
+    keyednid *kn = (keyednid *)calloc(2 * n + 1, sizeof *kn);
+    size_t nkn = 0;
+    if (!kn) rc = OPST_E_NOMEM;
     bbuf blob = {0};
     int have_blob = 0;
     if (!rc) rc = fix_replica_blob(dst, &blob, &have_blob);
@@ -290,6 +293,12 @@ int xc_copy(ops *dst, opst *srcp, const uint32_t *nids, size_t n, uint32_t dest,
         }
         if (!rc) rc = tc_add_by_pid(&dtc, nn, &vals);
         if (!rc) rc = row_fill_node(w, &dtc, nn);
+        if (!rc) rc = row_sync_conv_id(w, &dtc, nn);
+        if (!rc) {                                                        /* index the copy under both of its keys (see row_conv_key) */
+            uint32_t k1, k2;
+            if (msg_conv_key(w, nn, &k1)) { kn[nkn].key = k1; kn[nkn].nid = nn; nkn++; }
+            if (row_conv_key(&dtc, nn, &k2) && (!msg_conv_key(w, nn, &k1) || k2 != k1)) { kn[nkn].key = k2; kn[nkn].nid = nn; nkn++; }
+        }
         if (!rc) { cnt++; unread += ops_unread(&vals); if (new_nids) new_nids[cnt - 1] = nn; }
         pcprops_free(&vals);
     }
@@ -311,7 +320,8 @@ int xc_copy(ops *dst, opst *srcp, const uint32_t *nids, size_t n, uint32_t dest,
         }
     }
     if (!rc) rc = ops_bump_hwm(dst, x.hw, x.nhw);
-    if (!rc) rc = ops_note_max_message_nid(dst, NULL, 0, NULL, 0, NULL, 0);
+    if (!rc) rc = ops_note_max_message_nid(dst, NULL, 0, NULL, 0, kn, nkn);
+    free(kn);
     free(x.hw); free(x.tmap.e);
     nm_free(x.snpm); nm_free(x.dnpm);
     op_ro_end(x.src);

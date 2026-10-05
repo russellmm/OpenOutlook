@@ -258,6 +258,9 @@ int  fo_rename(ops *o, uint32_t nid, const char *name);
    (0x0E03 empty, 0x1080 -1, 0x300B a 16-byte key). apply = 0 only counts. Returns the number of cells added / missing, or a negative error. */
 int  row_fill_missing(tctx *tc, size_t r, pcprops *mp, int apply);
 int  row_fill_node(opw *w, tctx *tc, uint32_t rowid);
+int  row_conv_key(const tctx *tc, uint32_t rowid, uint32_t *key);
+int  row_sync_conv_id(opw *w, tctx *tc, uint32_t rowid);
+uint32_t conv_key_of_guid(const uint8_t *g);
 int  ops_set_i32(ops *o, uint32_t nid, unsigned pid, uint32_t v);
 int  fo_repair_all(ops *o, int apply, int *found, void (*say)(void *, const char *), void *ctx);
 int  fo_move(ops *o, uint32_t nid, uint32_t dest, int *moved);

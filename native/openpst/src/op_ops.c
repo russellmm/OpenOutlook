@@ -573,6 +573,7 @@ int ops_copy_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, int sha
             }
             if (!rc) rc = tc_add_by_pid(&dtc, nn, &vals);
             if (!rc) rc = row_fill_node(w, &dtc, nn);
+            if (!rc) rc = row_sync_conv_id(w, &dtc, nn);
             if (!rc) {
                 cnt++; unread += ops_unread(&vals);
                 if (new_nids) new_nids[cnt - 1] = nn;
@@ -586,7 +587,7 @@ int ops_copy_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, int sha
     if (!rc) rc = ops_counts(o, dest, cnt, unread);
     if (!rc) {
         /* attach every copy to the bucket of its own conversation key; copies without a conversation index follow their source's bucket */
-        keyednid *keyed = (keyednid *)malloc((np ? np : 1) * sizeof *keyed);
+        keyednid *keyed = (keyednid *)malloc((2 * np + 1) * sizeof *keyed);
         nidpair *rest = (nidpair *)malloc((np ? np : 1) * sizeof *rest);
         size_t nk = 0, nr = 0;
         if (!keyed || !rest) rc = OPST_E_NOMEM;
@@ -594,6 +595,7 @@ int ops_copy_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, int sha
             uint32_t key;
             if (msg_conv_key(w, pairs[i].parent, &key)) { keyed[nk].key = key; keyed[nk].nid = pairs[i].parent; nk++; }
             else rest[nr++] = pairs[i];
+            { uint32_t k1 = key; if (row_conv_key(&dtc, pairs[i].parent, &key) && key != k1) { keyed[nk].key = key; keyed[nk].nid = pairs[i].parent; nk++; } }
         }
         if (!rc) rc = ops_note_max_message_nid(o, rest, nr, NULL, 0, keyed, nk);
         free(keyed); free(rest);
@@ -655,10 +657,32 @@ static int keyset_has(const keyset *s, uint32_t k) { for (size_t i = 0; i < s->n
 
 /* Key of a message's bucket in the message index (node 0xE01), found with SCANPST as an oracle (14,578 of 14,582 real keys, 167 of 170 probes):
    0xFFFF0000 xor (xor over the 16 bytes of the conversation GUID, byte j shifted left by 15 - j); the GUID is bytes 6..22 of PidTagConversationIndex */
-static uint32_t conv_key_of_guid(const uint8_t *g) {
+uint32_t conv_key_of_guid(const uint8_t *g) {
     uint32_t h = 0;
     for (int j = 0; j < 16; j++) h ^= (uint32_t)g[j] << (15 - j);
     return 0xFFFF0000u ^ h;
+}
+
+/* Every message is indexed under two keys (found by comparing a SCANPST-repaired file with ours): the one of its conversation index (above) and
+   the one of its PidTagConversationId, the 16-byte per-row cell 0x3013, folded the same way. */
+int row_conv_key(const tctx *tc, uint32_t rowid, uint32_t *key) {
+    int ri = tc_find(tc, rowid), ci = tc_col(tc, 0x3013);
+    if (ri < 0 || ci < 0 || !tc->rows[ri].present[ci] || tc->rows[ri].cell[ci].n != 16) return 0;
+    *key = conv_key_of_guid(tc->rows[ri].cell[ci].p);
+    return 1;
+}
+/* The row's 0x3013 (PidTagConversationId) of a message that has a conversation index is the GUID inside it, bytes 6..22 (true for every message
+   Outlook wrote; SCANPST rewrites any other value and re-indexes the message). Returns 0 when the message has no conversation index. */
+int row_sync_conv_id(opw *w, tctx *tc, uint32_t rowid) {
+    int ri = tc_find(tc, rowid), ci = tc_col(tc, 0x3013);
+    if (ri < 0 || ci < 0) return 0;
+    pcprops mp;
+    if (pcprops_get_ex(w, rowid, &mp, 1) != 0) return 0;
+    pcprop *p = pcprops_find(&mp, 0x71);
+    int rc = 0;
+    if (p && p->v.n >= 22) rc = tc_set_cell(tc, (size_t)ri, ci, p->v.p + 6, 16);
+    pcprops_free(&mp);
+    return rc;
 }
 
 int msg_conv_key(opw *w, uint32_t nid, uint32_t *key) {

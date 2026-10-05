@@ -650,6 +650,9 @@
                       <TextBlock Text="Add Account" VerticalAlignment="Center" />
                     </StackPanel>
                   </Button>
+                  <Button Name="BsDataFilesInfoButton" Classes="olBsAction" Click="BsDataFilesInfoClicked" HorizontalAlignment="Left" Margin="0,8,0,0">
+                    <TextBlock Text="Data Files…" VerticalAlignment="Center" />
+                  </Button>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Margin="36,34,0,0" Spacing="7">
                   <Border Width="142" Height="142" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1" Padding="9">

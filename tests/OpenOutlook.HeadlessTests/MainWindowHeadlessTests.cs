@@ -662,6 +662,41 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public void Data_files_window_lists_accounts_and_saves_choices()
+    {
+        var rows = new List<DataFileRow>
+        {
+            new("acc1", "me@hotmail.test", "Microsoft", "C:/mail/me@hotmail.test.pst", 5 * 1024 * 1024, new DateTime(2026, 10, 5, 12, 0, 0, DateTimeKind.Utc), "up to date", new OpenOutlook.Mirror.MirrorAccountSettings(), true),
+            new("acc2", "me@gmail.test", "Gmail", "C:/mail/me@gmail.test.pst", 0, null, "", new OpenOutlook.Mirror.MirrorAccountSettings(), false)
+        };
+        var saved = new List<(string Id, OpenOutlook.Mirror.MirrorAccountSettings S)>();
+        var synced = new List<string>();
+        var window = new DataFilesWindow(() => rows, id => { synced.Add(id); return Task.CompletedTask; }, _ => Task.FromResult<string?>(null), _ => { }, (id, s) => saved.Add((id, s)));
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            Shot(window, "11-data-files");
+            var texts = window.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text ?? "").ToList();
+            Assert.Contains(texts, t => t.Contains("me@hotmail.test"));
+            Assert.Contains(texts, t => t.Contains("5 MB") && t.Contains("up to date"));
+            Assert.Contains(texts, t => t.Contains("not available yet"));                      // Gmail copies come later
+            var months = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.Items.OfType<ComboBoxItem>().Any(i => i.Content?.ToString() == "12 months"));
+            Assert.Equal("12 months", ((ComboBoxItem)months.SelectedItem!).Content);           // default keep window
+            months.SelectedIndex = 3;                                                          // 3 months
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(3, saved.Last().S.KeepMonths);
+            Assert.True(saved.Last().S.Enabled);
+            Assert.Equal(25L << 20, saved.Last().S.MaxAttachmentBytes);                        // default attachment cap
+            var sync = window.GetVisualDescendants().OfType<Button>().First(b => b.Content?.ToString() == "Sync now");
+            sync.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(["acc1"], synced);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public async Task Compose_window_looks_like_outlooks_and_sends_from_the_chosen_account()
     {
         var hotmail = new RecordingBackend("me@hotmail.test", "Microsoft");

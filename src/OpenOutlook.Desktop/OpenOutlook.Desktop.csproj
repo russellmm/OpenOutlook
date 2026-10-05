@@ -20,6 +20,7 @@
     <ProjectReference Include="../OpenOutlook.PstNative/OpenOutlook.PstNative.csproj" />
     <ProjectReference Include="../OpenOutlook.JunkCleaner/OpenOutlook.JunkCleaner.csproj" />
     <ProjectReference Include="../OpenOutlook.Auth/OpenOutlook.Auth.csproj" />
+    <ProjectReference Include="../OpenOutlook.Mirror/OpenOutlook.Mirror.csproj" />
     <ProjectReference Include="../OpenOutlook.Providers.Microsoft/OpenOutlook.Providers.Microsoft.csproj" />
     <ProjectReference Include="../OpenOutlook.Providers.Google/OpenOutlook.Providers.Google.csproj" />
   </ItemGroup>

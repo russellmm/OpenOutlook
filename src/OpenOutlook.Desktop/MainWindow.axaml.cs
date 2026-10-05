@@ -184,6 +184,7 @@ public sealed partial class MainWindow : Window
             // Explicit command-line archives enable repeatable headless UI smoke tests.
             foreach (var path in Environment.GetCommandLineArgs().Skip(1).Where(File.Exists))
                 await OpenArchiveAsync(Path.GetFullPath(path));
+            StartMirrorScheduler();                                  // the local copies of connected mailboxes
             var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path));
             if (unavailable > 0)
                 StatusText.Text = $"{unavailable} saved PST archive{(unavailable == 1 ? "" : "s")} could not be opened; the paths remain saved for the next restart.";

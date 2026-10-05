@@ -17,6 +17,8 @@ public static class BrowserProcessTracker
     private static string FilePath => Path.Combine(Path.GetTempPath(), "openoutlook-reader", "browser-pids.txt");
 
     private static string? _lastGood;
+    private static readonly HashSet<string> Failed = new(StringComparer.OrdinalIgnoreCase);       // browsers that would not start in this run
+    private static string LastGoodFile => Path.Combine(Path.GetTempPath(), "openoutlook-reader", "last-browser.txt");
 
     /// <summary>
     /// Starts a headless browser for rendering and remembers it. The browser that worked last is tried first, then every other installed one (Edge 154 stopped
@@ -24,12 +26,16 @@ public static class BrowserProcessTracker
     /// </summary>
     public static async Task<IBrowser> LaunchAsync(string preferredExecutable)
     {
+        _lastGood ??= ReadLastGood();
         var order = new List<string>();
         if (_lastGood is not null && File.Exists(_lastGood)) order.Add(_lastGood);
         order.Add(preferredExecutable);
         order.AddRange(BrowserHtmlRenderer.ExistingBrowsers());
+        var candidates = order.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var untried = candidates.Where(c => !Failed.Contains(c)).ToList();
+        if (untried.Count > 0) candidates = untried;                  // a browser that already failed in this run is only retried when nothing else is left
         Exception? last = null;
-        foreach (var executable in order.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var executable in candidates)
         {
             for (var attempt = 0; attempt < 2; attempt++)
             {
@@ -40,6 +46,7 @@ public static class BrowserProcessTracker
                         ExecutablePath = executable, Headless = true, Timeout = 15_000,
                         Args = ["--disable-background-networking", "--disable-extensions"]
                     }).ConfigureAwait(false);
+                    if (!string.Equals(_lastGood, executable, StringComparison.OrdinalIgnoreCase)) WriteLastGood(executable);
                     _lastGood = executable;
                     Remember(browser.Process);
                     return browser;
@@ -49,10 +56,23 @@ public static class BrowserProcessTracker
                     last = e;
                     AppLog.Note("reader", $"{Path.GetFileName(executable)} did not start (attempt {attempt + 1})");
                     if (attempt == 0) await Task.Delay(300).ConfigureAwait(false);
+                    else Failed.Add(executable);
                 }
             }
         }
         throw last ?? new ProcessException("No browser could be started.");
+    }
+
+    private static string? ReadLastGood()
+    {
+        try { return File.Exists(LastGoodFile) ? File.ReadAllText(LastGoodFile).Trim() : null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    private static void WriteLastGood(string executable)
+    {
+        try { Directory.CreateDirectory(Path.GetDirectoryName(LastGoodFile)!); File.WriteAllText(LastGoodFile, executable); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* remembered for this run only */ }
     }
 
     private static void Remember(Process? process)

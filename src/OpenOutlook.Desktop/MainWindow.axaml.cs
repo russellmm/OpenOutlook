@@ -205,7 +205,20 @@ public sealed partial class MainWindow : Window
             await Task.Delay(1000);
             if (_embeddedHtmlActive || HtmlPagesPanel.Children.Count > 0) break;
         }
+        await Task.Delay(TimeSpan.FromSeconds(int.TryParse(Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_SETTLE"), out var settle) ? settle : 0));     // remote images arrive after the first layout
         AppLog.Note("selftest", $"after {(DateTime.Now - started).TotalSeconds:0.0}s: embedded={_embeddedHtmlActive}, snapshot pages={HtmlPagesPanel.Children.Count}, status='{StatusText.Text}', html status='{HtmlStatusText.Text}'");
+        if (Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_SHOT") is { Length: > 0 } shot)
+        {
+            try
+            {
+                var size = new Avalonia.PixelSize(Math.Max(100, (int)ReaderPane.Bounds.Width), Math.Max(100, (int)ReaderPane.Bounds.Height));
+                using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(size);
+                bitmap.Render(ReaderPane);
+                bitmap.Save(shot);
+                AppLog.Note("selftest", "reading pane saved to " + shot);
+            }
+            catch (Exception ex) { AppLog.Error("selftest", ex, "could not save the reading pane picture"); }
+        }
     }
 
     private void RibbonPlaceholderClicked(object? sender, RoutedEventArgs e)
@@ -2156,9 +2169,14 @@ public sealed partial class MainWindow : Window
     {
         if (!_webViewAvailable) return false;
         if (version != _messageVersion) return false;
-        if (document.Length > EmbeddedHtmlMaximumCharacters)
+        // WebView2's NavigateToString refuses documents over 2 MB (it throws "Value does not fall within the expected range"), and a message whose pictures are
+        // embedded as data URIs passes that easily (a 36-picture Amazon mailing did): such a message goes straight to the snapshot reader.
+        if (document.Length > EmbeddedHtmlMaximumCharacters || (document.Length > 500_000 && System.Text.Encoding.UTF8.GetByteCount(document) > 1_900_000))
         {
+            AppLog.Note("reader", $"interactive reader skipped: the document is {document.Length:N0} characters (WebView2 accepts about 2 MB); using the snapshot reader");
             _preferSnapshotForMessage = true;
+            _embeddedHtmlActive = false;                                  // an earlier layout of this message (before its pictures arrived) may still be showing in the web view: take it away
+            MainHtmlWebView.IsVisible = false;
             StatusText.Text = "This message is too large for the interactive reader; showing the alternate view.";
             return false;
         }

@@ -54,10 +54,47 @@ if (step == "renderlive" && mAcc is not null)
     // renderlive <subject text>: the Hotmail message's HTML through the reader's sanitiser and snapshot renderer
     var r0 = new GraphInboxReader(graphHttp, mAcc.AccountId);
     var t0 = await mSession!.GetAccessTokenAsync();
-    var msg = (await r0.GetInboxAsync(t0)).Messages.FirstOrDefault(m => m.Subject.Contains(args[1], StringComparison.OrdinalIgnoreCase));
+    var msg = (await r0.GetInboxAsync(t0)).Messages.FirstOrDefault(m => m.Subject.Contains(args[1], StringComparison.OrdinalIgnoreCase) && (args.Length < 3 || m.From.Contains(args[2], StringComparison.OrdinalIgnoreCase)));
     if (msg is null) { Console.WriteLine("not in the first 50 messages of the inbox"); return 1; }
     var body = await r0.GetMessageBodyAsync(t0, msg.Id);
     Console.WriteLine($"{msg.Subject}: {body?.ContentType}, {body?.Content.Length} chars");
+    System.IO.File.WriteAllText("F:/Claude/OpenOutlook/.local/last-live.html", body?.Content ?? "");
+    {
+        var imgs = SafeHtmlDocument.FindImages(body!.Content);
+        Console.WriteLine("images: " + imgs.Count);
+        using var rc = SafeRemoteImageLoader.CreateClient();
+        int ok = 0, bad = 0;
+        var reasons = new Dictionary<string, int>();
+        foreach (var im in imgs.Take(60))
+        {
+            try
+            {
+                if (!im.ContactsExternalSite) { var d = SafeHtmlDocument.DecodeDataImage(im); if (d is null) throw new Exception("data image invalid"); ok++; continue; }
+                var bytes = await SafeRemoteImageLoader.FetchAsync(im.Value, rc, CancellationToken.None);
+                var declared = SafeInlineImage.Validate(bytes);
+                ok++;
+            }
+            catch (Exception ex) { bad++; var key = ex.GetType().Name + ": " + ex.Message; reasons[key] = reasons.GetValueOrDefault(key) + 1; if (reasons[key] == 1) Console.WriteLine("  e.g. " + im.Value[..Math.Min(110, im.Value.Length)] + " -> " + key); }
+        }
+        Console.WriteLine($"images loaded {ok}, failed {bad}");
+        // the same document the reading pane builds once the pictures have arrived, and how long the layout takes
+        var loaded = new Dictionary<string, byte[]>();
+        foreach (var im in imgs.Take(60).Where(i => i.ContactsExternalSite))
+        {
+            try { loaded[im.Key] = await SafeRemoteImageLoader.FetchAsync(im.Value, rc, CancellationToken.None); } catch (Exception) { }
+        }
+        var withImages = SafeHtmlDocument.Build(body.Content, loaded);
+        Console.WriteLine($"document with {loaded.Count} pictures: {withImages.Length:N0} chars, pictures {loaded.Values.Sum(v => (long)v.Length):N0} bytes");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var rr = await BrowserHtmlRenderer.RenderDocumentAsync(withImages, 800, CancellationToken.None, trustedOriginal: false);
+            Console.WriteLine($"layout with pictures: {rr.Pages.Count} page(s) in {sw.Elapsed.TotalSeconds:0.0}s");
+            System.IO.File.WriteAllBytes("F:/Claude/OpenOutlook/.local/render_img.png", rr.Pages[0]);
+        }
+        catch (Exception ex) { Console.WriteLine($"layout with pictures FAILED after {sw.Elapsed.TotalSeconds:0.0}s: {ex.GetType().Name}: {ex.Message}"); }
+        foreach (var kv in reasons) Console.WriteLine($"  {kv.Value} x {kv.Key}");
+    }
     try
     {
         var interactive = SafeHtmlDocument.BuildInteractive(body!.Content, new Dictionary<string, byte[]>());
@@ -66,6 +103,7 @@ if (step == "renderlive" && mAcc is not null)
         Console.WriteLine("sanitized document: " + doc.Length);
         var r = await BrowserHtmlRenderer.RenderDocumentAsync(doc, 800, CancellationToken.None, trustedOriginal: false);
         Console.WriteLine("rendered pages: " + r.Pages.Count);
+        for (var pi = 0; pi < r.Pages.Count; pi++) System.IO.File.WriteAllBytes("F:/Claude/OpenOutlook/.local/render_" + pi + ".png", r.Pages[pi]);
         foreach (var png in r.Pages) Console.WriteLine($"  page {System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16))} x {System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20))}, {png.Length} bytes");
     }
     catch (Exception ex) { Console.WriteLine("FAILED: " + ex); }

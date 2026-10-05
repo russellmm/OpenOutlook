@@ -180,6 +180,35 @@ public sealed class GmailMailbox
             await PostJsonAsync("/messages/" + id + "/trash", null, token, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Creates a label (a "folder"); a name with slashes nests it under its parent label.</summary>
+    public async Task<GmailLabel> CreateLabelAsync(string name, CancellationToken cancellationToken = default)
+    {
+        name = (name ?? "").Trim();
+        if (name.Length is < 1 or > 225 || name.Any(char.IsControl) || name.StartsWith('/') || name.EndsWith('/') || name.Contains("//", StringComparison.Ordinal))
+            throw new ArgumentException("Invalid label name.", nameof(name));
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var request = new HttpRequestMessage(HttpMethod.Post, Root + "/labels");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Content = new StringContent(JsonSerializer.Serialize(new { name, labelListVisibility = "labelShow", messageListVisibility = "show" }), Encoding.UTF8, "application/json");
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
+        if (response.StatusCode == System.Net.HttpStatusCode.Conflict) throw new GmailReadException("A Gmail label with that name already exists.", response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+            throw new GmailReadException(response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized
+                ? "Gmail did not allow this change. Sign in again from Account setup to allow organizing mail."
+                : $"Gmail could not create the label (HTTP {(int)response.StatusCode}).", response.StatusCode);
+        var text = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (text.Length > MaxResponseBytes) throw new GmailReadException("Gmail response exceeds the size limit.");
+        try
+        {
+            using var json = JsonDocument.Parse(text);
+            var id = OptionalString(json.RootElement, "id");
+            if (id is null || !ValidLabelId(id)) throw new GmailReadException("Gmail returned an invalid label.");
+            return new GmailLabel(id, OptionalString(json.RootElement, "name") ?? name, false, 0, 0);
+        }
+        catch (JsonException) { throw new GmailReadException("Gmail returned invalid JSON."); }
+    }
+
     private async Task PostJsonAsync(string relativePath, object? body, string token, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();

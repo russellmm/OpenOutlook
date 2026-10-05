@@ -62,6 +62,7 @@ public partial class MainWindow
             foreach (var label in labels)
             {
                 var existing = root.Items.OfType<TreeViewItem>().FirstOrDefault(i => i.Tag is GmailFolderSelection s && s.LabelId == label.Id);
+                _gmailUnread[account.AccountId + "|" + label.Id] = label.Unread ?? 0;
                 if (existing is not null) { existing.Header = FolderHeader(((GmailFolderSelection)existing.Tag!).Name, label.Unread ?? 0); continue; }
                 if (label.IsSystem) continue;                       // CHAT, CATEGORY_*, ... are not folders
                 var item = new TreeViewItem { Header = FolderHeader(label.Name, label.Unread ?? 0), Tag = new GmailFolderSelection(account, label.Id, label.Name) };
@@ -137,6 +138,7 @@ public partial class MainWindow
     // ---- actions (gmail.modify) ----
 
     private bool _gmailActionBusy;
+    private readonly Dictionary<string, int> _gmailUnread = new(StringComparer.Ordinal);   // accountId|labelId -> unread count
 
     /// <summary>Mark read / unread, star, archive and trash for the selected Gmail messages. Returns false when the current folder is not a Gmail one.</summary>
     private async Task<bool> TryHandleGmailActionAsync(string action)
@@ -221,32 +223,43 @@ public partial class MainWindow
         var messages = MessageList.SelectedItems.OfType<GraphMessageListRow>().Select(r => r.Message).DistinctBy(m => m.Id).ToArray();
         if (messages.Length == 0) { StatusText.Text = "Select a Gmail message first."; return; }
         var root = FolderTree.Items.OfType<TreeViewItem>().FirstOrDefault(i => i.Tag is ConnectedAccount a && a.AccountId == account.AccountId);
-        // Sent, Drafts, Starred and Important are not places to move mail to.
-        var destinations = (root?.Items.OfType<TreeViewItem>().Select(i => i.Tag).OfType<GmailFolderSelection>() ?? [])
-            .Where(d => d.LabelId != folder.LabelId && d.LabelId is not ("SENT" or "DRAFT" or "STARRED" or "IMPORTANT")).ToList();
-        if (destinations.Count == 0) { StatusText.Text = "There is no other Gmail folder to move into."; return; }
+        // Sent, Drafts, Starred and Important are not places to move mail to; user labels nest by "Parent/Child" like Gmail shows them.
+        var hidden = new HashSet<string> { "SENT", "DRAFT", "STARRED", "IMPORTANT" };
+        int Unread(GmailFolderSelection g) => _gmailUnread.TryGetValue(account.AccountId + "|" + g.LabelId, out var n) ? n : 0;
+        var all = (root?.Items.OfType<TreeViewItem>().Select(i => i.Tag).OfType<GmailFolderSelection>() ?? []).ToList();
+        var accountRoot = new FolderPickItem(account.DisplayAddress, null, selectable: false);
+        foreach (var system in all.Where(g => GmailSystemLabels.Any(l => l.Id == g.LabelId) && !hidden.Contains(g.LabelId)))
+            accountRoot.Children.Add(new FolderPickItem(system.Name, system, Unread(system), selectable: system.LabelId != folder.LabelId));
+        var byPath = new Dictionary<string, FolderPickItem>(StringComparer.Ordinal);
+        foreach (var user in all.Where(g => GmailSystemLabels.All(l => l.Id != g.LabelId)).OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var slash = user.Name.LastIndexOf('/');
+            var item = new FolderPickItem(slash >= 0 ? user.Name[(slash + 1)..] : user.Name, user, Unread(user), selectable: user.LabelId != folder.LabelId);
+            byPath[user.Name] = item;
+            (slash >= 0 && byPath.TryGetValue(user.Name[..slash], out var parentItem) ? parentItem : accountRoot).Children.Add(item);
+        }
+        if (accountRoot.Children.Count == 0) { StatusText.Text = "There is no other Gmail folder to move into."; return; }
 
-        var dialog = new Window
+        var noun = messages.Length == 1 ? "item" : "items";
+        var dialog = new FolderPickerWindow(copy ? "Add Label" : "Move Items", copy ? $"Add the label to the selected {noun}:" : $"Move the selected {noun} to:", [accountRoot], async parent =>
         {
-            Title = $"{(copy ? "Add label to" : "Move")} {(messages.Length == 1 ? "message" : $"{messages.Length} messages")}",
-            Width = 380, Height = 360, WindowStartupLocation = WindowStartupLocation.CenterOwner
-        };
-        var list = new ListBox();
-        foreach (var d in destinations) list.Items.Add(new ListBoxItem { Content = d.Name, Tag = d });
-        var ok = new Button { Content = copy ? "Add label" : "Move", IsEnabled = false };
-        var cancel = new Button { Content = "Cancel" };
-        list.SelectionChanged += (_, _) => ok.IsEnabled = list.SelectedItem is not null;
-        ok.Click += (_, _) => dialog.Close(true);
-        cancel.Click += (_, _) => dialog.Close(false);
-        dialog.Content = new StackPanel
-        {
-            Margin = new Avalonia.Thickness(14), Spacing = 10, Children =
+            var parentLabel = (parent?.Tag as GmailFolderSelection) is { } p && GmailSystemLabels.All(l => l.Id != p.LabelId) ? p : null;
+            var name = await PromptForFolderNameAsync(parentLabel?.Name ?? account.DisplayAddress);
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            if (name.Contains('/')) { StatusText.Text = "A folder name cannot contain a slash."; return null; }
+            try
             {
-                list,
-                new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, Children = { ok, cancel } }
+                var created = await GetGmailMailbox(account).CreateLabelAsync(parentLabel is null ? name.Trim() : parentLabel.Name + "/" + name.Trim());
+                await RefreshGmailCountsAsync(account);
+                StatusText.Text = $"Folder \"{created.Name}\" created.";
+                return new FolderPickItem(name.Trim(), new GmailFolderSelection(account, created.Id, created.Name));
             }
-        };
-        if (!await dialog.ShowDialog<bool>(this) || list.SelectedItem is not ListBoxItem { Tag: GmailFolderSelection dest }) return;
+            catch (GmailReadException error) { StatusText.Text = error.Message; return null; }
+            catch (ArgumentException) { StatusText.Text = "That is not a valid folder name."; return null; }
+            catch (Exception) { StatusText.Text = "Could not create the folder. Check the connection and retry."; return null; }
+        });
+        await dialog.ShowDialog(this);
+        if (dialog.Result?.Tag is not GmailFolderSelection dest) return;
         if (_gmailActionBusy) return;
         _gmailActionBusy = true;
         try

@@ -55,6 +55,12 @@ public partial class MainWindow
     private void InitMessageContextMenu()
     {
         if (MessageList.ContextFlyout is not null) return;
+        MenuItem Action(string header, string action)
+        {
+            var item = new MenuItem { Header = header };
+            item.Click += async (_, _) => await ExecuteMailActionAsync(action);
+            return item;
+        }
         var moveItem = new MenuItem { Header = "Move to Folder\u2026" };
         moveItem.Click += async (_, _) => await MoveViaDialogAsync(copy: false);
         var copyItem = new MenuItem { Header = "Copy to Folder\u2026" };
@@ -62,9 +68,23 @@ public partial class MainWindow
         var archiveItem = new MenuItem { Header = "Copy to Archive Folder\u2026" };
         archiveItem.Click += async (_, _) => await CopyToArchiveViaDialogAsync();
         var flyout = new MenuFlyout();
+        foreach (var entry in new[] { Action("Mark as Read", "read"), Action("Mark as Unread", "unread"), Action("Flag", "flag"), Action("Clear Flag", "unflag") })
+            flyout.Items.Add(entry);
+        flyout.Items.Add(new Separator());
         flyout.Items.Add(moveItem);
         flyout.Items.Add(copyItem);
         flyout.Items.Add(archiveItem);
+        flyout.Items.Add(new Separator());
+        flyout.Items.Add(Action("Delete", "delete"));
+        flyout.Opening += (_, _) =>
+        {
+            var gmail = _activeGmailFolder is not null;
+            var pst = _activePath is not null;
+            moveItem.IsEnabled = gmail || pst;
+            copyItem.IsEnabled = gmail || pst;
+            copyItem.Header = gmail ? "Add Label\u2026" : "Copy to Folder\u2026";
+            archiveItem.IsVisible = pst;
+        };
         MessageList.ContextFlyout = flyout;
     }
 
@@ -83,38 +103,41 @@ public partial class MainWindow
         if (nids.Length == 0) return;
         // Only folders the user can actually see (same filter as the folder tree) - never the MAPI
         // system folders like Search Root or IPM_COMMON_VIEWS.
-        var candidates = new List<MailFolder>();
-        var seenNids = new HashSet<uint> { folder.Nid };
-        void CollectVisible(MailFolder node)
+        FolderPickItem Pick(MailFolder f)
         {
-            if (!seenNids.Add(node.Nid)) return;
-            candidates.Add(node);
-            foreach (var child in node.Children) CollectVisible(child);
+            var item = new FolderPickItem(f.Name, f, f.UnreadCount, selectable: f.Nid != folder.Nid);
+            foreach (var child in f.Children) item.Children.Add(Pick(child));
+            return item;
         }
-        foreach (var rootFolder in PstFolderPresentation.VisibleRoots(store.Root)) CollectVisible(rootFolder);
-        if (candidates.Count == 0) { StatusText.Text = "This archive has no other folder to move into."; return; }
+        var archiveRoot = new FolderPickItem(store.DisplayName, null, selectable: false);
+        foreach (var rootFolder in PstFolderPresentation.VisibleRoots(store.Root)) archiveRoot.Children.Add(Pick(rootFolder));
+        if (archiveRoot.Children.Count == 0) { StatusText.Text = "This archive has no other folder to move into."; return; }
 
-        var dialog = new Window
+        var noun = nids.Length == 1 ? "item" : "items";
+        var dialog = new FolderPickerWindow(copy ? "Copy Items" : "Move Items", $"{(copy ? "Copy" : "Move")} the selected {noun} to:", [archiveRoot], async parent =>
         {
-            Title = $"{(copy ? "Copy" : "Move")} {(nids.Length == 1 ? "message" : $"{nids.Length} messages")} to folder",
-            Width = 420, Height = 380, WindowStartupLocation = WindowStartupLocation.CenterOwner
-        };
-        var list = new ListBox();
-        foreach (var f in candidates) list.Items.Add(new ListBoxItem { Content = f.Name, Tag = f });
-        var ok = new Button { Content = copy ? "Copy" : "Move", IsEnabled = false };
-        var cancel = new Button { Content = "Cancel" };
-        list.SelectionChanged += (_, _) => ok.IsEnabled = list.SelectedItem is not null;
-        ok.Click += (_, _) => dialog.Close(true);
-        cancel.Click += (_, _) => dialog.Close(false);
-        dialog.Content = new StackPanel
-        {
-            Margin = new Thickness(14), Spacing = 10, Children =
+            var parentFolder = parent?.Tag as MailFolder ?? store.Root.Children.FirstOrDefault(c =>
+                c.Name.Equals("Top of Outlook data file", StringComparison.OrdinalIgnoreCase)) ?? store.Root;
+            var name = await PromptForFolderNameAsync(parentFolder.Name);
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            try
             {
-                list,
-                new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, Children = { ok, cancel } }
+                var created = await Task.Run(() => store.CreateFolder(parentFolder.Nid, name));
+                InvalidateFolderCache(path);
+                var parentNode = parent?.Tag is MailFolder pf ? FindFolderNode(FolderTree.Items.OfType<object>(), pf.Nid)
+                    : FolderTree.Items.OfType<TreeViewItem>().FirstOrDefault(n => n.Tag is string p && p == path);
+                if (parentNode is not null) { AddChildren(parentNode, created, path, new HashSet<uint>()); ApplyFolderOrder(parentNode); parentNode.IsExpanded = true; }
+                StatusText.Text = $"Folder \"{created.Name}\" created.";
+                return new FolderPickItem(created.Name, created);
             }
-        };
-        if (await dialog.ShowDialog<bool>(this) && list.SelectedItem is ListBoxItem { Tag: MailFolder dest })
+            catch (Exception ex) when (ex is PstException or IOException)
+            {
+                StatusText.Text = $"Could not create folder: {ex.Message}";
+                return null;
+            }
+        });
+        await dialog.ShowDialog(this);
+        if (dialog.Result?.Tag is MailFolder dest)
             await MoveRowsToFolderAsync(path, folder.Nid, nids, dest, copy);
     }
 

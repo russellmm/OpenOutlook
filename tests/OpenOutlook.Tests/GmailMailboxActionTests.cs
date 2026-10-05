@@ -90,6 +90,26 @@ public sealed class GmailMailboxActionTests
     }
 
     [Fact]
+    public async Task Creates_a_label_and_refuses_bad_names()
+    {
+        string? posted = null;
+        var client = new HttpClient(new Handler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/profile", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"emailAddress":"me@example.org"}""") };
+            posted = request.Method + " " + request.RequestUri.AbsolutePath + " " + request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"id":"Label_9","name":"Travel/2026"}""") };
+        }));
+        var box = new GmailMailbox(client, _ => ValueTask.FromResult("tok"), "me@example.org");
+        var label = await box.CreateLabelAsync("Travel/2026");
+        Assert.Equal(new GmailLabel("Label_9", "Travel/2026", false, 0, 0), label);
+        Assert.StartsWith("POST /gmail/v1/users/me/labels ", posted);
+        Assert.Contains("\"name\":\"Travel/2026\"", posted);
+        foreach (var bad in new[] { "", "  ", "/x", "x/", "a//b", "bad\nname", new string('a', 300) })
+            await Assert.ThrowsAsync<ArgumentException>(() => box.CreateLabelAsync(bad));
+    }
+
+    [Fact]
     public void Only_accounts_connected_with_the_modify_scope_may_change_mail()
     {
         ConnectedAccount Acc(OAuthProvider p, params string[]? scopes) => new(p, "id", "a@b.test", "c", DateTimeOffset.UtcNow, scopes);

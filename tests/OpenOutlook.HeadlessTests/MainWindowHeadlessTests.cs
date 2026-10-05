@@ -358,4 +358,59 @@ public sealed class MainWindowHeadlessTests
         }
         finally { window.Close(); }
     }
+
+    [AvaloniaFact]
+    public async Task Folder_picker_looks_and_behaves_like_outlooks_Move_Items()
+    {
+        var root = new FolderPickItem("someone@example.org", null, selectable: false);
+        var inbox = new FolderPickItem("Inbox", "inbox", unread: 17, selectable: false);   // the folder the messages are already in
+        var travel = new FolderPickItem("Travel", "travel", unread: 3);
+        travel.Children.Add(new FolderPickItem("2026", "travel-2026"));
+        root.Children.AddRange([inbox, new FolderPickItem("Drafts", "drafts", unread: 2), travel, new FolderPickItem("Trash", "trash")]);
+        var created = 0;
+        var picker = new FolderPickerWindow("Move Items", "Move the selected items to:", [root], async parent =>
+        {
+            created++;
+            await Task.Yield();
+            return new FolderPickItem("New one", "new-" + created);
+        });
+        picker.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var tree = picker.GetVisualDescendants().OfType<TreeView>().Single();
+            var buttons = picker.GetVisualDescendants().OfType<Button>().Where(b => b.Content is string).ToDictionary(b => b.Content?.ToString()!);
+            Assert.Equal(["OK", "Cancel", "New..."], buttons.Keys.OrderBy(k => k == "OK" ? 0 : k == "Cancel" ? 1 : 2));
+            Assert.False(buttons["OK"].IsEnabled);                                        // nothing selected yet
+            TreeViewItem Node(string tag) => tree.GetLogicalDescendants().OfType<TreeViewItem>().Single(n => (n.Tag as FolderPickItem)?.Tag as string == tag);
+            tree.SelectedItem = Node("inbox");
+            Assert.False(buttons["OK"].IsEnabled);                                        // the current folder is not a destination
+            tree.SelectedItem = Node("travel-2026");
+            Assert.True(buttons["OK"].IsEnabled);
+            tree.SelectedItem = Node("trash");
+            Shot(picker, "09-move-items-picker");
+            buttons["New..."].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntil(() => created == 1);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("new-1", ((tree.SelectedItem as TreeViewItem)?.Tag as FolderPickItem)?.Tag);   // the new folder is added and selected
+            buttons["OK"].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal("new-1", picker.Result?.Tag);
+        }
+        finally { picker.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Right_click_menu_exists_before_any_archive_folder_has_loaded()
+    {
+        var window = new MainWindow { Width = 1000, Height = 700 };     // not shown: the menu is built at construction, and showing would start the native web view
+        try
+        {
+            var flyout = Assert.IsType<MenuFlyout>(window.FindControl<DataGrid>("MessageList")!.ContextFlyout);
+            var headers = flyout.Items.OfType<MenuItem>().Select(i => i.Header?.ToString()).ToList();
+            foreach (var expected in new[] { "Mark as Read", "Mark as Unread", "Flag", "Clear Flag", "Delete" })
+                Assert.Contains(expected, headers);
+            Assert.Contains(headers, h => h!.StartsWith("Move to Folder", StringComparison.Ordinal));
+        }
+        finally { window.Close(); }
+    }
 }

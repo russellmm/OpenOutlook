@@ -52,6 +52,7 @@ public partial class MainWindow
     private void InitializeReadingOptions()
     {
         InitializeWebViewOverlayGuard();
+        InitMessageContextMenu();                                // right-click works in every kind of folder, not only after an archive folder loaded
         // Tunnel: the grid itself would otherwise consume Space (it toggles row selection).
         MessageList.AddHandler(KeyDownEvent, MessageListKeyDownTunnel, RoutingStrategies.Tunnel);
         MessageList.AddHandler(TappedEvent, MessageListTappedForPortrait, RoutingStrategies.Bubble, handledEventsToo: true);

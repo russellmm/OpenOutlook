@@ -15,6 +15,9 @@ public static class TestAppBuilder
         Directory.CreateDirectory(scratch);
         Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", scratch);
         Environment.SetEnvironmentVariable("XDG_DATA_HOME", Path.Combine(scratch, "data"));   // the account registry lives here
+        // The real app contains exceptions that surface on the UI thread (App.OnFrameworkInitializationCompleted); the native WebView2 control cannot start
+        // inside the headless host and would otherwise fail whichever test happens to be running.
+        Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) => { if (e.Exception.StackTrace?.Contains("NativeWebView") == true) e.Handled = true; };
         return AppBuilder.Configure<App>().UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
     }
 }

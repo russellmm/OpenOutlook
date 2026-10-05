@@ -121,6 +121,11 @@ public static partial class SafeHtmlDocument
         meta.SetAttribute("http-equiv", "Content-Security-Policy");
         meta.SetAttribute("content", Csp);
         safe.Head!.Prepend(meta);
+        // Mail is designed for a white page (Outlook always paints one): without a base colour a transparent snapshot shows the app
+        // theme through it, which makes dark text unreadable in dark mode. Prepended so the message's own styles still win.
+        var baseStyle = safe.CreateElement("style");
+        baseStyle.TextContent = "html{background:#fff;color:#000;color-scheme:light}";
+        safe.Head.Prepend(baseStyle);
         var viewport = safe.CreateElement("meta");
         viewport.SetAttribute("name", "viewport");
         viewport.SetAttribute("content", "width=device-width, initial-scale=1");

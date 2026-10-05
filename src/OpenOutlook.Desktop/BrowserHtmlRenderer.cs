@@ -25,10 +25,50 @@ public static class BrowserHtmlRenderer
     private const int TileHeight = 3_000;
     private const int MaximumTiles = 20;
 
-    public static string? FindBrowser() => new[]
+    /// <summary>
+    /// A Chromium-based browser to lay messages out with: OPENOUTLOOK_BROWSER, else Edge / Chrome on Windows (Edge ships with
+    /// Windows 10 and 11), Chrome / Edge / Chromium on macOS, Chrome / Chromium / Edge on Linux. Null when none is installed (the
+    /// reading pane then falls back to the plain text-run preview).
+    /// </summary>
+    public static string? FindBrowser()
     {
-        "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"
-    }.FirstOrDefault(File.Exists);
+        var forced = Environment.GetEnvironmentVariable("OPENOUTLOOK_BROWSER");
+        if (!string.IsNullOrWhiteSpace(forced) && File.Exists(forced)) return forced;
+        return Candidates().FirstOrDefault(File.Exists);
+    }
+
+    private static IEnumerable<string> Candidates()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            foreach (var root in new[]
+            {
+                Environment.GetEnvironmentVariable("ProgramFiles(x86)"), Environment.GetEnvironmentVariable("ProgramFiles"),
+                Environment.GetEnvironmentVariable("LocalAppData")
+            })
+            {
+                if (string.IsNullOrEmpty(root)) continue;
+                yield return Path.Combine(root, "Microsoft", "Edge", "Application", "msedge.exe");
+                yield return Path.Combine(root, "Google", "Chrome", "Application", "chrome.exe");
+                yield return Path.Combine(root, "Chromium", "Application", "chrome.exe");
+                yield return Path.Combine(root, "BraveSoftware", "Brave-Browser", "Application", "brave.exe");
+            }
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            yield return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+            yield return "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge";
+            yield return "/Applications/Chromium.app/Contents/MacOS/Chromium";
+        }
+        else
+        {
+            foreach (var path in new[]
+            {
+                "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser",
+                "/snap/bin/chromium", "/usr/bin/microsoft-edge", "/usr/bin/microsoft-edge-stable"
+            }) yield return path;
+        }
+    }
 
     public static async Task<byte[]> RenderAsync(string safeHtml, int viewportWidth,
         CancellationToken cancellationToken = default)

@@ -987,15 +987,14 @@ public sealed partial class MainWindow : Window
             ExportMessageButton.IsEnabled = true;
             SubjectText.Text = message.Summary.Subject;
             SenderText.Text = message.Summary.From;
-            RecipientText.Text = $"To   {message.Summary.To}";
+            RecipientText.Text = PstMessageHeader.Recipients(message);
             var pstDate = message.Summary.Received == DateTime.MinValue
                 ? message.Summary.Sent : message.Summary.Received;
             MessageDateText.Text = pstDate == DateTime.MinValue ? "" : pstDate.ToString("ddd M/d/yyyy h:mm tt");
             SetReaderAvatar(message.Summary.From);
             ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible =
                 ReaderForwardButton.IsVisible = false;
-            AttachmentText.Text = message.Attachments.Count == 0 ? "" :
-                $"Attachments: {string.Join(", ", message.Attachments.Select(a => a.FileName))}";
+            AttachmentText.Text = PstMessageHeader.AttachmentLine(PstMessageHeader.VisibleAttachments(message));
             SetMessageBody(message.BodyHtml, message.BodyText);
             StatusText.Text = _richRuns is null ? "Message opened read-only." :
                 "Message opened in rich-text view; images are loading automatically.";

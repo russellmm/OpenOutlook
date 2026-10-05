@@ -107,6 +107,7 @@ public partial class MainWindow
     }
 
     private string? _chipChoice;
+    private bool _openAttachment;   // the next attachment download is opened in its default program instead of saved to a chosen folder
 
     /// <summary>One clickable chip per attachment under the message header; clicking saves that attachment to a new file. Null clears the row.</summary>
     private void ShowAttachmentChips(IEnumerable<(string Name, long Size, bool CanSave)>? items)
@@ -122,8 +123,13 @@ public partial class MainWindow
                 Content = $"📎 {name} ({(size < 1024 ? size + " B" : size < 1048576 ? (size / 1024.0).ToString("0.#") + " KB" : (size / 1048576.0).ToString("0.#") + " MB")})",
                 Margin = new Avalonia.Thickness(0, 0, 6, 4), Padding = new Avalonia.Thickness(8, 3), FontSize = 12.5, IsEnabled = canSave
             };
-            ToolTip.SetTip(chip, canSave ? "Click to save this attachment to a new file" : "This attachment cannot be saved");
-            chip.Click += (_, _) => { _chipChoice = name; ExportAttachmentClicked(chip, new Avalonia.Interactivity.RoutedEventArgs()); };
+            ToolTip.SetTip(chip, canSave ? "Click to open this attachment or save it to a new file" : "This attachment cannot be saved");
+            var risky = AttachmentLauncher.IsRisky(name);
+            var open = new MenuItem { Header = risky ? "Open (not allowed for this file type)" : "Open", IsEnabled = !risky };
+            open.Click += (_, _) => { _chipChoice = name; _openAttachment = true; ExportAttachmentClicked(chip, new Avalonia.Interactivity.RoutedEventArgs()); };
+            var save = new MenuItem { Header = "Save as…" };
+            save.Click += (_, _) => { _chipChoice = name; _openAttachment = false; ExportAttachmentClicked(chip, new Avalonia.Interactivity.RoutedEventArgs()); };
+            chip.Flyout = new MenuFlyout { Items = { open, save } };
             AttachmentChips.Children.Add(chip);
         }
     }
@@ -159,11 +165,19 @@ public partial class MainWindow
             DockPanel.SetDock(button, Dock.Bottom);
             attachment = await chooser.ShowDialog<GmailAttachmentInfo?>(this);
         }
+        var openIt = _openAttachment;
+        _openAttachment = false;
         if (attachment is null || version != _messageVersion) return;
-        var folders = await SafePick.FoldersAsync(this, new Avalonia.Platform.Storage.FolderPickerOpenOptions
-        { Title = "Choose where to save this attachment as a new file", AllowMultiple = false }, failure => StatusText.Text = failure);
-        if (version != _messageVersion) return;
-        var directory = folders.FirstOrDefault()?.TryGetLocalPath();
+        if (openIt && AttachmentLauncher.IsRisky(attachment.FileName)) { StatusText.Text = "This file type can run code, so it is not opened from here. Use Save as… instead."; return; }
+        string? directory;
+        if (openIt) directory = AttachmentLauncher.NewDirectory();
+        else
+        {
+            var folders = await SafePick.FoldersAsync(this, new Avalonia.Platform.Storage.FolderPickerOpenOptions
+            { Title = "Choose where to save this attachment as a new file", AllowMultiple = false }, failure => StatusText.Text = failure);
+            if (version != _messageVersion) return;
+            directory = folders.FirstOrDefault()?.TryGetLocalPath();
+        }
         if (directory is null) return;
         ExportAttachmentButton.IsEnabled = false;
         try
@@ -173,7 +187,7 @@ public partial class MainWindow
             var target = System.IO.Path.Combine(directory, PstAttachmentExporter.ValidateSuggestedFileName(attachment.FileName));
             await using (var file = new System.IO.FileStream(target, System.IO.FileMode.CreateNew, System.IO.FileAccess.Write, System.IO.FileShare.None))
                 await file.WriteAsync(data);
-            StatusText.Text = "Attachment saved to a new file.";
+            StatusText.Text = openIt ? AttachmentLauncher.Launch(target) ?? "Opened " + attachment.FileName + "." : "Attachment saved to a new file.";
         }
         catch (OperationCanceledException) { StatusText.Text = "Attachment save cancelled."; }
         catch (System.IO.IOException) { StatusText.Text = "Could not save the attachment: a file with that name already exists or the folder is not writable. Nothing was overwritten."; }

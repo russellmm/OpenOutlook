@@ -910,6 +910,7 @@ public sealed partial class MainWindow : Window
 
     private void ShowMessages(IReadOnlyList<MailSummary> messages)
     {
+        AttachmentLauncher.CleanUp();                            // copies opened in earlier runs
         InitMessageDrag();
         _currentMessages = messages;
         if (_activePath is { } archivePath)
@@ -1268,14 +1269,22 @@ public sealed partial class MainWindow : Window
         if (candidates.Length == 0) return;
         var chosen = _chipChoice is null ? null : candidates.FirstOrDefault(c => c.Name == _chipChoice);
         _chipChoice = null;
+        var openIt = _openAttachment;
+        _openAttachment = false;
         var attachment = chosen ?? (candidates.Length == 1 ? candidates[0] : await ChooseGraphAttachmentAsync(candidates));
         if (attachment is null || version != _messageVersion || !ReferenceEquals(_activeGraphMessage, message)) return;
-        var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
+        if (openIt && AttachmentLauncher.IsRisky(attachment.Name)) { StatusText.Text = "This file type can run code, so it is not opened from here. Use Save as… instead."; return; }
+        string? directory;
+        if (openIt) directory = AttachmentLauncher.NewDirectory();
+        else
         {
-            Title = "Choose where to save this attachment as a new file", AllowMultiple = false
-        }, failure => StatusText.Text = failure);
-        if (version != _messageVersion || !ReferenceEquals(_activeGraphMessage, message)) return;
-        var directory = folders.FirstOrDefault()?.TryGetLocalPath();
+            var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
+            {
+                Title = "Choose where to save this attachment as a new file", AllowMultiple = false
+            }, failure => StatusText.Text = failure);
+            if (version != _messageVersion || !ReferenceEquals(_activeGraphMessage, message)) return;
+            directory = folders.FirstOrDefault()?.TryGetLocalPath();
+        }
         if (directory is null) return;
         ExportAttachmentButton.IsEnabled = false;
         try
@@ -1286,7 +1295,7 @@ public sealed partial class MainWindow : Window
             await GraphAttachmentExporter.ExportAsync(
                 new GraphAttachmentReader(_graphHttp, account.AccountId), token, message.Id, attachment,
                 Path.Combine(directory, attachment.Name), cancellationToken);
-            StatusText.Text = "Attachment saved to a new file.";
+            StatusText.Text = openIt ? AttachmentLauncher.Launch(Path.Combine(directory, attachment.Name)) ?? "Opened " + attachment.Name + "." : "Attachment saved to a new file.";
         }
         catch (OperationCanceledException) { StatusText.Text = "Attachment save cancelled."; }
         catch (Exception) { StatusText.Text = "Could not save attachment. Check the connection or choose another folder; no existing file was overwritten."; }

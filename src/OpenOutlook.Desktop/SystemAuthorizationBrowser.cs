@@ -10,9 +10,20 @@ public static class SystemAuthorizationBrowser
     {
         Validate(authorizationUri);
         cancellationToken.ThrowIfCancellationRequested();
+        if (OperatingSystem.IsWindows())
+        {
+            // The URL has been validated above (pinned HTTPS provider page). ShellExecute opens it in the user's default browser.
+            try
+            {
+                using var process = Process.Start(new ProcessStartInfo(authorizationUri.AbsoluteUri) { UseShellExecute = true });
+                return;
+            }
+            catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or PlatformNotSupportedException)
+            { throw new InvalidOperationException("Could not launch the authorization browser."); }
+        }
         try
         {
-            var start = new ProcessStartInfo("xdg-open")
+            var start = new ProcessStartInfo(OperatingSystem.IsMacOS() ? "open" : "xdg-open")
             {
                 UseShellExecute = false,
                 RedirectStandardOutput = true,

@@ -66,16 +66,12 @@ public sealed class AccountSetupWindow : Window
         });
         content.Children.Add(new TextBlock
         {
-            Text = "Choose your email provider. OpenOutlook will open its sign-in page in your browser. Your password is entered only on the provider's page, and OpenOutlook keeps account access in the Linux keyring.",
+            Text = "Choose your email provider. OpenOutlook will open its sign-in page in your browser. Your password is entered only on the provider's page, and OpenOutlook keeps account access in " + SecretStoreName + ".",
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
         content.Children.Add(new TextBlock { Text = "Provider" });
         content.Children.Add(_provider);
-        content.Children.Add(new TextBlock
-        {
-            Text = "Microsoft sign-in requests access to read, organize and send mail, plus read and edit your Microsoft contacts for the planned address book. OpenOutlook sends only when you press Send. Gmail sign-in allows reading and organizing mail (mark read, star, archive, trash, move to labels); it cannot send.",
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap
-        });
+        content.Children.Add(_permissions);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         actions.Children.Add(_connect);
         actions.Children.Add(_newAccount);
@@ -114,7 +110,7 @@ public sealed class AccountSetupWindow : Window
                     Tag = account
                 });
             _disconnect.IsEnabled = false;
-            _status.Text = "Saved identities are listed here. Their tokens remain in the system keyring.";
+            _status.Text = "Saved identities are listed here. Their tokens remain in the system secret store.";
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
         { _status.Text = "The local account list could not be read. Resolve its file permissions before connecting."; }
@@ -130,8 +126,17 @@ public sealed class AccountSetupWindow : Window
         UpdateAvailability();
     }
 
+    /// <summary>Where this system keeps sign-in tokens, for the dialog's wording.</summary>
+    private static string SecretStoreName =>
+        OperatingSystem.IsWindows() ? "Windows Credential Manager" : OperatingSystem.IsLinux() ? "the Linux keyring" : "the system keychain";
+
+    private readonly TextBlock _permissions = new() { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+
     private void UpdateAvailability()
     {
+        _permissions.Text = (SelectedAccount?.Provider ?? SelectedProvider) == OAuthProvider.Google
+            ? "Gmail sign-in allows reading and organizing mail (mark read, star, archive, trash, move to labels). It cannot send."
+            : "Microsoft sign-in requests access to read, organize and send mail, plus read and edit your Microsoft contacts for the planned address book. OpenOutlook sends only when you press Send.";
         if (_isBusy) return;
         _provider.IsEnabled = SelectedAccount is null;
         var provider = SelectedAccount?.Provider ?? SelectedProvider;
@@ -193,7 +198,7 @@ public sealed class AccountSetupWindow : Window
         catch (SecretStoreException exception) { _status.Text = exception.Message; }
         catch (TimeoutException) { _status.Text = "Sign-in timed out. Close the browser tab and try again."; }
         catch (InvalidOperationException) when (_declinedReason is not null) { _status.Text = _declinedReason; }
-        catch (Exception) { _status.Text = "Account connection failed. Check the browser and keyring, then retry."; }
+        catch (Exception) { _status.Text = "Account connection failed. Check the browser and the secret store, then retry."; }
         finally { _operation = null; SetBusy(false); }
     }
 
@@ -232,7 +237,7 @@ public sealed class AccountSetupWindow : Window
             {
                 new TextBlock { Text = $"The provider verified: {identity.DisplayAddress}",
                     FontWeight = Avalonia.Media.FontWeight.SemiBold, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-                new TextBlock { Text = "Connect this identity to OpenOutlook? Its refresh token will be saved only in the Linux keyring. Full mailbox sync is not yet enabled.",
+                new TextBlock { Text = "Connect this identity to OpenOutlook? Its refresh token will be saved only in " + SecretStoreName + ". Full mailbox sync is not yet enabled.",
                     TextWrapping = Avalonia.Media.TextWrapping.Wrap },
                 buttons
             }
@@ -263,7 +268,7 @@ public sealed class AccountSetupWindow : Window
             {
                 new TextBlock { Text = $"Disconnect {account.DisplayAddress}?", FontWeight = Avalonia.Media.FontWeight.SemiBold,
                     TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-                new TextBlock { Text = "This removes OpenOutlook's local keyring token and saved account entry. Provider-side authorization revocation is not yet available.",
+                new TextBlock { Text = "This removes OpenOutlook's saved sign-in token and saved account entry. Provider-side authorization revocation is not yet available.",
                     TextWrapping = Avalonia.Media.TextWrapping.Wrap },
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
                     HorizontalAlignment = HorizontalAlignment.Right, Children = { no, yes } }
@@ -278,7 +283,7 @@ public sealed class AccountSetupWindow : Window
             RefreshAccounts();
             _status.Text = $"{account.DisplayAddress} was disconnected locally.";
         }
-        catch (Exception) { _status.Text = "Could not remove the account. Unlock the keyring and check local account storage, then retry."; }
+        catch (Exception) { _status.Text = "Could not remove the account. Check that the secret store is available and local account storage is writable, then retry."; }
         finally { SetBusy(false); }
     }
 

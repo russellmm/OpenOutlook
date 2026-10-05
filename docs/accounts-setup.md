@@ -37,6 +37,9 @@ Labels appear as folders (Inbox, Starred, Important, Sent, Drafts, Spam, Trash a
 | Move to Folder... (ribbon Move or right-click) | adds the destination label and removes the current one; "Copy to Folder..." only adds the label |
 
 Composing, replying, forwarding and saving attachments are not available yet (sending needs another scope). An account connected earlier with the read-only scope keeps working for reading; use Account setup to sign in again to enable these actions.
+
+Setting up the Google side (once):
+
 1. Google Cloud Console > create a project > APIs & Services > Library > enable the **Gmail API**.
 2. OAuth consent screen: User type *External*; add the scope `.../auth/gmail.modify`; while the app is in *Testing*, add your own Gmail address under *Test users* (refresh tokens of testing apps expire after 7 days; publish the app, or keep re-connecting, for longer use).
 3. Credentials > Create credentials > OAuth client ID > Application type **Desktop app**.

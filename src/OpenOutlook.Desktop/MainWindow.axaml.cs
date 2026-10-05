@@ -184,6 +184,7 @@ public sealed partial class MainWindow : Window
             // Explicit command-line archives enable repeatable headless UI smoke tests.
             foreach (var path in Environment.GetCommandLineArgs().Skip(1).Where(File.Exists))
                 await OpenArchiveAsync(Path.GetFullPath(path));
+            _ = Task.Run(() => { var n = BrowserProcessTracker.KillLeftovers(); if (n > 0) AppLog.Note("reader", $"closed {n} layout browser(s) left behind by an earlier run"); });
             StartMirrorScheduler();                                  // the local copies of connected mailboxes
             if (Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_HTML") == "1") _ = RunHtmlSelfTestAsync();      // diagnostics: renders a sample message and logs the outcome
             var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path));
@@ -196,7 +197,7 @@ public sealed partial class MainWindow : Window
     private async Task RunHtmlSelfTestAsync()
     {
         await Task.Delay(TimeSpan.FromSeconds(int.TryParse(Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_DELAY"), out var wait) ? wait : 8));
-        var html = "<html><body><table width=\"600\"><tr><td style=\"background:#123\"><h1 style=\"color:#fff\">Self test</h1></td></tr><tr><td><p>Hello from the reader self test.</p><img src=\"https://example.org/x.png\" alt=\"x\"></td></tr></table></body></html>";
+        var html = Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_FILE") is { Length: > 0 } file && File.Exists(file) ? File.ReadAllText(file) : "<html><body><table width=\"600\"><tr><td style=\"background:#123\"><h1 style=\"color:#fff\">Self test</h1></td></tr><tr><td><p>Hello from the reader self test.</p><img src=\"https://example.org/x.png\" alt=\"x\"></td></tr></table></body></html>";
         var started = DateTime.Now;
         SetMessageBody(html, "");
         for (var i = 0; i < 30; i++)
@@ -2171,21 +2172,22 @@ public sealed partial class MainWindow : Window
             MainHtmlWebView.NavigateToString(document);
             var timeout = Task.Delay(TimeSpan.FromSeconds(6), cancellationToken);
             if (await Task.WhenAny(completed.Task, timeout) != completed.Task ||
-                cancellationToken.IsCancellationRequested || version != _messageVersion) return false;
+                cancellationToken.IsCancellationRequested || version != _messageVersion)
+            { AppLog.Note("reader", "interactive reader: the page did not finish loading within 6 seconds"); return false; }
             var probeTask = MainHtmlWebView.InvokeScript(
                 "document.body && (document.body.innerText.trim().length > 0 || document.images.length > 0)");
             if (await Task.WhenAny(probeTask, Task.Delay(TimeSpan.FromSeconds(2), cancellationToken)) != probeTask)
-                return false;
+            { AppLog.Note("reader", "interactive reader: the page did not answer the content probe"); return false; }
             var probe = await probeTask;
-            if (!string.Equals(probe?.Trim('"'), "true", StringComparison.OrdinalIgnoreCase)) return false;
+            if (!string.Equals(probe?.Trim('"'), "true", StringComparison.OrdinalIgnoreCase)) { AppLog.Note("reader", "interactive reader: the page has no text or images (probe said " + probe + ")"); return false; }
             ShowImageFailureStatus();
             ShowMessageBody();
             StatusText.Text = "Interactive HTML ready in the reading pane.";
             succeeded = true;
             return true;
         }
-        catch (Exception)
-        { return false; }
+        catch (Exception ex)
+        { AppLog.Error("reader", ex, "interactive reader failed"); return false; }
         finally
         {
             if (ReferenceEquals(_embeddedNavigation, completed))

@@ -26,6 +26,29 @@ MicrosoftMailSession? mSession = null;
 if (gAcc is not null) { var s = new MicrosoftMailSession(gAcc, secrets, tokenHttp); gBox = new GmailMailbox(gHttp, ct => new ValueTask<string>(s.GetAccessTokenAsync(ct)), gAcc.DisplayAddress); }
 if (mAcc is not null) mSession = new MicrosoftMailSession(mAcc, secrets, tokenHttp);
 
+if (step == "rendergmail" && gBox is not null)
+{
+    // rendergmail <subject text>: a Gmail message's HTML through the reader's sanitiser and snapshot renderer
+    var ids = await gBox.ListLabelMessageIdsAsync("INBOX", 100);
+    var hit = (await gBox.GetSummariesAsync(ids)).FirstOrDefault(m => m.Subject.Contains(args[1], StringComparison.OrdinalIgnoreCase));
+    if (hit is null) { Console.WriteLine("not in the newest 100 inbox messages"); return 1; }
+    var gc = await gBox.GetContentAsync(hit.Id);
+    Console.WriteLine($"{hit.Subject}: html {gc.Html?.Length}, text {gc.Text?.Length}");
+    var gh = gc.Html ?? "";
+    System.IO.File.WriteAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "last-message.html"), gh);
+    try
+    {
+        var interactive = SafeHtmlDocument.BuildInteractive(gh, new Dictionary<string, byte[]>());
+        Console.WriteLine("interactive document: " + interactive.Length);
+        var doc = SafeHtmlDocument.Build(gh, new Dictionary<string, byte[]>());
+        Console.WriteLine("sanitized document: " + doc.Length);
+        var r = await BrowserHtmlRenderer.RenderDocumentAsync(doc, 800, CancellationToken.None, trustedOriginal: false);
+        Console.WriteLine("rendered pages: " + r.Pages.Count);
+        foreach (var png in r.Pages) Console.WriteLine($"  page {System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16))} x {System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20))}, {png.Length} bytes");
+    }
+    catch (Exception ex) { Console.WriteLine("FAILED: " + ex); }
+    return 0;
+}
 if (step == "renderlive" && mAcc is not null)
 {
     // renderlive <subject text>: the Hotmail message's HTML through the reader's sanitiser and snapshot renderer
@@ -46,6 +69,19 @@ if (step == "renderlive" && mAcc is not null)
         foreach (var png in r.Pages) Console.WriteLine($"  page {System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16))} x {System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20))}, {png.Length} bytes");
     }
     catch (Exception ex) { Console.WriteLine("FAILED: " + ex); }
+    return 0;
+}
+if (step == "launchtest")
+{
+    // launchtest [browser path]: starts the layout browser the way the reading pane does and prints everything the browser says when it fails
+    var exe = args.Length > 1 ? args[1] : BrowserHtmlRenderer.FindBrowser();
+    Console.WriteLine("browser: " + exe);
+    try
+    {
+        await using var b = await PuppeteerSharp.Puppeteer.LaunchAsync(new PuppeteerSharp.LaunchOptions { ExecutablePath = exe, Headless = true, Timeout = 20000, DumpIO = true, Args = ["--disable-background-networking", "--disable-extensions"] });
+        Console.WriteLine("launched, version " + await b.GetVersionAsync());
+    }
+    catch (Exception ex) { Console.WriteLine("FAILED: " + ex.Message + " / " + ex.InnerException?.Message); }
     return 0;
 }
 if (step == "render")

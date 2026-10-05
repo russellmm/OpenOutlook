@@ -30,6 +30,16 @@ public static class BrowserHtmlRenderer
     /// Windows 10 and 11), Chrome / Edge / Chromium on macOS, Chrome / Chromium / Edge on Linux. Null when none is installed (the
     /// reading pane then falls back to the plain text-run preview).
     /// </summary>
+    /// <summary>Every installed Chromium-based browser, the forced one first. The layout tries them in turn: a browser that is installed can still refuse to start headless (an Edge update did).</summary>
+    internal static IReadOnlyList<string> ExistingBrowsers()
+    {
+        var list = new List<string>();
+        var forced = Environment.GetEnvironmentVariable("OPENOUTLOOK_BROWSER");
+        if (!string.IsNullOrWhiteSpace(forced) && File.Exists(forced)) list.Add(forced);
+        foreach (var c in Candidates()) if (File.Exists(c) && !list.Contains(c, StringComparer.OrdinalIgnoreCase)) list.Add(c);
+        return list;
+    }
+
     public static string? FindBrowser()
     {
         var forced = Environment.GetEnvironmentVariable("OPENOUTLOOK_BROWSER");
@@ -84,11 +94,7 @@ public static class BrowserHtmlRenderer
         if (html.Length > 40 * 1024 * 1024) throw new InvalidDataException("Message is too large to print.");
         var executable = FindBrowser() ?? throw new NotSupportedException("Chrome or Chromium is required for PDF output.");
         ct.ThrowIfCancellationRequested();
-        await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
-        {
-            ExecutablePath = executable, Headless = true, Timeout = 10_000,
-            Args = ["--disable-background-networking", "--disable-extensions"]
-        }).ConfigureAwait(false);
+        await using var browser = await BrowserProcessTracker.LaunchAsync(executable).ConfigureAwait(false);
         await using var page = await browser.NewPageAsync().ConfigureAwait(false);
         page.DefaultTimeout = 10_000;
         await page.SetJavaScriptEnabledAsync(false).ConfigureAwait(false);
@@ -120,13 +126,7 @@ public static class BrowserHtmlRenderer
             throw new InvalidDataException("HTML preview exceeds the renderer limit.");
         var executable = FindBrowser() ?? throw new NotSupportedException("Chrome or Chromium is required for HTML layout.");
         cancellationToken.ThrowIfCancellationRequested();
-        await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
-        {
-            ExecutablePath = executable,
-            Headless = true,
-            Timeout = 10_000,
-            Args = ["--disable-background-networking", "--disable-extensions"]
-        }).ConfigureAwait(false);
+        await using var browser = await BrowserProcessTracker.LaunchAsync(executable).ConfigureAwait(false);
         await using var page = await browser.NewPageAsync().ConfigureAwait(false);
         page.DefaultTimeout = 10_000;
         await page.SetViewportAsync(new ViewPortOptions

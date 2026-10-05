@@ -60,3 +60,6 @@ native/**/build-*/
 src/OpenOutlook.Desktop/runtimes/
 __pycache__/
 *.pyc
+
+# Local credentials (never commit)
+.secrets/

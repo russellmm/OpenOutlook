@@ -1,6 +1,7 @@
 using System.Net;
 using System.Reflection;
 using Xunit;
+using Avalonia.Input.Raw;
 using Avalonia.LogicalTree;
 using Avalonia;
 using Avalonia.Controls;
@@ -474,6 +475,67 @@ public sealed class MainWindowHeadlessTests
             // Gmail cannot keep a copy in Trash: copying there is a move
             await Call<Task>(window, "MoveOnlineAsync", new List<string> { "m3" }, Node("Trash").Tag!, true);
             Assert.Contains("TRASH", labels["m3"]); Assert.DoesNotContain("INBOX", labels["m3"]);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task Real_mouse_and_drop_events_move_a_Gmail_message_onto_a_folder()
+    {
+        var labels = new Dictionary<string, HashSet<string>> { ["m1"] = ["INBOX", "UNREAD"], ["m2"] = ["INBOX"] };
+        var server = new FakeGmail(labels);
+        var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.Google, "gmail-account-4", "me@example.org", "client", DateTimeOffset.UtcNow,
+            ["https://www.googleapis.com/auth/gmail.modify"]);
+        ResetRegistry().Upsert(account);
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var boxes = (System.Collections.IDictionary)typeof(MainWindow).GetField("_gmailBoxes", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            boxes[account.AccountId] = new OpenOutlook.Providers.Google.GmailMailbox(new HttpClient(server), _ => ValueTask.FromResult("tok"), "me@example.org");
+            var tree = window.FindControl<TreeView>("FolderTree")!;
+            var root = tree.Items.OfType<TreeViewItem>().Single(i => i.Tag is OpenOutlook.Auth.ConnectedAccount { AccountId: "gmail-account-4" });
+            TreeViewItem Node(string header) => root.Items.OfType<TreeViewItem>().First(i => i.Header?.ToString()?.StartsWith(header, StringComparison.Ordinal) == true);
+            tree.SelectedItem = Node("Inbox");
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            await WaitUntil(() => list.CollectionView?.Cast<object>().Count() == 2);
+            Dispatcher.UIThread.RunJobs();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+
+            // 1. the grid's drag handlers are attached without any archive having been opened, and pressing on a row (not yet selected) arms a drag
+            Assert.True((bool)typeof(MainWindow).GetField("_moveDragWired", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!);
+            var row = list.GetVisualDescendants().OfType<DataGridRow>().First();
+            Point Center(Visual v) => v.TranslatePoint(new Point(v.Bounds.Width / 2, v.Bounds.Height / 2), window)!.Value;
+            var rowPoint = Center(row);
+            window.MouseDown(rowPoint, MouseButton.Left);
+            Assert.True((bool)typeof(MainWindow).GetField("_messageDragCandidate", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!);
+            window.MouseMove(new Point(rowPoint.X + 40, rowPoint.Y + 4), RawInputModifiers.LeftMouseButton);                // past the drag threshold: the drag starts with the pressed row selected
+            await WaitUntil(() => window.OnlineDragsStarted == 1, 3000);
+            Assert.Equal(1, window.OnlineDragsStarted);                                   // (the system drag call itself never completes in the headless host)
+            Assert.False((bool)typeof(MainWindow).GetField("_messageDragCandidate", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!);
+            window.MouseUp(new Point(rowPoint.X + 40, rowPoint.Y + 4), MouseButton.Left);
+
+            // 2. the folder node accepts the drag payload of its own account and moves the dragged message
+            var spam = Node("Spam");
+            var spamPoint = Center(spam);
+            var data = new DataObject();
+            data.Set(DataFormats.Text, MainWindow.FormatOnlineDragPayload("gmail-account-4", "INBOX", ["m1"]));
+            window.DragDrop(spamPoint, RawDragEventType.DragEnter, data, DragDropEffects.Move);
+            window.DragDrop(spamPoint, RawDragEventType.DragOver, data, DragDropEffects.Move);
+            window.DragDrop(spamPoint, RawDragEventType.Drop, data, DragDropEffects.Move);
+            await WaitUntil(() => labels["m1"].Contains("SPAM"), 5000);
+            Assert.Contains("SPAM", labels["m1"]);
+            Assert.DoesNotContain("INBOX", labels["m1"]);
+            Assert.Contains("INBOX", labels["m2"]);                          // only the dragged message moved
+
+            // 3. a drag from another account, or onto the folder it came from, is refused
+            var foreign = new DataObject();
+            foreign.Set(DataFormats.Text, MainWindow.FormatOnlineDragPayload("another-account", "INBOX", ["m2"]));
+            window.DragDrop(spamPoint, RawDragEventType.DragOver, foreign, DragDropEffects.Move);
+            window.DragDrop(spamPoint, RawDragEventType.Drop, foreign, DragDropEffects.Move);
+            await WaitUntil(() => false, 300);
+            Assert.DoesNotContain("SPAM", labels["m2"]);
         }
         finally { window.Close(); }
     }

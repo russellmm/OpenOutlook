@@ -1,3 +1,4 @@
+using Avalonia.VisualTree;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -151,14 +152,12 @@ public partial class MainWindow
         if (pressed.IsLeftButtonPressed) _messageDragRightButton = false;
         else if (pressed.IsRightButtonPressed) _messageDragRightButton = true;
         else return;
-        if (MessageList.SelectedItems.OfType<MessageListRow>().Any() &&
-            _activePath is { } path && _stores.ContainsKey(path) &&
-            _activeFolder is { } folder)
-        {
-            _messageDragStart = e.GetPosition(MessageList);
-            _messageDragCandidate = true;
-        }
-        else if (OnlineDragAvailable)
+        // The grid selects the pressed row after this (tunnelling) handler, so the selection is read when the drag starts, not here:
+        // pressing on a row that is not selected yet and dragging must work like Outlook.
+        var overRow = (e.Source as Visual)?.FindAncestorOfType<DataGridRow>(includeSelf: true) is not null;
+        var archiveFolder = _activePath is { } path && _stores.ContainsKey(path) && _activeFolder is not null;
+        var onlineFolder = _activeGmailFolder is not null || _activeMicrosoftFolder is not null;
+        if (overRow && (archiveFolder || onlineFolder))
         {
             _messageDragStart = e.GetPosition(MessageList);
             _messageDragCandidate = true;

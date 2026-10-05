@@ -21,6 +21,9 @@ public partial class MainWindow
     private const string OnlineDragPrefix = "OpenOutlook-online-move:v1\n";
     private readonly Dictionary<string, int> _msUnread = new(StringComparer.Ordinal);       // accountId|folderId -> unread count
 
+    /// <summary>How many drags of online messages reached the system drag call (read by the headless tests, where that call never completes).</summary>
+    internal int OnlineDragsStarted { get; private set; }
+
     private bool OnlineDragAvailable =>
         (_activeGmailFolder is not null || _activeMicrosoftFolder is not null) && MessageList.SelectedItems.OfType<GraphMessageListRow>().Any();
 
@@ -45,6 +48,7 @@ public partial class MainWindow
         if (ids.Length == 0) return;
         var data = new DataObject();
         data.Set(DataFormats.Text, FormatOnlineDragPayload(accountId, sourceId, ids));
+        OnlineDragsStarted++;
         try { await DragDrop.DoDragDrop(e, data, DragDropEffects.Move | DragDropEffects.Copy); }
         catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException) { /* drag aborted */ }
         finally { _lastDragEndUtc = DateTime.UtcNow; }

@@ -32,6 +32,7 @@ cp src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll /f/Claude/OpenOut
 - Windows git: SCANPST scans may leave `.log` files next to scanned PSTs; the test PSTs (`rmarrash_*.pst`) are the owner's data: only ever work on copies.
 
 ## Open items / ideas
+0. **Future feature: offline sending (Outbox)** for the mailbox copies; see section 9e of `offline-mirror-plan.md`. Not needed now.
 1. Gmail: editing a saved draft; drag onto Gmail labels works.
 2. Hotmail: unread counts in the Move picker only come from the folder list loaded at startup.
 3. Google consent screen shows "Home Assistant 13" (shared project): rename it or create a separate project and swap the client id/secret.

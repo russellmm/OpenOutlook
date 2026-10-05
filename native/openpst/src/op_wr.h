@@ -149,7 +149,7 @@ typedef struct { uint16_t pid, ptype; bbuf v; uint32_t ext_nid; } pcprop;      /
 typedef struct { pcprop *p; size_t n, cap; } pcprops;
 void pcprops_free(pcprops *p);
 int  pcprops_get(opw *w, uint32_t nid, pcprops *out);
-int  pcprops_get_ex(opw *w, uint32_t nid, pcprops *out, int lenient);     /* lenient: properties stored in subnodes are skipped */
+int  pcprops_get_ex(opw *w, uint32_t nid, pcprops *out, int lenient);     /* lenient 1: properties stored in subnodes are skipped; 2: kept as references (ext_nid), so pc_store can write the context back */
 pcprop *pcprops_find(pcprops *p, unsigned pid);
 int  pcprops_del(pcprops *p, unsigned pid);
 int  pcprops_set(pcprops *p, unsigned pid, unsigned ptype, const uint8_t *v, size_t n);
@@ -177,6 +177,11 @@ int  tc_add_row(tctx *t, uint32_t rowid);                      /* appends an emp
 int  tc_set_cell(tctx *t, size_t row, int col, const uint8_t *d, size_t n);
 int  tc_copy_row(tctx *dst, const tctx *src, size_t srow, uint32_t newid);           /* cells matched by property id */
 int  tc_build(const tctx *t, hblocks *heap, hblocks *rowblocks, uint32_t *rows_nid);
+/* a cell value too large for the heap (more than OP_MAXALLOC bytes) lives in a subnode of the table node; tc_build_ex allocates the local NID and hands the data back */
+typedef struct { uint32_t nid; uint8_t *p; size_t n; } tcbig;
+int  tc_build_ex(const tctx *t, opw *w, hblocks *heap, hblocks *rowblocks, uint32_t *rows_nid, tcbig **big, size_t *nbig);   /* w and big may be NULL: large cells are then an error */
+void tcbig_free(tcbig *b, size_t n);
+int  tcbig_put(opw *w, const tcbig *b, size_t n, wsub *out);                  /* stores the data trees; out[i] = {nid, top, 0} */
 int  tc_clear_rows(tctx *t);
 int  tc_row_pidvals(const tctx *t, size_t row, pcprops *out);          /* copies of all cells of a row keyed by property id */
 int  tc_add_by_pid(tctx *t, uint32_t rowid, const pcprops *vals);      /* new row from pid -> value (unknown columns dropped) */

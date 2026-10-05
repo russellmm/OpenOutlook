@@ -302,12 +302,14 @@ int row_fill_missing(tctx *tc, size_t r, pcprops *mp, int apply) {
         unsigned pid = tc->cols[c].pid, pt = tc->cols[c].ptype;
         int skipit = 0;
         for (size_t k = 0; k < sizeof skip / sizeof *skip; k++) if (skip[k] == pid) skipit = 1;
-        if (skipit || (tc->rows[r].present[c] && tc->rows[r].cell[c].n)) continue;           /* an empty cell is a missing one when the message has a value */
+        if (skipit || (tc->rows[r].present[c] && tc->rows[r].cell[c].n)) continue;
         pcprop *p = pcprops_find(mp, pid);
         const uint8_t *val = NULL;
         size_t vn = 0;
-        if (p && !p->ext_nid && p->ptype == pt && p->v.n) { val = p->v.p; vn = p->v.n; }      /* an empty value is no row cell */
-        if (!val && !vn) continue;
+        int empty_cell = pid == 0x0037 || pid == 0x0042 || pid == 0x0070;                       /* these three get a cell even when the message has them empty */
+        if (p && !p->ext_nid && p->ptype == pt && (p->v.n || empty_cell)) { val = p->v.p ? p->v.p : (const uint8_t *)""; vn = p->v.n; }      /* otherwise an empty value is no row cell */
+        if (!val) continue;
+        if (tc->rows[r].present[c] && vn == 0) continue;                                    /* already an empty cell; an empty cell is a missing one only when the message has a value */
         n++;
         if (apply) { int rc = tc_set_cell(tc, r, (int)c, val, vn); if (rc) return -rc; }
     }
@@ -443,6 +445,47 @@ static int fix_tables(ops *o, int apply, int *count) {
         tc_free(&tc);
     }
     free(fl.v); free(ml.v);
+    return rc;
+}
+
+/* ---- R12: empty display-to / display-cc properties ------------------------------------------------------------------------------------------------------------ */
+/* SCANPST deletes a PidTagDisplayTo (0x0E04) / PidTagDisplayCc (0x0E03) that is an empty string from the message (and drops the row cell); earlier importers wrote an empty
+   0x0E04 for every message without To recipients. Found by repairing a mirror of 1,140 messages and diffing: 8 bytes per message. */
+static int fix_empty_display(ops *o, int apply, int *count) {
+    opw *w = o->w;
+    r11msgs ml = {0, 0, 0};
+    int rc = bt_items(w, 1, r11_msgs_cb, &ml);
+    *count = 0;
+    for (size_t k = 0; k < ml.n && !rc; k++) {
+        uint32_t nid = ml.v[k].nid;
+        pcprops pp;
+        if (pcprops_get_ex(w, nid, &pp, 2) != 0) continue;
+        int dirty = 0;
+        for (int q = 0; q < 2; q++) {
+            unsigned pid = q ? 0x0E03 : 0x0E04;
+            pcprop *pr = pcprops_find(&pp, pid);
+            if (pr && !pr->ext_nid && pr->v.n == 0 && (pr->ptype == 0x1F || pr->ptype == 0x1E)) { dirty = 1; if (apply) pcprops_del(&pp, pid); }
+        }
+        if (dirty) {
+            (*count)++;
+            if (apply) {
+                rc = pc_store(w, nid, &pp);
+                uint32_t tn = (ml.v[k].parent & ~0x1Fu) | 0xE;
+                tctx tc;
+                if (!rc && ed_load_tc(w, tn, &tc) == 0) {
+                    int ri = tc_find(&tc, nid), changed = 0;
+                    for (int q = 0; q < 2 && ri >= 0; q++) {
+                        int ci = tc_col(&tc, q ? 0x0E03 : 0x0E04);
+                        if (ci >= 0 && tc.rows[ri].present[ci] && tc.rows[ri].cell[ci].n == 0) { tc.rows[ri].present[ci] = 0; changed = 1; }
+                    }
+                    if (changed) rc = ed_store_tc(w, tn, &tc);
+                    tc_free(&tc);
+                }
+            }
+        }
+        pcprops_free(&pp);
+    }
+    free(ml.v);
     return rc;
 }
 
@@ -658,6 +701,12 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
         int n = 0;
         rc = fix_tables(o, apply, &n);
         rep->table_issues = n;
+    }
+    /* ---- R12 ---- */
+    if (!rc) {
+        int n = 0;
+        rc = fix_empty_display(o, apply, &n);
+        rep->rowsync_issues += n;
     }
     /* ---- R8 ---- */
     if (!rc) {

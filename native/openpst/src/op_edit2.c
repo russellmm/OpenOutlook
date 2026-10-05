@@ -165,8 +165,31 @@ static int cmp_recsort(const void *a, const void *b) {
     return x < y ? -1 : x > y;
 }
 
-int tc_build(const tctx *t, hblocks *heap, hblocks *rowblocks, uint32_t *rows_nid) {
+void tcbig_free(tcbig *b, size_t n) { for (size_t i = 0; i < n; i++) free(b[i].p); free(b); }
+
+int tcbig_put(opw *w, const tcbig *b, size_t n, wsub *out) {
+    for (size_t i = 0; i < n; i++) {
+        size_t nb = (b[i].n + OP_BLOCKMAX - 1) / OP_BLOCKMAX;
+        opbuf *bl = (opbuf *)calloc(nb ? nb : 1, sizeof *bl);
+        if (!bl) return OPST_E_NOMEM;
+        for (size_t k = 0; k < nb; k++) { bl[k].p = b[i].p + k * OP_BLOCKMAX; bl[k].n = b[i].n - k * OP_BLOCKMAX < OP_BLOCKMAX ? b[i].n - k * OP_BLOCKMAX : OP_BLOCKMAX; }
+        hblocks hb = {bl, nb};
+        uint64_t top = 0;
+        int rc = opw_put_blocks(w, &hb, &top);
+        free(bl);
+        if (rc) return rc;
+        out[i].nid = b[i].nid; out[i].bd = top; out[i].bs = 0;
+    }
+    return 0;
+}
+
+int tc_build(const tctx *t, hblocks *heap, hblocks *rowblocks, uint32_t *rows_nid) { return tc_build_ex(t, NULL, heap, rowblocks, rows_nid, NULL, NULL); }
+
+int tc_build_ex(const tctx *t, opw *w, hblocks *heap, hblocks *rowblocks, uint32_t *rows_nid, tcbig **bigs, size_t *nbigs) {
     heap->b = NULL; heap->n = 0;
+    if (bigs) *bigs = NULL;
+    if (nbigs) *nbigs = 0;
+    size_t capbig = 0;
     rowblocks->b = NULL; rowblocks->n = 0;
     *rows_nid = 0;
     unsigned rs = t->rgib[3];
@@ -194,6 +217,21 @@ int tc_build(const tctx *t, hblocks *heap, hblocks *rowblocks, uint32_t *rows_ni
             if (fixed_size(col->ptype)) {
                 size_t m = v->n < col->cbd ? v->n : col->cbd;
                 if (m) memcpy(row + col->ibd, v->p, m);
+            } else if (v->n > OP_MAXALLOC && w && bigs && nbigs) {            /* too large for the heap: a subnode of the table node */
+                uint32_t idx = op_u32(w->hdr + 44 + 4 * 0x1F) + 1;
+                wr32(w->hdr + 44 + 4 * 0x1F, idx);
+                if (*nbigs == capbig) {
+                    capbig = capbig ? capbig * 2 : 4;
+                    tcbig *nb = (tcbig *)realloc(*bigs, capbig * sizeof *nb);
+                    if (!nb) { rc = OPST_E_NOMEM; break; }
+                    *bigs = nb;
+                }
+                tcbig *bg = &(*bigs)[(*nbigs)++];
+                bg->nid = (idx << 5) | 0x1F; bg->n = v->n;
+                bg->p = (uint8_t *)malloc(v->n);
+                if (!bg->p) { rc = OPST_E_NOMEM; break; }
+                memcpy(bg->p, v->p, v->n);
+                wr32(row + col->ibd, bg->nid);
             } else if (v->n) {
                 uint32_t hid;
                 rc = hbuild_alloc(&hb, v->p, v->n, &hid);
@@ -257,49 +295,45 @@ int tc_build(const tctx *t, hblocks *heap, hblocks *rowblocks, uint32_t *rows_ni
     }
     if (!rc) rc = hbuild_finalize(&hb, h_info, heap);
     hbuild_free(&hb);
-    if (rc) { hb_free(rowblocks); hb_free(heap); return rc; }
+    if (rc) { hb_free(rowblocks); hb_free(heap); if (bigs) { tcbig_free(*bigs, nbigs ? *nbigs : 0); *bigs = NULL; if (nbigs) *nbigs = 0; } return rc; }
     *rows_nid = use_sub ? hnid_rows : 0;
     return 0;
 }
 
 /* Editor.store_tc: new blocks for the table, old ones released; unchanged subnodes are kept (reference counted) */
+static int cmp_wsub_nid(const void *a, const void *b) { uint32_t x = ((const wsub *)a)->nid, y = ((const wsub *)b)->nid; return x < y ? -1 : x > y; }
+
 int ed_store_tc(opw *w, uint32_t nid, tctx *tc) {
     nbt_e e;
     int rc = opw_node(w, nid, &e);
     if (rc) return rc;
-    wsubs subs;
-    rc = opw_subnodes(w, e.bs, &subs);
-    if (rc) return rc;
     hblocks heap, rows;
     uint32_t rows_nid;
-    rc = tc_build(tc, &heap, &rows, &rows_nid);
-    if (rc) { wsubs_free(&subs); return rc; }
-    wsub *ns = (wsub *)calloc(subs.n + 1, sizeof *ns);
+    tcbig *bigs = NULL;
+    size_t nbig = 0;
+    rc = tc_build_ex(tc, w, &heap, &rows, &rows_nid, &bigs, &nbig);
+    if (rc) return rc;
+    /* every subnode of a table node is its row matrix or a large cell value, and all of them are rebuilt with the table */
+    wsub *ns = (wsub *)calloc(nbig + 2, sizeof *ns);
     size_t nn = 0;
     uint64_t new_bd = 0, new_bs = 0;
     if (!ns) rc = OPST_E_NOMEM;
-    for (size_t i = 0; i < subs.n && !rc; i++) if (subs.e[i].nid != tc->rows_nid) ns[nn++] = subs.e[i];
     if (!rc) rc = opw_put_blocks(w, &heap, &new_bd);
     if (!rc && rows.n) {
         uint64_t top;
         rc = opw_put_blocks(w, &rows, &top);
         if (!rc) { ns[nn].nid = rows_nid; ns[nn].bd = top; ns[nn].bs = 0; nn++; }
     }
-    for (size_t i = 0; i < nn && !rc; i++) {
-        const wsub *old = find_wsub(&subs, ns[i].nid);
-        if (old && old->bd == ns[i].bd && old->bs == ns[i].bs) {
-            rc = opw_add_ref(w, ns[i].bd);
-            if (!rc && ns[i].bs) rc = opw_add_ref(w, ns[i].bs);
-        }
-    }
+    if (!rc && nbig) { rc = tcbig_put(w, bigs, nbig, ns + nn); nn += nbig; }
+    if (!rc) op_qsort(ns, nn, sizeof *ns, cmp_wsub_nid);
     if (!rc) rc = opw_put_subnodes(w, ns, nn, &new_bs);
     if (!rc) rc = opw_node_put(w, nid, new_bd, new_bs, e.parent);
     if (!rc) rc = opw_release(w, e.bd);
     if (!rc && e.bs) rc = opw_release(w, e.bs);
     if (!rc) tc->rows_nid = rows_nid;
     free(ns);
+    tcbig_free(bigs, nbig);
     hb_free(&heap); hb_free(&rows);
-    wsubs_free(&subs);
     return rc;
 }
 
@@ -319,7 +353,14 @@ static int pcprops_cb(void *ctx, const uint8_t *k, const uint8_t *v) {
         return pcprops_set(c->out, pid, pt, b, (size_t)fs);
     }
     if (val == 0) return pcprops_set(c->out, pid, pt, (const uint8_t *)"", 0);
-    if (val & 0x1F) return c->lenient ? 0 : op_err(OPST_E_UNSUPPORTED, "property 0x%04x is stored in a subnode (unsupported)", pid);
+    if (val & 0x1F) {
+        if (c->lenient == 2) {                                   /* keep the reference: pc_build writes the subnode NID back unchanged */
+            rc = pcprops_set(c->out, pid, pt, (const uint8_t *)"", 0);
+            if (!rc) pcprops_find(c->out, pid)->ext_nid = val;
+            return rc;
+        }
+        return c->lenient ? 0 : op_err(OPST_E_UNSUPPORTED, "property 0x%04x is stored in a subnode (unsupported)", pid);
+    }
     const uint8_t *d; size_t n;
     rc = heap_get(c->hp, val, &d, &n);
     if (rc) return rc;

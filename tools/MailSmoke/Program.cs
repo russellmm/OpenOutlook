@@ -26,6 +26,20 @@ MicrosoftMailSession? mSession = null;
 if (gAcc is not null) { var s = new MicrosoftMailSession(gAcc, secrets, tokenHttp); gBox = new GmailMailbox(gHttp, ct => new ValueTask<string>(s.GetAccessTokenAsync(ct)), gAcc.DisplayAddress); }
 if (mAcc is not null) mSession = new MicrosoftMailSession(mAcc, secrets, tokenHttp);
 
+if (step == "mirror" && mAcc is not null)
+{
+    // Mirrors the Hotmail mailbox into a PST under .local/mirror-test (never touches the server): usage MailSmoke mirror [folder]
+    var dir = args.Length > 1 ? args[1] : Path.Combine(AppContext.BaseDirectory, "mirror-test");
+    Directory.CreateDirectory(dir);
+    var pstPath = Path.Combine(dir, OpenOutlook.Mirror.MirrorLocations.SafeFileName(mAcc.DisplayAddress) + ".pst");
+    using var pst = File.Exists(pstPath) ? OpenOutlook.PstNative.PstEngineFactory.Open(pstPath, true) : OpenOutlook.PstNative.PstEngineFactory.Create(pstPath, mAcc.DisplayAddress);
+    using var st = new OpenOutlook.Mirror.SyncStateStore(Path.ChangeExtension(pstPath, ".sync"));
+    var src = new OpenOutlook.Mirror.GraphMirrorSource(new GraphMailFolderReader(graphHttp, mAcc.AccountId), new GraphMailboxSyncReader(graphHttp, mAcc.AccountId), new GraphInboxReader(graphHttp, mAcc.AccountId), ct => mSession!.GetAccessTokenAsync(ct));
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    var res = await OpenOutlook.Mirror.MirrorSyncEngine.SyncAsync(src, pst, st, new OpenOutlook.Mirror.MirrorSyncOptions(), new Progress<OpenOutlook.Mirror.MirrorProgress>(p => { if (p.Phase != "messages") Console.WriteLine($"   {p.Phase} {p.Folder} {p.Done}/{p.Total}"); }), CancellationToken.None);
+    Console.WriteLine($"{pstPath}\n   {res}\n   {watch.Elapsed.TotalSeconds:0.0}s; scan findings: {pst.Scan().Findings.Count}");
+    return 0;
+}
 if (step == "attach" && mAcc is not null)
 {
     var r = new GraphInboxReader(graphHttp, mAcc.AccountId);

@@ -27,6 +27,12 @@ public interface IPstEngine : IDisposable
     void CopyMessage(MailSummary message, MailFolder destFolder);
     void DeleteMessage(MailSummary message);
     MailFolder CreateFolder(uint parentNid, string name);
+    /// <summary>Renames a folder (special folders such as Deleted Items are refused).</summary>
+    void RenameFolder(uint folderNid, string name);
+    /// <summary>Removes a folder for good together with its subfolders and messages (nothing goes to Deleted Items). Special folders are refused.</summary>
+    void PurgeFolder(uint folderNid);
+    /// <summary>Moves a folder below another one (special folders are refused).</summary>
+    void MoveFolder(uint folderNid, uint newParentNid);
 
     /// <summary>
     /// Files messages (EML files, Graph messages, ...) into a folder and returns their summaries. Large batches are written in several

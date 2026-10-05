@@ -7,5 +7,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
     <ProjectReference Include="../PstCore/PstCore.csproj" />
+    <ProjectReference Include="../OpenOutlook.Providers.Microsoft/OpenOutlook.Providers.Microsoft.csproj" />
   </ItemGroup>
 </Project>

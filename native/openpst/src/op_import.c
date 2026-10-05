@@ -240,24 +240,33 @@ static int cell_str(tctx *t, size_t row, unsigned pid, const char *utf8) {
 }
 
 /* stores a built table as the data of a subnode: heap blocks, plus the row matrix as a nested subnode when it does not fit the heap */
+static int cmp_wsub_nid2(const void *a, const void *b) { uint32_t x = ((const wsub *)a)->nid, y = ((const wsub *)b)->nid; return x < y ? -1 : x > y; }
+
 static int table_store(opw *w, tctx *t, uint64_t *bd, uint64_t *bs, size_t *bytes) {
     hblocks heap, rows;
     uint32_t rows_nid;
-    int rc = tc_build(t, &heap, &rows, &rows_nid);
+    tcbig *bigs = NULL;
+    size_t nbig = 0;
+    int rc = tc_build_ex(t, w, &heap, &rows, &rows_nid, &bigs, &nbig);
     if (rc) return rc;
     *bs = 0;
     *bytes = 0;
     for (size_t i = 0; i < heap.n; i++) *bytes += heap.b[i].n;
     for (size_t i = 0; i < rows.n; i++) *bytes += rows.b[i].n;
-    rc = opw_put_blocks(w, &heap, bd);
+    for (size_t i = 0; i < nbig; i++) *bytes += bigs[i].n;
+    wsub *ns = (wsub *)calloc(nbig + 2, sizeof *ns);
+    size_t nn = 0;
+    if (!ns) rc = OPST_E_NOMEM;
+    if (!rc) rc = opw_put_blocks(w, &heap, bd);
     if (!rc && rows.n) {
         uint64_t top;
         rc = opw_put_blocks(w, &rows, &top);
-        if (!rc) {
-            wsub s = {rows_nid, top, 0};
-            rc = opw_put_subnodes(w, &s, 1, bs);
-        }
+        if (!rc) { ns[nn].nid = rows_nid; ns[nn].bd = top; ns[nn].bs = 0; nn++; }
     }
+    if (!rc && nbig) { rc = tcbig_put(w, bigs, nbig, ns + nn); nn += nbig; }
+    if (!rc && nn) { op_qsort(ns, nn, sizeof *ns, cmp_wsub_nid2); rc = opw_put_subnodes(w, ns, nn, bs); }
+    free(ns);
+    tcbig_free(bigs, nbig);
     hb_free(&heap); hb_free(&rows);
     return rc;
 }
@@ -373,6 +382,19 @@ static int build_attachment(ops *o, const opst_import_attachment *a, int64_t now
 }
 
 /* ---- the message ---------------------------------------------------------------------------------------------------------------- */
+/* the first `maxchars` characters of a UTF-8 string, copied into out (cap bytes, always terminated); Outlook keeps subjects and display names to 255 characters */
+static const char *cut_chars(const char *s, size_t maxchars, char *out, size_t cap) {
+    size_t used = 0, chars = 0;
+    while (s[used] && chars < maxchars && used + 5 < cap) {
+        unsigned char c = (unsigned char)s[used];
+        size_t len = c < 0x80 ? 1 : (c & 0xE0) == 0xC0 ? 2 : (c & 0xF0) == 0xE0 ? 3 : 4;
+        for (size_t k = 0; k < len && s[used]; k++) { out[used] = s[used]; used++; }
+        chars++;
+    }
+    out[used] = 0;
+    return out;
+}
+
 /* builds one message and adds its row to `dtc` (the destination contents table, stored by the caller); *key tells how to file it in the message index */
 static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg *m, uint32_t *nid_out, keyednid *key) {
     opw *w = o->w;
@@ -380,9 +402,12 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
     int64_t now = now_filetime();
     int64_t sent = m->sent ? m->sent : (m->received ? m->received : now);
     int64_t recv = m->received ? m->received : sent;
-    const char *subject = m->subject ? m->subject : "";
+    char subject_cut[1100];
+    const char *subject = cut_chars(m->subject ? m->subject : "", 255, subject_cut, sizeof subject_cut);
     const char *cls = m->message_class && *m->message_class ? m->message_class : "IPM.Note";
     const char *sname = m->sender_name && *m->sender_name ? m->sender_name : (m->sender_email ? m->sender_email : "");
+    char sname_cut[1100];                                  /* also part of binary entry ids, which must stay small */
+    sname = cut_chars(sname, 255, sname_cut, sizeof sname_cut);
     const char *semail = m->sender_email ? m->sender_email : "";
     int imp = m->importance >= 0 && m->importance <= 2 ? m->importance : 1;
     size_t natt = m->nattachments;
@@ -432,19 +457,19 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
     if (!rc) rc = p_i32(&p, 0x0026, imp - 1);
     if (!rc) rc = p_bool(&p, 0x0029, 0);
     if (!rc) rc = p_i32(&p, 0x0036, 0);
-    if (!rc) rc = p_str(&p, 0x0037, subject);
+    if (!rc) rc = p_str_big(w, &subs, &p, 0x0037, subject);
     if (!rc) rc = p_time(&p, 0x0039, sent);
-    if (!rc) rc = p_str(&p, 0x0042, sname);
+    if (!rc) rc = p_str_big(w, &subs, &p, 0x0042, sname);
     if (!rc) rc = p_str(&p, 0x0064, "SMTP");
-    if (!rc) rc = p_str(&p, 0x0065, semail);
-    if (!rc) rc = p_str(&p, 0x0070, normalized_subject(subject));
+    if (!rc) rc = p_str_big(w, &subs, &p, 0x0065, semail);
+    if (!rc) rc = p_str_big(w, &subs, &p, 0x0070, normalized_subject(subject));
     if (!rc) rc = p_bin(&p, 0x0071, conv, sizeof conv);
     if (!rc) rc = p_bool(&p, 0x0C06, 0);
-    if (!rc) rc = p_str(&p, 0x0C1A, sname);
+    if (!rc) rc = p_str_big(w, &subs, &p, 0x0C1A, sname);
     if (!rc) rc = p_str(&p, 0x0C1E, "SMTP");
-    if (!rc) rc = p_str(&p, 0x0C1F, semail);
-    if (!rc && *(const char *)cc.p) rc = p_str(&p, 0x0E03, (const char *)cc.p);       /* an empty display-cc is not written (SCANPST removes it) */
-    if (!rc) rc = p_str(&p, 0x0E04, (const char *)to.p);
+    if (!rc) rc = p_str_big(w, &subs, &p, 0x0C1F, semail);
+    if (!rc && *(const char *)cc.p) rc = p_str_big(w, &subs, &p, 0x0E03, (const char *)cc.p);       /* an empty display-cc is not written (SCANPST removes it) */
+    if (!rc && *(const char *)to.p) rc = p_str_big(w, &subs, &p, 0x0E04, (const char *)to.p);       /* an empty display-to is not written either (found with SCANPST: it deletes the property) */
     if (!rc) rc = p_time(&p, 0x0E06, recv);
     if (!rc) rc = p_i32(&p, 0x0E07, (m->read ? 1 : 0) | (hasatt ? 0x10 : 0));
     if (!rc) rc = p_i32(&p, 0x1080, -1);
@@ -454,12 +479,12 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
     if (!rc) rc = p_i32(&p, 0x3FDE, 65001);
     if (!rc) rc = p_i32(&p, 0x3FF1, 1033);
     if (!rc) rc = p_i32(&p, 0x3FFD, 65001);
-    if (!rc) rc = p_str(&p, 0x5D01, semail);
-    if (!rc) rc = p_str(&p, 0x5D02, semail);
+    if (!rc) rc = p_str_big(w, &subs, &p, 0x5D01, semail);
+    if (!rc) rc = p_str_big(w, &subs, &p, 0x5D02, semail);
     if (!rc) rc = p_bin(&p, 0x65E0, rk, sizeof rk);
     if (!rc) rc = p_bin(&p, 0x65E2, rk, sizeof rk);
     if (!rc) rc = p_bin(&p, 0x65E3, pred, sizeof pred);
-    if (!rc && m->message_id && *m->message_id) rc = p_str(&p, 0x1035, m->message_id);
+    if (!rc && m->message_id && *m->message_id) rc = p_str_big(w, &subs, &p, 0x1035, m->message_id);
     if (!rc && *semail) {
         bbuf e1 = {0}, k1 = {0};
         rc = one_off_entry_id(sname, semail, &e1);
@@ -529,9 +554,21 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
     if (!rc) {
         pcprops row = {0};
         for (size_t i = 0; i < p.n && !rc; i++) {
-            if (p.p[i].ext_nid) continue;                       /* large values are not table columns */
-            if ((p.p[i].ptype == 0x1F || p.p[i].ptype == 0x1E) && p.p[i].v.n == 0) continue;   /* an empty string is no row cell (SCANPST drops it) */
+            if (p.p[i].ext_nid) continue;                       /* large values are added below, from their source */
+            if ((p.p[i].ptype == 0x1F || p.p[i].ptype == 0x1E) && p.p[i].v.n == 0 && p.p[i].pid != 0x0037 && p.p[i].pid != 0x0042 && p.p[i].pid != 0x0070) continue;
+            /* an empty string is no row cell (SCANPST drops it), except for subject, sender name and conversation topic: a message that has them empty gets empty cells
+               (found on 9 of 1,140 mirrored messages: SCANPST's repair added exactly these cells, "row doesn't match sub-object") */
             rc = pcprops_set(&row, p.p[i].pid, p.p[i].ptype, p.p[i].v.p, p.p[i].v.n);
+        }
+        static const struct { unsigned pid; int which; } bigcells[2] = {{0x0E03, 0}, {0x0E04, 1}};
+        for (int k = 0; k < 2 && !rc; k++) {                    /* display-to / display-cc beyond the heap limit: in the property context they are subnodes, in the row they are cells with their own subnode */
+            pcprop *pp = pcprops_find(&p, bigcells[k].pid);
+            if (pp && pp->ext_nid) {
+                bbuf u = {0};
+                rc = u8_to_u16(bigcells[k].which ? (const char *)to.p : (const char *)cc.p, &u);
+                if (!rc) rc = pcprops_set(&row, bigcells[k].pid, 0x1F, u.p, u.n);
+                bb_free(&u);
+            }
         }
         if (!rc) rc = p_i32(&row, 0x67F2, (int32_t)nn);
         if (!rc) rc = p_i32(&row, 0x67F3, (int32_t)ops_next_row_ver(o));

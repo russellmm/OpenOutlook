@@ -601,6 +601,39 @@ namespace OpenOutlook.PstNative
             };
         }
 
+        public void PurgeFolder(uint folderNid)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                FlushPending();
+                Wrap(() => { _file.PurgeFolder(folderNid); return 0; });
+                SyncFolders();
+            }
+        }
+
+        public void RenameFolder(uint folderNid, string name)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                FlushPending();
+                Wrap(() => { _file.RenameFolder(folderNid, name.Trim()); return 0; });
+                SyncFolders();
+            }
+        }
+
+        public void MoveFolder(uint folderNid, uint newParentNid)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                FlushPending();
+                Wrap(() => { _file.MoveFolder(folderNid, newParentNid); return 0; });
+                SyncFolders();
+            }
+        }
+
         public MailFolder CreateFolder(uint parentNid, string name)
         {
             RequireWrite();
@@ -648,6 +681,15 @@ namespace OpenOutlook.PstNative
             }
             foreach (var f in kids)
             {
+                var shown = string.IsNullOrWhiteSpace(f.Name) ? $"Folder 0x{f.Nid:X}" : f.Name;
+                if (_folders.TryGetValue(f.Nid, out var existing) && (existing.Name != shown || existing.ParentNid != parent.Nid))
+                {
+                    // renamed or moved: Name and ParentNid are fixed once a folder object exists, so a new object takes its place (children carried over)
+                    foreach (var other in _folders.Values) other.Children.Remove(existing);
+                    var replacement = new MailFolder { Nid = f.Nid, Name = shown, ParentNid = parent.Nid };
+                    foreach (var child in existing.Children) replacement.Children.Add(child);
+                    _folders[f.Nid] = replacement;
+                }
                 if (!_folders.TryGetValue(f.Nid, out var m))
                 {
                     m = new MailFolder
@@ -659,6 +701,7 @@ namespace OpenOutlook.PstNative
                     _folders[m.Nid] = m;
                     parent.Children.Add(m);
                 }
+                if (!parent.Children.Contains(m)) parent.Children.Add(m);
                 m.ContentCount = f.ContentCount;
                 m.UnreadCount = f.UnreadCount;
                 m.HasSubfolders = f.HasSubfolders;

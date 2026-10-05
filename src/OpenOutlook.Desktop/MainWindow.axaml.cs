@@ -1667,7 +1667,9 @@ public sealed partial class MainWindow : Window
         // scripts run, but nothing is painted -- so preferring it for PST archives meant archive
         // messages looked empty while their content probe reported success. Connected mail already
         // defaulted here; leaving the other branch on the broken path was an oversight, not a choice.
-        _preferSnapshotForMessage = true;
+        // Start on the embedded web view where it paints (Windows, macOS, X11) and on the snapshot elsewhere (Wayland); either one
+        // falls back to the other by itself. See ReaderEngineChoice.
+        _preferSnapshotForMessage = !ReaderEngineChoice.PreferEmbedded();
         _htmlImageSources = [];
         _failedMessageImages = 0;
         _richRuns = null;

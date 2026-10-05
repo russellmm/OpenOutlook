@@ -9,28 +9,35 @@ using PstCore;
 namespace OpenOutlook.PstNative
 {
     /// <summary>
-    /// <see cref="IPstEngine"/> backed by the native OpenPST library. Phase 1: read path only (folders, messages, bodies,
-    /// attachments, search, integrity check). Write members throw until the always-edit phase.
-    /// Search folders (nid type 3) are not part of the folder tree, matching the managed engine.
+    /// <see cref="IPstEngine"/> backed by the native OpenPST library: the read path plus, when opened for writing, read/flag
+    /// state, move, copy, delete and folder create/delete. Every write is one atomic, journaled native transaction.
+    /// Search folders (nid type 3) are not part of the folder tree.
     /// </summary>
     public sealed class NativePstEngine : IPstEngine
     {
-        const string ReadOnlyText = "The native engine is read-only in this build.";
+        const string ReadOnlyText = "This archive is open read-only.";
 
         readonly object _gate = new object();
         readonly PstFile _file;
         readonly Dictionary<uint, MailFolder> _folders = new Dictionary<uint, MailFolder>();
         readonly MailFolder _root;
         readonly uint _deletedItems;
+        readonly bool _write;
+        readonly string _path;
+        bool _disposed;
 
         public PstHeader Header { get; }
         public string DisplayName { get; }
-        public bool CanWrite => false;
+        public bool CanWrite => _write;
+        /// <summary>True when opening for writing rolled back the journal of an interrupted write.</summary>
+        public bool RecoveredFromInterruptedWrite => _file.Recovered;
         public MailFolder Root => _root;
 
-        NativePstEngine(string path, PstFile file)
+        NativePstEngine(string path, PstFile file, bool write)
         {
             _file = file;
+            _write = write;
+            _path = path;
             Header = PstStore.Inspect(path);
             string name = file.DisplayName.Trim();
             DisplayName = name.Length > 0 && name.Length <= 256 && !name.Any(char.IsControl)
@@ -41,16 +48,31 @@ namespace OpenOutlook.PstNative
             Load(_root);
         }
 
-        /// <summary>Opens read-only. Throws <see cref="PstException"/> (PstCore) when the native library or the file is unsupported.</summary>
-        public static NativePstEngine Open(string path)
+        /// <summary>
+        /// Opens read-only, or for writing when <paramref name="write"/> is true (takes the single-writer lock and rolls back
+        /// the journal of an interrupted write). Throws <see cref="PstCore.PstException"/> when the native library is missing,
+        /// the file is unsupported or (for writing) locked / not writable.
+        /// </summary>
+        public static NativePstEngine Open(string path, bool write = false)
         {
             if (!NativeLibraryLoader.IsAvailable)
                 throw new PstCore.PstException("The native PST library is not available.");
+            string full = System.IO.Path.GetFullPath(path);
+            if (write) PstEditLock.Acquire(full);
             PstFile file;
-            try { file = new PstFile(path); }
-            catch (OpenPst.PstException e) { throw new PstCore.PstException(e.Message, e); }
-            try { return new NativePstEngine(path, file); }
-            catch { file.Dispose(); throw; }
+            try { file = new PstFile(full, write); }
+            catch (OpenPst.PstException e)
+            {
+                if (write) PstEditLock.Release(full);
+                throw new PstCore.PstException(e.Message, e);
+            }
+            try { return new NativePstEngine(full, file, write); }
+            catch
+            {
+                file.Dispose();
+                if (write) PstEditLock.Release(full);
+                throw;
+            }
         }
 
         void Load(MailFolder parent)
@@ -271,53 +293,216 @@ namespace OpenOutlook.PstNative
             }
         }
 
-        static PstCore.PstException ReadOnly() => new PstCore.PstException(ReadOnlyText);
-        public void SetReadState(MailSummary message, bool read) => throw ReadOnly();
-        public void SetFlagged(MailSummary message, bool flagged) => throw ReadOnly();
-        public void MoveMessage(MailSummary message, MailFolder destFolder) => throw ReadOnly();
-        public void CopyMessage(MailSummary message, MailFolder destFolder) => throw ReadOnly();
-        public void DeleteMessage(MailSummary message) => throw ReadOnly();
-        public MailFolder CreateFolder(uint parentNid, string name) => throw ReadOnly();
-        public void DeleteFolder(uint folderNid) => throw ReadOnly();
+        void RequireWrite()
+        {
+            if (_disposed) throw new ObjectDisposedException(nameof(NativePstEngine));
+            if (!_write) throw new PstCore.PstException(ReadOnlyText);
+        }
+
+        static T Wrap<T>(Func<T> f)
+        {
+            try { return f(); }
+            catch (OpenPst.PstException e) { throw new PstCore.PstException(e.Message, e); }
+        }
+
+        void AdjustUnread(uint folderNid, int delta)
+        {
+            if (_folders.TryGetValue(folderNid, out var f)) f.UnreadCount = Math.Max(0, f.UnreadCount + delta);
+        }
+
+        public void SetReadState(MailSummary message, bool read)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                Wrap(() => { _file.SetMessageState(new[] { message.Nid }, read ? 1 : 0); return 0; });
+                if (message.IsRead != read) AdjustUnread(message.FolderNid, read ? -1 : 1);
+                message.IsRead = read;
+            }
+        }
+
+        public void SetFlagged(MailSummary message, bool flagged)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                Wrap(() => { _file.SetMessageState(new[] { message.Nid }, -1, flagged ? 2 : 0); return 0; });
+                message.Flagged = flagged;
+            }
+        }
+
+        public void MoveMessage(MailSummary message, MailFolder destFolder)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                Wrap(() => { _file.MoveMessages(new[] { message.Nid }, destFolder.Nid); return 0; });
+                message.FolderNid = destFolder.Nid;
+                SyncFolders();
+            }
+        }
+
+        public void CopyMessage(MailSummary message, MailFolder destFolder)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                Wrap(() => _file.CopyMessages(new[] { message.Nid }, destFolder.Nid));
+                SyncFolders();
+            }
+        }
+
+        /// <summary>Removes the message for good (it does not go to Deleted Items; move it there first for Outlook's Delete).</summary>
+        public void DeleteMessage(MailSummary message)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                Wrap(() => { _file.PurgeMessages(new[] { message.Nid }); return 0; });
+                SyncFolders();
+            }
+        }
+
+        public MailFolder CreateFolder(uint parentNid, string name)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                name = name.Trim();
+                uint nid = Wrap(() => _file.CreateFolder(parentNid, name));
+                SyncFolders();
+                return _folders.TryGetValue(nid, out var f) ? f : throw new PstCore.PstException("The new folder could not be read back.");
+            }
+        }
+
+        /// <summary>Removes an empty folder for good (refuses folders with subfolders or messages, and special folders).</summary>
+        public void DeleteFolder(uint folderNid)
+        {
+            RequireWrite();
+            lock (_gate)
+            {
+                if (!_folders.TryGetValue(folderNid, out var folder))
+                    throw new PstCore.PstException("That folder is no longer present; nothing was changed.");
+                if (folderNid == _root.Nid) throw new PstCore.PstException("The root of an archive cannot be deleted.");
+                if (folder.Children.Count > 0)
+                    throw new PstCore.PstException($"\"{folder.Name}\" still has subfolders; move or delete them first.");
+                int count = Wrap(() => _file.Messages(folderNid).Count);
+                if (count > 0)
+                    throw new PstCore.PstException($"\"{folder.Name}\" still has {count} message{(count == 1 ? "" : "s")}; empty it first.");
+                Wrap(() => { _file.PurgeFolder(folderNid); return 0; });
+                SyncFolders();
+            }
+        }
+
+        /// <summary>Brings the in-memory folder tree (the same objects the UI holds) in line with the file: counts, new and removed folders.</summary>
+        void SyncFolders() => Sync(_root);
+
+        void Sync(MailFolder parent)
+        {
+            var kids = _file.Children(parent.Nid).Where(f => (f.Nid & 0x1F) == 2).ToList();
+            var keep = new HashSet<uint>(kids.Select(k => k.Nid));
+            foreach (var gone in parent.Children.Where(c => !keep.Contains(c.Nid)).ToList())
+            {
+                parent.Children.Remove(gone);
+                Forget(gone);
+            }
+            foreach (var f in kids)
+            {
+                if (!_folders.TryGetValue(f.Nid, out var m))
+                {
+                    m = new MailFolder
+                    {
+                        Nid = f.Nid,
+                        Name = string.IsNullOrWhiteSpace(f.Name) ? $"Folder 0x{f.Nid:X}" : f.Name,
+                        ParentNid = parent.Nid,
+                    };
+                    _folders[m.Nid] = m;
+                    parent.Children.Add(m);
+                }
+                m.ContentCount = f.ContentCount;
+                m.UnreadCount = f.UnreadCount;
+                m.HasSubfolders = f.HasSubfolders;
+                if (f.HasSubfolders || m.Children.Count > 0) Sync(m);
+            }
+            parent.HasSubfolders = parent.Children.Count > 0;
+        }
+
+        void Forget(MailFolder f)
+        {
+            _folders.Remove(f.Nid);
+            foreach (var c in f.Children) Forget(c);
+        }
 
         public void Dispose()
         {
-            lock (_gate) _file.Dispose();
+            lock (_gate)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                _file.Dispose();
+                if (_write) PstEditLock.Release(_path);
+            }
         }
     }
 
     /// <summary>
-    /// Picks the engine for a PST: native when it is available, read-only and the file is supported; otherwise the managed
-    /// <see cref="PstStore"/>. Set OPENOUTLOOK_ENGINE=managed to force the managed engine.
+    /// Opens a PST with the native OpenPST engine. The original managed engine is not used for writing: it is only a temporary
+    /// read-only reader for files the native library cannot open yet (ANSI, 4K-page) or when the native library is missing.
+    /// Set OPENOUTLOOK_ENGINE=managed to force the managed reader (read-only).
     /// </summary>
     public static class PstEngineFactory
     {
-        public static IPstEngine Open(string path, bool writable = false) => Open(path, writable, out _);
+        static bool ManagedForced =>
+            string.Equals(Environment.GetEnvironmentVariable("OPENOUTLOOK_ENGINE"), "managed", StringComparison.OrdinalIgnoreCase);
 
-        /// <param name="fallbackReason">Why the managed engine was used instead of the native one (null when native was chosen).</param>
+        /// <summary>Read-only open (native when possible).</summary>
+        public static IPstEngine Open(string path) => Open(path, writable: false, out _);
+
+        /// <summary>
+        /// Opens for writing (native only). Throws <see cref="PstCore.PstException"/> when the archive is locked by another
+        /// window, not writable, unsupported by the native engine, or the native library is missing.
+        /// </summary>
+        public static IPstEngine Open(string path, bool writable) => Open(path, writable, out _);
+
+        /// <param name="fallbackReason">Why the managed reader was used instead of the native engine (null when native was chosen).</param>
         public static IPstEngine Open(string path, bool writable, out string? fallbackReason)
         {
-            if (writable) { fallbackReason = "writing is not supported by the native engine yet"; return PstStore.Open(path, true); }
-            if (string.Equals(Environment.GetEnvironmentVariable("OPENOUTLOOK_ENGINE"), "managed", StringComparison.OrdinalIgnoreCase))
+            fallbackReason = null;
+            if (writable)
             {
-                fallbackReason = "managed engine forced by OPENOUTLOOK_ENGINE";
-                return PstStore.Open(path, false);
+                if (ManagedForced || !NativeLibraryLoader.IsAvailable)
+                    throw new PstCore.PstException("Editing needs the native OpenPST engine, which is not available.");
+                return NativePstEngine.Open(path, write: true);
             }
-            if (!NativeLibraryLoader.IsAvailable)
-            {
-                fallbackReason = "native library unavailable";
-                return PstStore.Open(path, false);
-            }
-            try
-            {
-                var engine = NativePstEngine.Open(path);
-                fallbackReason = null;
-                return engine;
-            }
+            if (ManagedForced) { fallbackReason = "managed reader forced by OPENOUTLOOK_ENGINE"; return PstStore.Open(path, false); }
+            if (!NativeLibraryLoader.IsAvailable) { fallbackReason = "native library unavailable"; return PstStore.Open(path, false); }
+            try { return NativePstEngine.Open(path); }
             catch (PstCore.PstException e)
             {
                 fallbackReason = e.Message;
                 return PstStore.Open(path, false);
+            }
+        }
+
+        /// <summary>
+        /// The app's normal open: editable by default (always-edit mode). When the archive cannot be opened for writing
+        /// (locked by another window, read-only file or media) it opens read-only and <paramref name="readOnlyReason"/> says why;
+        /// files the native engine does not support are opened with the temporary managed reader, read-only.
+        /// </summary>
+        public static IPstEngine OpenEditable(string path, out string? readOnlyReason)
+        {
+            readOnlyReason = null;
+            if (ManagedForced || !NativeLibraryLoader.IsAvailable)
+            {
+                readOnlyReason = ManagedForced ? "managed reader forced by OPENOUTLOOK_ENGINE" : "native library unavailable";
+                return PstStore.Open(path, false);
+            }
+            try { return NativePstEngine.Open(path, write: true); }
+            catch (PstCore.PstException writeError)
+            {
+                readOnlyReason = writeError.Message;
+                try { return NativePstEngine.Open(path); }
+                catch (PstCore.PstException) { return PstStore.Open(path, false); }
             }
         }
     }

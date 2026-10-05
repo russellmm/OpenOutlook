@@ -207,6 +207,7 @@ int  idmap_lookup(idmap *m, const uint8_t guid[16], uint32_t *nid);
 uint32_t ops_next_row_ver(ops *o);
 int  ops_counts(ops *o, uint32_t folder, int d_cnt, int d_unread);
 int  ops_unread(const pcprops *vals);
+int  ops_set_msg_state(ops *o, const uint32_t *nids, size_t n, int read, int flag);
 int  ops_move_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, size_t *moved);
 int  ops_copy_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, int share, int ids, int fresh, uint32_t *new_nids);
 int  ops_purge_msgs(ops *o, const uint32_t *nids, size_t n);

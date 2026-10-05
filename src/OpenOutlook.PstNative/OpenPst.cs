@@ -101,6 +101,7 @@ namespace OpenPst
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msgs_copy_to(IntPtr src, uint[] nids, UIntPtr n, IntPtr dst, uint dest, uint[]? newNids);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msgs_delete(IntPtr p, uint[] nids, UIntPtr n, out UIntPtr moved, out UIntPtr purged);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msgs_purge(IntPtr p, uint[] nids, UIntPtr n);
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msgs_set_state(IntPtr p, uint[] nids, UIntPtr n, int read, int flag);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_fix(IntPtr p, int apply, ref FixReport r);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_check(IntPtr p, ref CheckReport r, byte[] text, UIntPtr cap);
 
@@ -384,6 +385,13 @@ namespace OpenPst
             var a = Arr(nids);
             Native.Check(Native.opst_msgs_delete(H, a, (UIntPtr)a.Length, out var moved, out var purged));
             return ((int)moved, (int)purged);
+        }
+        /// <summary>Sets read state and/or flag status of messages in one transaction (message, contents-table row and the folder unread count are updated).
+        /// <paramref name="read"/>: -1 unchanged, 0 unread, 1 read. <paramref name="flag"/>: -1 unchanged, else 0 none, 1 complete, 2 flagged.</summary>
+        public void SetMessageState(IReadOnlyList<uint> nids, int read = -1, int flag = -1)
+        {
+            var a = Arr(nids);
+            Native.Check(Native.opst_msgs_set_state(H, a, (UIntPtr)a.Length, read, flag));
         }
         public void PurgeMessages(IReadOnlyList<uint> nids)
         {

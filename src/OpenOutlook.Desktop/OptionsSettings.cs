@@ -11,6 +11,10 @@ namespace OpenOutlook.Desktop;
 /// </summary>
 public sealed record OptionsSettings
 {
+    // Data files (PST)
+    /// <summary>Copy an archive to &lt;file&gt;.bak when it is opened for editing (off by default; edits are journaled and crash-safe).</summary>
+    public bool PstBackupBeforeEditing { get; init; }
+
     // Compose messages
     public string ComposeFormat { get; init; } = "Rich Text";
     public bool CheckSpellingBeforeSending { get; init; } = true;

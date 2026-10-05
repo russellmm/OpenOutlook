@@ -435,7 +435,7 @@ public sealed partial class MainWindow : Window
     private async Task<bool> OpenArchiveAsync(string path, bool remember = true)
     {
         if (_stores.ContainsKey(path)) return true;
-        StatusText.Text = $"Opening {Path.GetFileName(path)} read-only…";
+        StatusText.Text = $"Opening {Path.GetFileName(path)}…";
         try
         {
             // Serialize reader use: NDB protects individual reads, not whole operations.
@@ -443,16 +443,26 @@ public sealed partial class MainWindow : Window
             IPstEngine store;
             try
             {
-                string? fallback = null;
-                store = await Task.Run(() => PstEngineFactory.Open(path, writable: false, out fallback));
-                AppLog.Note("pst-engine", $"{Path.GetFileName(path)} opened with the {(store is PstStore ? "managed" : "native")} engine" + (fallback is null ? "" : $" ({fallback})"));
+                string? readOnlyReason = null;
+                store = await Task.Run(() =>
+                {
+                    var opened = PstEngineFactory.OpenEditable(path, out readOnlyReason);
+                    if (opened.CanWrite) BackupBeforeEditingIfRequested(path);
+                    return opened;
+                });
+                if (readOnlyReason is not null) _readOnlyReasons[path] = readOnlyReason; else _readOnlyReasons.Remove(path);
+                AppLog.Note("pst-engine", $"{Path.GetFileName(path)} opened with the {(store is PstStore ? "managed (read-only reader)" : "native")} engine, {(store.CanWrite ? "editable" : "read-only")}" + (readOnlyReason is null ? "" : $" ({readOnlyReason})"));
+                if (store is NativePstEngine { RecoveredFromInterruptedWrite: true })
+                    AppLog.Note("pst-engine", $"{Path.GetFileName(path)}: an interrupted write was rolled back from the journal");
             }
             finally { _readerGate.Release(); }
             if (_stores.TryAdd(path, store))
             {
                 FolderTree.Items.Add(BuildArchiveNode(path, store));
                 ApplyFolderOrder(FolderTree);
-                StatusText.Text = $"Opened {store.DisplayName} read-only.";
+                StatusText.Text = store.CanWrite
+                    ? $"Opened {store.DisplayName}."
+                    : $"Opened {store.DisplayName} read-only: {(_readOnlyReasons.TryGetValue(path, out var why) ? why : "not editable")}";
                 if (remember)
                 {
                     try { _attachedPstStore.Add(path); }
@@ -475,7 +485,6 @@ public sealed partial class MainWindow : Window
         await _readerGate.WaitAsync();
         try
         {
-            FinalizeEditSessionsForShutdown();
             foreach (var store in _stores.Values) store.Dispose();
             _stores.Clear();
         }
@@ -1347,20 +1356,6 @@ public sealed partial class MainWindow : Window
         try
         {
             if (!_stores.ContainsKey(path)) return;
-            // Finalize any live edit session BEFORE disposing its store: every operation was already
-            // verified when it ran, so this commit re-verifies and seals; a failure rolls back to the
-            // automatic backup rather than stranding a half-written archive or a dead session.
-            if (_editSessions.TryGetValue(path, out var session))
-            {
-                _editSessions.Remove(path);
-                try { await Task.Run(session.Commit); }
-                catch (Exception ex) when (ex is PstException or IOException)
-                {
-                    try { session.Rollback(); } catch (Exception rex) when (rex is IOException) { }
-                    StatusText.Text = $"Edits to {Path.GetFileName(path)} failed final verification; the automatic backup restored it.";
-                }
-                try { session.Dispose(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
-            }
             _attachedPstStore.Remove(path);
             _stores.Remove(path);
             store.Dispose();

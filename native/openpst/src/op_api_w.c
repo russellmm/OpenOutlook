@@ -104,6 +104,15 @@ int opst_msgs_copy(opst *p, const uint32_t *nids, size_t n, uint32_t dest, uint3
     return finish(&o, rc);
 }
 
+int opst_msgs_set_state(opst *p, const uint32_t *nids, size_t n, int read, int flag) {
+    if (!nids && n) return op_err(OPST_E_ARG, "null argument");
+    ops o;
+    int rc = begin(p, &o);
+    if (rc) return rc;
+    rc = ops_set_msg_state(&o, nids, n, read, flag);
+    return finish(&o, rc);
+}
+
 int opst_msgs_delete(opst *p, const uint32_t *nids, size_t n, size_t *moved, size_t *purged) {
     if (!nids && n) return op_err(OPST_E_ARG, "null argument");
     ops o;

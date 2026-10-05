@@ -250,7 +250,7 @@ public partial class MainWindow
         if (moved > 0 && !await VerifyOperationAsync(path)) return;
         StatusText.Text = moved > 0
             ? $"{(copy ? "Copied" : "Moved")} {moved} message{(moved == 1 ? "" : "s")} to {destFolder.Name} in {Path.GetFileName(path)}" +
-              (firstError is null || moved == nids.Length ? " \u00b7 verified" : $" \u00b7 {nids.Length - moved} not moved: {firstError}")
+              (firstError is null || moved == nids.Length ? " \u00b7 saved" : $" \u00b7 {nids.Length - moved} not moved: {firstError}")
             : $"Could not move: {firstError ?? "the dragged rows are no longer in the source folder"}";
     }
 }

@@ -249,6 +249,9 @@ OPST_API int opst_folder_purge(opst *p, uint32_t nid, opst_purge_stats *stats); 
 OPST_API int opst_msgs_move(opst *p, const uint32_t *nids, size_t n, uint32_t dest_folder);
 OPST_API int opst_msgs_copy(opst *p, const uint32_t *nids, size_t n, uint32_t dest_folder, uint32_t *new_nids /* n entries, may be NULL */);
 OPST_API int opst_msgs_delete(opst *p, const uint32_t *nids, size_t n, size_t *moved, size_t *purged);   /* Outlook semantics */
+/* read: -1 unchanged, 0 unread, 1 read.  flag: -1 unchanged, else PidTagFlagStatus (0 none, 1 complete, 2 flagged).
+   Updates the messages, their contents-table rows and the unread counts of their folders in one transaction. */
+OPST_API int opst_msgs_set_state(opst *p, const uint32_t *nids, size_t n, int read, int flag);
 OPST_API int opst_msgs_purge(opst *p, const uint32_t *nids, size_t n);
 
 /* copy messages of `src` (only read) into a folder of ANOTHER file `dst` (must be opened with OPST_OPEN_WRITE): named properties are

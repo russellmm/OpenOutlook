@@ -361,6 +361,114 @@ int ops_move_msgs(ops *o, const uint32_t *nids, size_t n, uint32_t dest, size_t 
     return rc;
 }
 
+/* ---- read / flag state ------------------------------------------------------------------------------------------------------------- */
+/* read-modify-write of an int32 property of a node's property context, in place: new = (old & andmask) | ormask.
+   *found = 0 when the property is absent (nothing changed). */
+static int ops_pc_rmw(ops *o, uint32_t nid, unsigned pid, uint32_t andmask, uint32_t ormask, int create, uint32_t *oldv, uint32_t *newv, int *found) {
+    opw *w = o->w;
+    *found = 0;
+    nbt_e e;
+    int rc = opw_node(w, nid, &e);
+    if (rc == OPST_E_NOTFOUND) return op_err(OPST_E_NOTFOUND, "node 0x%x not found", nid);
+    if (rc) return rc;
+    hblocks hp;
+    rc = opw_leaf_blocks(w, e.bd, &hp);
+    if (rc) return rc;
+    if (!heap_is_heap(&hp)) { hb_free(&hp); return op_err(OPST_E_FORMAT, "not a heap-on-node"); }
+    uint8_t key[2];
+    wr16(key, pid);
+    size_t blk, off;
+    uint32_t ov = 0, nv = 0;
+    if (!heap_find_record(&hp, heap_root(&hp), key, &blk, &off)) {
+        if (!create) { hb_free(&hp); return 0; }
+        /* the property is absent: insert a 6-byte int32 record into the (single-level) property BTH, keeping the keys sorted */
+        const uint8_t *hd, *ld; size_t hn, ln;
+        rc = heap_get(&hp, heap_root(&hp), &hd, &hn);
+        if (rc) { hb_free(&hp); return rc; }
+        if (hn < 8 || hd[0] != 0xB5 || hd[1] != 2 || hd[2] != 6 || hd[3] != 0) { hb_free(&hp); return op_err(OPST_E_UNSUPPORTED, "property context of node 0x%x has a layout that cannot take a new property in place", nid); }
+        uint32_t leaf = op_u32(hd + 4);
+        rc = heap_get(&hp, leaf, &ld, &ln);
+        if (rc) { hb_free(&hp); return rc; }
+        size_t nrec = ln / 8, at = 0;
+        uint8_t *nb = (uint8_t *)malloc(ln + 8);
+        if (!nb) { hb_free(&hp); return OPST_E_NOMEM; }
+        while (at < nrec && op_u16(ld + at * 8) < pid) at++;
+        memcpy(nb, ld, at * 8);
+        wr16(nb + at * 8, pid); wr16(nb + at * 8 + 2, 3); wr32(nb + at * 8 + 4, ormask);
+        memcpy(nb + (at + 1) * 8, ld + at * 8, (nrec - at) * 8);
+        rc = heap_grow_item(&hp, leaf, nb, ln + 8);
+        free(nb);
+        if (rc == 0) { hb_free(&hp); return op_err(OPST_E_UNSUPPORTED, "no room in the property context of node 0x%x for a new property", nid); }
+        if (rc < 0) { hb_free(&hp); return rc; }
+        ov = 0; nv = ormask;
+        *oldv = ov; *newv = nv; *found = 1;
+        goto store;
+    }
+    uint8_t *b = hp.b[blk].p;
+    if (op_u16(b + off) != 0x0003) { hb_free(&hp); return op_err(OPST_E_FORMAT, "property 0x%04x of node 0x%x is not an int32", pid, nid); }
+    ov = op_u32(b + off + 2); nv = (ov & andmask) | ormask;
+    *oldv = ov; *newv = nv; *found = 1;
+    if (nv == ov) { hb_free(&hp); return 0; }
+    wr32(b + off + 2, nv);
+store:
+    uint64_t new_bd;
+    rc = opw_put_blocks(w, &hp, &new_bd);
+    hb_free(&hp);
+    if (rc) return rc;
+    rc = opw_node_put(w, nid, new_bd, e.bs, e.parent);
+    if (!rc) rc = opw_release(w, e.bd);
+    return rc;
+}
+
+/* read: -1 unchanged, 0 unread, 1 read.  flag: -1 unchanged, else PidTagFlagStatus (0 none, 1 complete, 2 flagged).
+   Updates the message, its contents-table row and the folder's unread count.  A message without PidTagFlagStatus gets the
+   property inserted when a flag is set (clearing a flag on such a message is a no-op). */
+int ops_set_msg_state(ops *o, const uint32_t *nids, size_t n, int read, int flag) {
+    opw *w = o->w;
+    if (read < -1 || read > 1 || flag < -1 || flag > 2) return op_err(OPST_E_ARG, "bad read/flag value");
+    mgroups gs;
+    int rc = group_msgs(o, nids, n, &gs);
+    if (rc) return rc;
+    for (size_t gi = 0; gi < gs.n && !rc; gi++) {
+        uint32_t folder = gs.g[gi].parent;
+        uint32_t tc_nid = (folder & ~0x1Fu) | 0x0E;
+        tctx tc;
+        rc = ed_load_tc(w, tc_nid, &tc);
+        if (rc) break;
+        int d_unread = 0, changed = 0;
+        int cf = tc_col(&tc, 0x0E07), cs = tc_col(&tc, 0x1090), cv = tc_col(&tc, 0x67F3);
+        for (size_t k = 0; k < gs.g[gi].n && !rc; k++) {
+            uint32_t m = gs.g[gi].nids[k];
+            uint32_t of = 0, nf = 0, os = 0, ns = 0;
+            int ff = 1, fs = 1, touched = 0;
+            if (read >= 0) {
+                rc = ops_pc_rmw(o, m, 0x0E07, read ? 0xFFFFFFFFu : ~1u, read ? 1u : 0u, 0, &of, &nf, &ff);
+                if (!rc && !ff) rc = op_err(OPST_E_FORMAT, "message 0x%x has no flags property", m);
+                if (!rc && of != nf) { touched = 1; d_unread += (nf & 1) ? -1 : 1; }
+            }
+            if (!rc && flag >= 0) {
+                rc = ops_pc_rmw(o, m, 0x1090, 0u, (uint32_t)flag, flag != 0, &os, &ns, &fs);
+                if (!rc && !fs && flag != 0) rc = op_err(OPST_E_UNSUPPORTED, "message 0x%x has no flag status property", m);
+                if (!rc && fs && os != ns) touched = 1;
+            }
+            if (rc || !touched) continue;
+            int row = tc_find(&tc, m);
+            if (row >= 0) {
+                uint8_t b[4];
+                if (read >= 0 && cf >= 0 && tc.rows[row].present[cf]) { wr32(b, nf); rc = tc_set_cell(&tc, (size_t)row, cf, b, 4); }
+                if (!rc && flag >= 0 && fs && cs >= 0) { wr32(b, ns); rc = tc_set_cell(&tc, (size_t)row, cs, b, 4); }
+                if (!rc && cv >= 0 && tc.rows[row].present[cv]) { wr32(b, ops_next_row_ver(o)); rc = tc_set_cell(&tc, (size_t)row, cv, b, 4); }
+                changed = 1;
+            }
+        }
+        if (!rc && changed) rc = ed_store_tc(w, tc_nid, &tc);
+        if (!rc && d_unread) rc = ops_counts(o, folder, 0, d_unread);
+        tc_free(&tc);
+    }
+    mgroups_free(&gs);
+    return rc;
+}
+
 /* ---- copy ----------------------------------------------------------------------------------------------------------------------------- */
 /* a copy must not carry the original's identity: new PidTagSearchKey (0x300B), change key (0x65E2) and the matching predecessor list (0x65E3) */
 static int fresh_slot(hblocks *hp, unsigned pid, size_t size, size_t *blk, size_t *s) {

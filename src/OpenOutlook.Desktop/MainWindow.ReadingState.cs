@@ -122,16 +122,26 @@ public partial class MainWindow
         // the user-visible state is already correct either way.
         if (nativePersist is not null)
         {
-            try
-            {
-                nativePersist();
-                _readOverrides.Remove(key);
-                PersistReadState();
-                return;
-            }
-            catch (Exception exception) when (exception is PstCore.PstException or IOException or ObjectDisposedException or InvalidOperationException)
-            { AppLog.Error("pst-edit", exception, "native mark-read failed; using local overlay instead"); }
+            _ = PersistNativeReadAsync(key, nativePersist);
+            return;
         }
+        _readOverrides[key] = true;
+        PersistReadState();
+    }
+
+    /// <summary>Writes the read flag into the archive off the UI thread (a native write rewrites the folder's contents table,
+    /// which takes a few hundred milliseconds on big folders). Any failure falls back to the sidecar overlay.</summary>
+    private async Task PersistNativeReadAsync(string key, Action persist)
+    {
+        try
+        {
+            await Task.Run(persist);
+            _readOverrides.Remove(key);
+            PersistReadState();
+            return;
+        }
+        catch (Exception exception) when (exception is PstCore.PstException or IOException or ObjectDisposedException or InvalidOperationException)
+        { AppLog.Error("pst-edit", exception, "native mark-read failed; using local overlay instead"); }
         _readOverrides[key] = true;
         PersistReadState();
     }

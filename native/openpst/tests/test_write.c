@@ -132,6 +132,40 @@ int main(void) {
         if (m) { const char *s = opst_msg_str(m, OPST_PID_SUBJECT); CHECK(s && strcmp(s, subj[i]) == 0); opst_msg_close(m); }
     }
     opst_free_messages(rows);
+    /* read / flag state: toggle the first two source messages, check message, row and folder unread count, undo, check again */
+    {
+        opst_folder_info sfi0, sfi1;
+        char nb2[64];
+        CHECK(opst_folder_info_get(p, sf, &sfi0, nb2, sizeof nb2) == 0);
+        opst_msg_row *r0; size_t n0 = 0;
+        CHECK(opst_messages(p, sf, &r0, &n0) == 0);
+        int was_read[2] = {0, 0}, unread_before = 0, rd[2] = {0, 0};
+        for (size_t k = 0; k < n0; k++) { if (!(r0[k].flags & 1)) unread_before++; }
+        for (int i = 0; i < 2; i++) for (size_t k = 0; k < n0; k++) if (r0[k].nid == ids[i]) was_read[i] = (int)(r0[k].flags & 1);
+        opst_free_messages(r0);
+        for (int i = 0; i < 2; i++) rd[i] = !was_read[i];
+        uint32_t one[1];
+        int delta = 0;
+        for (int i = 0; i < 2; i++) { one[0] = ids[i]; CHECK(opst_msgs_set_state(p, one, 1, rd[i], -1) == 0); delta += rd[i] ? -1 : 1; }
+        CHECK(opst_msgs_set_state(p, ids, 1, -1, 2) == 0);                     /* flag the first */
+        CHECK(opst_messages(p, sf, &r0, &n0) == 0);
+        for (int i = 0; i < 2; i++) for (size_t k = 0; k < n0; k++) if (r0[k].nid == ids[i]) CHECK((int)(r0[k].flags & 1) == rd[i]);
+        for (size_t k = 0; k < n0; k++) if (r0[k].nid == ids[0]) CHECK(r0[k].flag_status == 2);
+        opst_free_messages(r0);
+        for (int i = 0; i < 2; i++) {
+            opst_msg *m;
+            CHECK(opst_msg_open(p, ids[i], &m) == 0);
+            if (m) { CHECK(((int)opst_msg_i64(m, 0x0E07, 0) & 1) == rd[i]); if (i == 0) CHECK(opst_msg_i64(m, 0x1090, 0) == 2); opst_msg_close(m); }
+        }
+        CHECK(opst_folder_info_get(p, sf, &sfi1, nb2, sizeof nb2) == 0 && sfi1.unread_count == sfi0.unread_count + delta);
+        CHECK(findings(p) == base_findings);
+        CHECK(opst_msgs_set_state(p, ids, 1, -1, 0) == 0);                     /* unflag */
+        for (int i = 0; i < 2; i++) { one[0] = ids[i]; CHECK(opst_msgs_set_state(p, one, 1, was_read[i], -1) == 0); }
+        CHECK(opst_folder_info_get(p, sf, &sfi1, nb2, sizeof nb2) == 0 && sfi1.unread_count == sfi0.unread_count);
+        CHECK(opst_msgs_set_state(p, ids, 2, 7, -1) == OPST_E_ARG);
+        (void)unread_before;
+        CHECK(findings(p) == base_findings);
+    }
     opst_folder_info fi;
     char nb[64];
     CHECK(opst_folder_info_get(p, f1, &fi, nb, sizeof nb) == 0 && fi.content_count == 3);

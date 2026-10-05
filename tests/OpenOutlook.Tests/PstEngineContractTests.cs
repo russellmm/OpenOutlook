@@ -51,7 +51,7 @@ public sealed class PstEngineContractTests
     }
 
     [Fact]
-    public void Factory_prefers_native_for_read_only_and_falls_back_for_writing()
+    public void Factory_uses_native_for_reading_and_editing_and_never_writes_with_the_managed_engine()
     {
         var path = Fixture();
         if (path is null || !NativeLibraryLoader.IsAvailable) return;
@@ -61,15 +61,114 @@ public sealed class PstEngineContractTests
             Assert.Null(why);
             Assert.False(ro.CanWrite);
         }
-        var copy = Path.Combine(Path.GetTempPath(), "oo-factory-" + Guid.NewGuid().ToString("N") + ".pst");
-        File.Copy(path, copy);
+        var copy = TempCopy(path);
         try
         {
-            using var rw = PstEngineFactory.Open(copy, writable: true, out var why);
-            Assert.IsType<PstStore>(rw);
-            Assert.NotNull(why);
+            using (var rw = PstEngineFactory.Open(copy, writable: true))
+            {
+                Assert.IsType<NativePstEngine>(rw);
+                Assert.True(rw.CanWrite);
+            }
+            using var edit = PstEngineFactory.OpenEditable(copy, out var roWhy);
+            Assert.IsType<NativePstEngine>(edit);
+            Assert.True(edit.CanWrite);
+            Assert.Null(roWhy);
         }
-        finally { try { File.Delete(copy); } catch (IOException) { } }
+        finally { Cleanup(copy); }
+    }
+
+    /// <summary>Kinds of findings of the integrity check (numbers such as block counts and the NBT counter legitimately change).</summary>
+    static List<string> Findings(IPstEngine e) => e.VerifyIntegrity().Where(l => l.StartsWith("  "))
+        .Select(l => System.Text.RegularExpressions.Regex.Replace(l, @"0x[0-9a-fA-F]+|\d+", "#")).Distinct().ToList();   // kinds, not counts
+
+    static string TempCopy(string source)
+    {
+        var copy = Path.Combine(Path.GetTempPath(), "oo-native-" + Guid.NewGuid().ToString("N") + ".pst");
+        File.Copy(source, copy);
+        return copy;
+    }
+
+    static void Cleanup(string path)
+    {
+        foreach (var f in new[] { path, path + ".lck", path + ".journal", path + ".bak" })
+            try { if (File.Exists(f)) File.Delete(f); } catch (IOException) { }
+    }
+
+    [Fact]
+    public void Second_writer_is_refused_while_the_first_holds_the_lock_and_gets_read_only_instead()
+    {
+        var path = Fixture();
+        if (path is null || !NativeLibraryLoader.IsAvailable) return;
+        var copy = TempCopy(path);
+        try
+        {
+            using (var first = NativePstEngine.Open(copy, write: true))
+            {
+                Assert.Throws<PstCore.PstException>(() => NativePstEngine.Open(copy, write: true));
+                using var second = PstEngineFactory.OpenEditable(copy, out var why);
+                Assert.False(second.CanWrite);
+                Assert.Contains("already open for editing", why);
+            }
+            Assert.False(File.Exists(copy + ".lck"));          // released on dispose
+            using var again = NativePstEngine.Open(copy, write: true);
+            Assert.True(again.CanWrite);
+        }
+        finally { Cleanup(copy); }
+    }
+
+    [Fact]
+    public void Native_edits_are_persisted_and_leave_the_integrity_check_unchanged()
+    {
+        var path = Fixture();
+        if (path is null || !NativeLibraryLoader.IsAvailable) return;
+        var copy = TempCopy(path);
+        try
+        {
+            List<string> before;
+            uint folderNid, msgNid, newFolderNid;
+            bool wasRead;
+            using (var e = NativePstEngine.Open(copy, write: true))
+            {
+                before = Findings(e);
+                var folder = e.AllFolders().First(f => f.ContentCount >= 2 && f.Nid != e.DeletedItemsFolder()?.Nid && f.Name != "Root");
+                folderNid = folder.Nid;
+                var msgs = e.GetMessages(folder);
+                var m = msgs[0];
+                msgNid = m.Nid;
+                wasRead = m.IsRead;
+                int unread0 = folder.UnreadCount;
+
+                e.SetReadState(m, !wasRead);
+                e.SetFlagged(m, true);
+                Assert.Equal(wasRead ? unread0 + 1 : unread0 - 1, folder.UnreadCount);
+
+                var made = e.CreateFolder(folder.Nid, "OO Test Folder");
+                Assert.Equal("OO Test Folder", made.Name);
+                newFolderNid = made.Nid;
+                e.CopyMessage(m, made);
+                Assert.Equal(1, made.ContentCount);
+                var copied = e.GetMessages(made).Single();
+                e.MoveMessage(copied, folder);          // copy goes back to the source folder
+                Assert.Equal(0, made.ContentCount);
+                Assert.Equal(msgs.Count + 1, folder.ContentCount);
+                var extra = e.GetMessages(folder).First(x => x.Nid != msgNid && !msgs.Any(o => o.Nid == x.Nid));
+                e.DeleteMessage(extra);                 // purge the copy again
+                Assert.Equal(msgs.Count, folder.ContentCount);
+                Assert.Throws<PstCore.PstException>(() => e.DeleteFolder(folder.Nid));   // not empty
+                e.DeleteFolder(made.Nid);
+                Assert.Null(e.FindFolder(newFolderNid));
+                Assert.Empty(Findings(e).Except(before));   // no new findings (editing may only repair old ones)
+            }
+            // everything survived a close and a fresh read-only open
+            using var r = NativePstEngine.Open(copy);
+            var f2 = r.FindFolder(folderNid)!;
+            var m2 = r.GetMessages(f2).Single(x => x.Nid == msgNid);
+            Assert.Equal(!wasRead, m2.IsRead);
+            Assert.True(m2.Flagged);
+            Assert.Null(r.FindFolder(newFolderNid));
+            Assert.Empty(Findings(r).Except(before));
+        }
+        finally { Cleanup(copy); }
     }
 
     [Fact]

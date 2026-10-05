@@ -14,6 +14,7 @@ dotnet test tests/OpenOutlook.Tests          # expected: 5 failures = OfflineMes
 dotnet test tests/OpenOutlook.HeadlessTests  # expected: all pass
 powershell scripts/build-native.ps1          # C library -> src/OpenOutlook.Desktop/runtimes/win-x64/native (needed after any C change)
 powershell scripts/build-native-tools.ps1    # CLI + C tests in native/openpst/build-tools
+python scripts/fetch_chromium.py                # once (and when scripts/chromium-version.txt changes): the pinned headless Chromium, 115 MB per platform, into third_party/chromium (git-ignored)
 # publish (close the running exe first: taskkill //F //IM OpenOutlook.Desktop.exe)
 dotnet publish src/OpenOutlook.Desktop -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o /f/Claude/OpenOutlook_win
 cp src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll /f/Claude/OpenOutlook_win/
@@ -50,3 +51,6 @@ Tests added (15 headless pass): Gmail reply / reply all / forward preparation (h
 Still to do / verify:
 1. Real-world check by the owner: sign in to Gmail again (new scope; add `gmail.compose` to the consent screen), send / reply / forward / save attachment; Hotmail compose in the new window (edit existing draft, reply/forward drafts, attachments).
 2. Known gaps: editing a saved Gmail draft is not supported (`CanReopenDrafts = false`); Paste icon is a placeholder; the ribbon is not yet scrollable-friendly at narrow widths.
+
+## Bundled headless Chromium (2026-10-05)
+The reading pane lays HTML out with a headless browser. Edge 154 stopped starting headless on the owner's PC (every layout fell back to a basic preview), so the application now ships Google's chrome-headless-shell (Chrome for Testing, version pinned in `scripts/chromium-version.txt`, downloaded by `scripts/fetch_chromium.py` to `third_party/chromium/<platform>`). The Desktop project copies it to a `chromium` folder beside the exe at build and publish (about 270 MB unpacked on Windows). `BrowserHtmlRenderer` tries it first, then any installed Edge / Chrome / Chromium (the one that starts is remembered), and `BrowserProcessTracker` closes browsers left behind by earlier runs. Linux uses the `linux64` build the same way (not yet tested on a Linux desktop). Without the folder (a plain `dotnet build` before fetching) the installed browsers are used as before.

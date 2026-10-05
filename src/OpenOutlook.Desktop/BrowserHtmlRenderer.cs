@@ -47,8 +47,17 @@ public static class BrowserHtmlRenderer
         return Candidates().FirstOrDefault(File.Exists);
     }
 
+    /// <summary>The headless Chromium shipped with the application (a "chromium" folder beside it), if this build has one.</summary>
+    internal static IEnumerable<string> BundledBrowsers()
+    {
+        var name = OperatingSystem.IsWindows() ? "chrome-headless-shell.exe" : "chrome-headless-shell";
+        foreach (var dir in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(Environment.ProcessPath ?? "") })
+            if (!string.IsNullOrEmpty(dir)) yield return Path.Combine(dir, "chromium", name);
+    }
+
     private static IEnumerable<string> Candidates()
     {
+        foreach (var bundled in BundledBrowsers()) yield return bundled;               // the pinned copy first: it does not depend on what is installed
         if (OperatingSystem.IsWindows())
         {
             foreach (var root in new[]

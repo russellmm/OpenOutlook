@@ -27,7 +27,19 @@
   <ItemGroup Condition="Exists('openoutlook-oauth.json')">
     <None Include="openoutlook-oauth.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <!-- The pinned headless Chromium that lays out HTML mail (scripts/fetch_chromium.py downloads it to third_party/chromium/<platform>); it is copied to a chromium folder next to the application. -->
+  <PropertyGroup>
+    <ChromiumPlatform Condition="'$(RuntimeIdentifier)' == 'win-x64'">win64</ChromiumPlatform>
+    <ChromiumPlatform Condition="'$(RuntimeIdentifier)' == 'linux-x64'">linux64</ChromiumPlatform>
+    <ChromiumPlatform Condition="'$(ChromiumPlatform)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">win64</ChromiumPlatform>
+    <ChromiumPlatform Condition="'$(ChromiumPlatform)' == '' And $([MSBuild]::IsOSPlatform('Linux'))">linux64</ChromiumPlatform>
+    <ChromiumDir>$(MSBuildThisFileDirectory)../../third_party/chromium/$(ChromiumPlatform)/</ChromiumDir>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ChromiumPlatform)' != '' And Exists('$(ChromiumDir)VERSION.txt')">
+    <None Include="$(ChromiumDir)**" Link="chromium/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="OpenOutlook.HeadlessTests" />
+    <InternalsVisibleTo Include="OpenOutlook.Tests" />
   </ItemGroup>
 </Project>

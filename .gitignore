@@ -63,3 +63,5 @@ __pycache__/
 
 # Local credentials (never commit)
 .secrets/
+
+third_party/

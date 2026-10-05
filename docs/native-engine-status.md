@@ -67,3 +67,21 @@ Run a soak: `PstSoak clean.pst --second clean2.pst --seed 1 --ops 300 --keep out
 - Soak does not yet cover folder rename/move.
 - The 3 tables of `test-archive.pst` (early-writer damage) are not rebuilt by any rule.
 - Roadmap (plan section 11): more ribbon features, Graph write, 1 GB perf pass, fuzzing/ASAN CI, packaging.
+
+## Later work (2026-10-05): online accounts, drag and drop, UI fixes
+
+| Area | What was done |
+|------|---------------|
+| Microsoft sign-in on Windows | Windows Credential Manager token store (`WindowsCredentialSecretStore`, chunked blobs) and `SecretStores.CreateDefault` per OS; loopback listener closes gracefully (Windows reset the connection and lost the response); the system-browser launch used `xdg-open` only and now works on Windows/macOS; the account dialog names the right secret store |
+| Gmail | `GmailMailbox` (labels with counts, newest messages of any label, summaries, full content with HTML, account verified once per token); Gmail accounts in the folder pane with labels as folders; reading pane; actions with the `gmail.modify` scope: mark read/unread (also after viewing), star, archive, trash, move to label, copy = add label, create label |
+| Google client | Desktop-app clients need the client secret on token requests: optional `googleClientSecret`, sent only to Google; the sign-in configuration is now loaded at startup (it was only loaded when the Accounts window opened, so Gmail was empty after a restart until the Accounts window had been visited) |
+| Hotmail | Move to Folder / Copy to Folder (`GraphMailWriter.CopyAsync`, `CreateFolderAsync`), New... in the picker |
+| Move Items picker | `FolderPickerWindow` laid out like Outlook (prompt, folder tree with bold unread + blue counts, OK / Cancel / New...), used for archives, Gmail and Hotmail |
+| Right-click menu | built at startup for every folder type (Mark read/unread, Flag, Clear Flag, Move, Copy / Add Label, Delete); it was only attached after an archive folder loaded |
+| Drag and drop | messages can be dragged onto folders of the same Gmail/Hotmail account (left = move, right = Move Here / Copy Here). Two bugs found by tests that replay real input: the drag handlers were only attached after an archive loaded, and the folder pane's reorder handler forced the red no-drop cursor for every other drag (also affected archive folders) |
+| Other fixes | native web view hidden while the File screen / Options / dialogs are open (it was painted over them); Linux: web view removed when WebKitGTK is missing; Check and Repair window; engine fixes in the previous section |
+| Headless UI tests | `tests/OpenOutlook.HeadlessTests` (Avalonia.Headless): archive reading, space-bar paging, portrait mode, repair window, Gmail tree and actions against a stateful fake Gmail, picker, right-click menu, web-view guard, real mouse press/move/drop |
+
+Accounts and setup: see `accounts-setup.md`. Handoff for the next session: see `session-handoff-2026-10.md`.
+
+Known limits: Gmail has no composing, replying, forwarding or attachment saving (needs another scope for sending); Hotmail unread counts in the picker come from the folder list; the Google consent screen shows the project's name ("Home Assistant 13") because the OpenOutlook client shares a Google Cloud project with another app (cosmetic; fix by renaming the consent screen or using a separate project).

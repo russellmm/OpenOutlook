@@ -25,6 +25,9 @@ The app needs a public OAuth client id for each provider. They are read from `op
 4. Copy the *Application (client) ID* into `microsoftClientId`.
 5. In the app: File > Info > Add Account > Microsoft > Connect. The browser opens; sign in and approve; return to the app and confirm the account.
 
+## Hotmail / Outlook.com mail actions
+Mark read/unread, flag, archive, delete, and **Move to Folder / Copy to Folder** (ribbon Move, right-click menu, or drag the messages onto a folder of the same account; right-drag offers Move Here / Copy Here). The picker looks like Outlook's Move Items window and its New... button creates a folder. These need the account to have been connected with mail write permission; otherwise the app asks you to sign in again.
+
 ## Gmail
 Labels appear as folders (Inbox, Starred, Important, Sent, Drafts, Spam, Trash and your own labels, with unread counts) and messages open in the reading pane with HTML. The sign-in requests the `gmail.modify` scope, which allows these actions (Home ribbon, right-click menu, or the reading-pane timer):
 
@@ -34,7 +37,7 @@ Labels appear as folders (Inbox, Starred, Important, Sent, Drafts, Spam, Trash a
 | Flag / unflag | adds / removes `STARRED` |
 | Archive | removes `INBOX` (the message stays in All Mail with its other labels) |
 | Delete | moves to Trash (Gmail empties Trash after 30 days; permanent deletion needs a broader scope and is not offered) |
-| Move to Folder... (ribbon Move or right-click) | adds the destination label and removes the current one; "Copy to Folder..." only adds the label |
+| Move to Folder... (ribbon Move, right-click, or drag onto a folder) | adds the destination label and removes the current one; "Add Label..." / Copy Here only adds the label; copying to Trash is a move |
 
 Composing, replying, forwarding and saving attachments are not available yet (sending needs another scope). An account connected earlier with the read-only scope keeps working for reading; use Account setup to sign in again to enable these actions.
 

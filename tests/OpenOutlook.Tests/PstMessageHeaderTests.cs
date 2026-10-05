@@ -54,4 +54,29 @@ public sealed class PstMessageHeaderTests
     [InlineData(310_000, "303 KB")]
     [InlineData(5_242_880, "5 MB")]
     public void Sizes_are_human_readable(long bytes, string expected) => Assert.Equal(expected, PstMessageHeader.FormatSize(bytes));
+
+    [Fact]
+    public void Headers_view_shows_the_stored_internet_headers()
+    {
+        var m = new MailMessage { Summary = new MailSummary { Nid = 1, FolderNid = 2 }, Headers = "Received: from a\r\nSubject: Hi\r\n" };
+        Assert.Equal("Received: from a\nSubject: Hi", PstMessageHeader.HeadersText(m));
+    }
+
+    [Fact]
+    public void Headers_view_falls_back_to_the_stored_properties_for_mail_without_internet_headers()
+    {
+        var m = new MailMessage
+        {
+            Summary = new MailSummary { Nid = 1, FolderNid = 2, From = "Ann", Subject = "Draft", MessageClass = "IPM.Note", Importance = 2, Size = 2048 },
+            Recipients = [new MailRecipient { Name = "Bob", Email = "bob@example.test", Kind = RecipientKind.To }],
+            HasText = true, HasRtf = true,
+        };
+        var text = PstMessageHeader.HeadersText(m);
+        Assert.StartsWith("(This message has no internet headers", text);
+        Assert.Contains("From: Ann", text);
+        Assert.Contains("To: Bob <bob@example.test>", text);
+        Assert.Contains("Importance: High", text);
+        Assert.Contains("Size: 2 KB", text);
+        Assert.Contains("Body formats: Rich Text, Plain Text", text);
+    }
 }

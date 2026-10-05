@@ -215,7 +215,14 @@ namespace OpenOutlook.PstNative
                 string from = string.IsNullOrWhiteSpace(fromEmail) ? fromName : $"{fromName} <{fromEmail}>".Trim();
                 long flags = m.Int(0x0E07);
                 string? text = m.Body(PstBody.Text);
-                string html = m.Has(PstBody.Html) || m.Has(PstBody.Rtf) ? m.Html() ?? "" : "";
+                bool hasHtml = m.Has(PstBody.Html), hasRtf = m.Has(PstBody.Rtf), hasText = m.Has(PstBody.Text);
+                string html = hasHtml || hasRtf ? m.Html() ?? "" : "";
+                string rtfHtml = "";
+                if (hasRtf)
+                {
+                    try { rtfHtml = PstText.RtfToHtml(m.Body(PstBody.Rtf) ?? ""); }
+                    catch (OpenPst.PstException) { rtfHtml = hasHtml ? "" : html; }
+                }
                 if (string.IsNullOrWhiteSpace(text)) text = m.Text() ?? "";
 
                 var recipients = m.Recipients()
@@ -266,6 +273,10 @@ namespace OpenOutlook.PstNative
                     },
                     BodyText = text ?? "",
                     BodyHtml = html,
+                    BodyRtfHtml = rtfHtml,
+                    HasHtml = hasHtml,
+                    HasRtf = hasRtf,
+                    HasText = hasText,
                     Headers = m.TransportHeaders,
                     Recipients = recipients,
                     Attachments = attachments,

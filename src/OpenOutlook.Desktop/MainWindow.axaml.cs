@@ -995,7 +995,7 @@ public sealed partial class MainWindow : Window
             ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible =
                 ReaderForwardButton.IsVisible = false;
             AttachmentText.Text = PstMessageHeader.AttachmentLine(PstMessageHeader.VisibleAttachments(message));
-            SetMessageBody(message.BodyHtml, message.BodyText);
+            ShowPstMessageBody(message);
             StatusText.Text = _richRuns is null ? "Message opened read-only." :
                 "Message opened in rich-text view; images are loading automatically.";
         }
@@ -1059,6 +1059,7 @@ public sealed partial class MainWindow : Window
                 attachments.Count == 0 ? "" :
                 $"Attachments: {string.Join(", ", attachments.Select(a => a.Name +
                     (CanSaveGraphAttachment(a) ? "" : " (cannot save)")))}";
+            HideFormatBar();
             SetMessageBody(string.Equals(body?.ContentType, "html", StringComparison.OrdinalIgnoreCase)
                     ? body?.Content : null,
                 string.Equals(body?.ContentType, "text", StringComparison.OrdinalIgnoreCase)
@@ -2205,7 +2206,7 @@ public sealed partial class MainWindow : Window
     private void ShowMessageBody()
     {
         RichBodyPanel.Children.Clear();
-        BodyViewButton.IsVisible = _richRuns is not null || _bodyHtml is not null;
+        BodyViewButton.IsVisible = (_richRuns is not null || _bodyHtml is not null) && !FormatBar.IsVisible;
         ReaderModeButton.IsVisible = _bodyHtml is not null;
         ReaderModeButton.Content = _preferSnapshotForMessage ? "Use interactive reader" : "Use alternate reader";
         ViewOriginalButton.IsVisible = _bodyHtml is not null;
@@ -2327,6 +2328,7 @@ public sealed partial class MainWindow : Window
         RichBodyPanel.IsVisible = false;
         ReaderScrollViewer.IsVisible = true;
         BodyText.IsVisible = true;
+        HideFormatBar();
         SubjectText.Text = "Select a message";
         SenderText.Text = RecipientText.Text = AttachmentText.Text = BodyText.Text = "";
         MessageDateText.Text = "";

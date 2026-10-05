@@ -61,7 +61,15 @@ public sealed class MailMessage
 {
     public required MailSummary Summary { get; init; }
     public string BodyText { get; init; } = "";
+    /// <summary>The best HTML for display: the message's HTML body, else its RTF body converted to HTML.</summary>
     public string BodyHtml { get; init; } = "";
+    /// <summary>The RTF body converted to HTML ("" when the message has no RTF body).</summary>
+    public string BodyRtfHtml { get; init; } = "";
+    /// <summary>Which body formats the message actually stores (a message can have several).</summary>
+    public bool HasHtml { get; init; }
+    public bool HasRtf { get; init; }
+    public bool HasText { get; init; }
+    /// <summary>The internet (transport) headers; empty for messages that never travelled by mail.</summary>
     public string Headers { get; init; } = "";
     public IReadOnlyList<MailRecipient> Recipients { get; init; } = [];
     public IReadOnlyList<MailAttachment> Attachments { get; init; } = [];

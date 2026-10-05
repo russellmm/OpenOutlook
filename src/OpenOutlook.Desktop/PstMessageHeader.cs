@@ -40,6 +40,30 @@ public static class PstMessageHeader
         attachments.Count == 0 ? "" : "Attachments: " + string.Join(", ", attachments.Select(a =>
             a.Size > 0 ? $"{a.FileName} ({FormatSize(a.Size)})" : a.FileName));
 
+    /// <summary>
+    /// The text of the Headers view: the internet headers as stored, or - for messages that never travelled by mail (drafts, notes,
+    /// calendar items, copies written by other tools) - the key properties, with a line saying so.
+    /// </summary>
+    public static string HeadersText(MailMessage message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.Headers)) return message.Headers.Replace("\r\n", "\n").TrimEnd();
+        var s = message.Summary;
+        string Date(DateTime t) => t == DateTime.MinValue ? "" : t.ToString("ddd, dd MMM yyyy HH:mm:ss");
+        var lines = new List<string> { "(This message has no internet headers; showing its stored properties.)", "" };
+        void Add(string name, string value) { if (!string.IsNullOrWhiteSpace(value)) lines.Add($"{name}: {value}"); }
+        Add("From", s.From);
+        foreach (var kind in new[] { RecipientKind.To, RecipientKind.Cc, RecipientKind.Bcc })
+            Add(kind.ToString(), string.Join(", ", message.Recipients.Where(r => r.Kind == kind).Select(r => r.ToString())));
+        Add("Subject", s.Subject);
+        Add("Sent", Date(s.Sent));
+        Add("Received", Date(s.Received));
+        Add("Message-Class", s.MessageClass);
+        Add("Importance", s.Importance switch { 0 => "Low", 2 => "High", _ => "Normal" });
+        Add("Size", FormatSize(s.Size));
+        Add("Body formats", string.Join(", ", new[] { message.HasHtml ? "HTML" : "", message.HasRtf ? "Rich Text" : "", message.HasText ? "Plain Text" : "" }.Where(x => x.Length > 0)));
+        return string.Join("\n", lines);
+    }
+
     public static string FormatSize(long bytes) => bytes switch
     {
         < 1024 => $"{bytes} B",

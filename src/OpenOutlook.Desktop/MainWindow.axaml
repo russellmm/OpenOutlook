@@ -496,6 +496,17 @@
 
               <!-- Action chips live in a toolbar strip above the message, level with the list's "By date" row. -->
               <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="10,8,10,4" MinHeight="30">
+                <StackPanel Name="FormatBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
+                  <TextBlock Text="View as" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" Margin="0,0,2,0" />
+                  <Button Name="FormatHtmlButton" Classes="olChip" Content="HTML" Tag="html" Click="FormatClicked"
+                          ToolTip.Tip="The message's HTML body" />
+                  <Button Name="FormatRtfButton" Classes="olChip" Content="Rich Text" Tag="rtf" Click="FormatClicked"
+                          ToolTip.Tip="The message's Rich Text (RTF) body, converted for display" />
+                  <Button Name="FormatTextButton" Classes="olChip" Content="Plain Text" Tag="text" Click="FormatClicked"
+                          ToolTip.Tip="The message as plain text" />
+                  <Button Name="FormatHeadersButton" Classes="olChip" Content="Headers" Tag="headers" Click="FormatClicked"
+                          ToolTip.Tip="Internet headers of the message" />
+                </StackPanel>
                 <Button Name="BodyViewButton" Classes="olChip" Content="View plain text" IsVisible="False" Click="ToggleBodyViewClicked" />
                 <Button Name="ReaderModeButton" Classes="olChip" Content="Use alternate reader" IsVisible="False" Click="ReaderModeClicked" />
                 <Button Name="ViewOriginalButton" Classes="olChip" Content="View original here (trusted mail)" IsVisible="False" Click="ToggleOriginalClicked" />

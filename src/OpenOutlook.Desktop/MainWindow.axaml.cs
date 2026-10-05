@@ -28,7 +28,7 @@ public sealed partial class MainWindow : Window
     private readonly Queue<(string Path, uint FolderNid)> _folderCacheOrder = new();
     private readonly SemaphoreSlim _readerGate = new(1, 1);
     private readonly ConnectedAccountRegistry _accountRegistry = new();
-    private readonly LibsecretSecretStore _secrets = new();
+    private readonly ISecretStore _secrets = SecretStores.CreateDefault();
     private readonly HttpClient _tokenHttp = DesktopOAuth.CreateHttpClient();
     private readonly HttpClient _graphHttp = GraphInboxReader.CreateSecureHttpClient();
     private readonly Dictionary<string, MicrosoftMailSession> _microsoftSessions = new(StringComparer.Ordinal);

@@ -65,6 +65,7 @@ public sealed class LoopbackAuthorizationCallback : IDisposable, IAsyncDisposabl
                 catch (IOException) when (!linked.IsCancellationRequested) { }
                 catch (SocketException) when (!linked.IsCancellationRequested) { }
                 catch (OperationCanceledException) when (!linked.IsCancellationRequested) { }
+                await CloseGracefullyAsync(client).ConfigureAwait(false);
                 if (callback is not null) return callback;
                 linked.Token.ThrowIfCancellationRequested();
             }
@@ -150,6 +151,22 @@ public sealed class LoopbackAuthorizationCallback : IDisposable, IAsyncDisposabl
         var body = success ? "Authorization received. You may close this window." : "Authorization request could not be received.";
         var response = $"HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Length: {Encoding.UTF8.GetByteCount(body)}\r\nConnection: close\r\n\r\n{body}";
         return stream.WriteAsync(Encoding.UTF8.GetBytes(response), token).AsTask();
+    }
+
+    /// <summary>Closing a socket that still has unread request bytes makes Windows send a reset, which can discard the response the browser is about to show.
+    /// Stop sending, drain what is left for a moment (bounded), then close.</summary>
+    private static async Task CloseGracefullyAsync(TcpClient client)
+    {
+        try
+        {
+            client.Client.Shutdown(SocketShutdown.Send);
+            using var limit = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+            var buffer = new byte[4096];
+            var drained = 0;
+            var stream = client.GetStream();
+            while (drained < 256 * 1024 && await stream.ReadAsync(buffer, limit.Token).ConfigureAwait(false) is var n && n > 0) drained += n;
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException or InvalidOperationException) { }
     }
 
     public void Dispose()

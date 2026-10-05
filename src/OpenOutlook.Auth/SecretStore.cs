@@ -6,6 +6,20 @@ public interface ISecretStore
     Task StoreRefreshTokenAsync(OAuthProvider provider, string account, string refreshToken, CancellationToken cancellationToken = default);
     Task<string?> GetRefreshTokenAsync(OAuthProvider provider, string account, CancellationToken cancellationToken = default);
     Task DeleteRefreshTokenAsync(OAuthProvider provider, string account, CancellationToken cancellationToken = default);
+
+    /// <summary>Fails with a <see cref="SecretStoreException"/> when tokens cannot be stored right now; called before browser sign-in starts.</summary>
+    Task CheckAvailabilityAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
+
+/// <summary>The platform's persistent secret store: Credential Manager on Windows, the Secret Service keyring on Linux; elsewhere an explicit fail-closed store.</summary>
+public static class SecretStores
+{
+    public static ISecretStore CreateDefault()
+    {
+        if (OperatingSystem.IsWindows()) return new WindowsCredentialSecretStore();
+        if (OperatingSystem.IsLinux()) return new LibsecretSecretStore();
+        return new UnavailableSecretStore();
+    }
 }
 
 /// <summary>Raised without an inner exception so backend errors cannot disclose a token.</summary>

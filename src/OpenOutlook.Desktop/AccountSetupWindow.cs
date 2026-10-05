@@ -11,7 +11,7 @@ namespace OpenOutlook.Desktop;
 public sealed class AccountSetupWindow : Window
 {
     private readonly ConnectedAccountRegistry _registry = new();
-    private readonly LibsecretSecretStore _secrets = new();
+    private readonly ISecretStore _secrets = SecretStores.CreateDefault();
     private readonly ComboBox _provider = new();
     private readonly ListBox _accounts = new();
     private readonly TextBlock _status = new();
@@ -158,7 +158,7 @@ public sealed class AccountSetupWindow : Window
         SetBusy(true);
         try
         {
-            _status.Text = "Checking the persistent Linux keyring…";
+            _status.Text = "Checking that sign-in tokens can be stored securely…";
             await _secrets.CheckAvailabilityAsync(cancellation.Token);
             var prior = _registry.Load();
             _registry.Save(prior); // Check writable private metadata storage before browser authorization.

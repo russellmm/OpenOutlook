@@ -47,6 +47,7 @@ public partial class MainWindow
     private void OpenCompose(ConnectedAccount? preferred, ComposeSeed? seed = null, string? draftId = null)
     {
         preferred ??= _activeGmailFolder?.Account ?? _activeMicrosoftAccount;
+        if (preferred is null && _accountDefault.Load() is { } defaultId) preferred = _accountRegistry.Load().FirstOrDefault(x => x.AccountId == defaultId);
         var accounts = BuildComposeAccounts(seed);
         if (accounts.Count == 0)
         {

@@ -181,10 +181,9 @@ public partial class MainWindow
         PopulateBackstageAccounts();
     }
 
-    private async void BsAccountSettingsClicked(object? sender, RoutedEventArgs e)
+    private void BsAccountSettingsClicked(object? sender, RoutedEventArgs e)
     {
-        await ShowAccountSetupAsync();
-        PopulateBackstageAccounts();
+        if (sender is Control anchor) ShowAccountSettingsMenu(anchor);
     }
 
     private void BsOpenDataFilesClicked(object? sender, RoutedEventArgs e)

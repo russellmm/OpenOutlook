@@ -185,10 +185,26 @@ public sealed partial class MainWindow : Window
             foreach (var path in Environment.GetCommandLineArgs().Skip(1).Where(File.Exists))
                 await OpenArchiveAsync(Path.GetFullPath(path));
             StartMirrorScheduler();                                  // the local copies of connected mailboxes
+            if (Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_HTML") == "1") _ = RunHtmlSelfTestAsync();      // diagnostics: renders a sample message and logs the outcome
             var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path));
             if (unavailable > 0)
                 StatusText.Text = $"{unavailable} saved PST archive{(unavailable == 1 ? "" : "s")} could not be opened; the paths remain saved for the next restart.";
         };
+    }
+
+    /// <summary>Opt-in diagnostic (OPENOUTLOOK_SELFTEST_HTML=1): shows a sample HTML message through the normal reading-pane path and writes what happened to the log.</summary>
+    private async Task RunHtmlSelfTestAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(int.TryParse(Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_DELAY"), out var wait) ? wait : 8));
+        var html = "<html><body><table width=\"600\"><tr><td style=\"background:#123\"><h1 style=\"color:#fff\">Self test</h1></td></tr><tr><td><p>Hello from the reader self test.</p><img src=\"https://example.org/x.png\" alt=\"x\"></td></tr></table></body></html>";
+        var started = DateTime.Now;
+        SetMessageBody(html, "");
+        for (var i = 0; i < 30; i++)
+        {
+            await Task.Delay(1000);
+            if (_embeddedHtmlActive || HtmlPagesPanel.Children.Count > 0) break;
+        }
+        AppLog.Note("selftest", $"after {(DateTime.Now - started).TotalSeconds:0.0}s: embedded={_embeddedHtmlActive}, snapshot pages={HtmlPagesPanel.Children.Count}, status='{StatusText.Text}', html status='{HtmlStatusText.Text}'");
     }
 
     private void RibbonPlaceholderClicked(object? sender, RoutedEventArgs e)
@@ -2099,6 +2115,7 @@ public sealed partial class MainWindow : Window
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
+            AppLog.Error("reader", ex, "the HTML snapshot reader failed");
             if (!cancellation.IsCancellationRequested && version == _messageVersion)
             {
                 StatusText.Text = ex is NotSupportedException

@@ -53,3 +53,8 @@ Setting up the Google side (once):
 - Windows Credential Manager store: real round trips (short and multi-chunk tokens, replace, delete) under a throwaway prefix.
 - The loopback callback listener, the PKCE exchange and refresh requests, the Google client secret (sent only to Google), the Gmail reader and its changes (exact requests, batching, refused-scope error) against a fake server, and in the headless UI the Gmail folders plus mark read / unread, flag, archive and delete against a stateful fake Gmail.
 - The Microsoft authorization request built from the configured client id was accepted by Microsoft's login endpoint on Windows. Completing a sign-in needs a person at the browser and has not been done by the automated tests.
+
+## Account Settings (File > Info > Account Settings)
+The Account Settings button opens a menu like Outlook's (Account Settings…, Account Name and Sync Settings, and four items still marked "To be implemented"). **Account Settings…** is a dialog with two tabs:
+- **Email**: the connected accounts (New… connects one, Repair… signs in again, Remove disconnects it from this computer, Set as Default chooses the default sender of new messages). Change… and the arrows are marked "To be implemented".
+- **Data Files**: the local mailbox copy of each account (a PST, default `%LOCALAPPDATA%\OpenOutlook\Mail` or `~/.local/share/openoutlook/mail`) and every Outlook data file you opened. Add… opens a PST, Settings… shows details (for a mailbox copy: how much mail it keeps, the largest attachment, Sync now, Change location…), Remove closes a file (never deletes it), Open File Location… shows its folder. Gmail copies are not available yet.

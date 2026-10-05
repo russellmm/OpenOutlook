@@ -661,39 +661,110 @@ public sealed class MainWindowHeadlessTests
         finally { window.Close(); }
     }
 
-    [AvaloniaFact]
-    public void Data_files_window_lists_accounts_and_saves_choices()
+    private sealed class FakeHost : IAccountSettingsHost
     {
-        var rows = new List<DataFileRow>
-        {
-            new("acc1", "me@hotmail.test", "Microsoft", "C:/mail/me@hotmail.test.pst", 5 * 1024 * 1024, new DateTime(2026, 10, 5, 12, 0, 0, DateTimeKind.Utc), "up to date", new OpenOutlook.Mirror.MirrorAccountSettings(), true),
-            new("acc2", "me@gmail.test", "Gmail", "C:/mail/me@gmail.test.pst", 0, null, "", new OpenOutlook.Mirror.MirrorAccountSettings(), false)
-        };
-        var saved = new List<(string Id, OpenOutlook.Mirror.MirrorAccountSettings S)>();
-        var synced = new List<string>();
-        var window = new DataFilesWindow(() => rows, id => { synced.Add(id); return Task.CompletedTask; }, _ => Task.FromResult<string?>(null), _ => { }, (id, s) => saved.Add((id, s)));
+        public List<OpenOutlook.Auth.ConnectedAccount> Accounts_ = [
+            new(OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "acc1", "me@hotmail.test", "c", DateTimeOffset.UtcNow, ["Mail.ReadWrite"]),
+            new(OpenOutlook.Auth.OAuthProvider.Google, "acc2", "me@gmail.test", "c", DateTimeOffset.UtcNow, ["https://www.googleapis.com/auth/gmail.modify"])];
+        public string? Default;
+        public List<string> Log = [];
+        public List<(string Id, OpenOutlook.Mirror.MirrorAccountSettings S)> Saved = [];
+        public IReadOnlyList<OpenOutlook.Auth.ConnectedAccount> Accounts() => Accounts_;
+        public string? DefaultAccountId => Default;
+        public void SetDefaultAccount(string accountId) { Default = accountId; Log.Add("default " + accountId); }
+        public Task AddAccountAsync() { Log.Add("add"); return Task.CompletedTask; }
+        public Task RepairAccountAsync(OpenOutlook.Auth.ConnectedAccount account) { Log.Add("repair " + account.AccountId); return Task.CompletedTask; }
+        public Task<string?> RemoveAccountAsync(OpenOutlook.Auth.ConnectedAccount account, Window owner) { Log.Add("remove " + account.AccountId); Accounts_.Remove(account); return Task.FromResult<string?>("removed"); }
+        public IReadOnlyList<DataFileRow> DataFiles() =>
+        [
+            new("me@hotmail.test", "C:/mail/me@hotmail.test.pst", "Mailbox copy", 5 * 1024 * 1024, "up to date", "acc1", new DateTime(2026, 10, 5, 12, 0, 0, DateTimeKind.Utc), new OpenOutlook.Mirror.MirrorAccountSettings(), true),
+            new("me@gmail.test", "C:/mail/me@gmail.test.pst", "Mailbox copy", 0, "", "acc2", null, new OpenOutlook.Mirror.MirrorAccountSettings(), true, false),
+            new("rmarrash_outlook", "D:/email/rmarrash_outlook.pst", "Outlook data file", 700 * 1024 * 1024, "editable")
+        ];
+        public Task<string?> AddDataFileAsync(Window owner) { Log.Add("adddata"); return Task.FromResult<string?>(null); }
+        public Task<string?> RemoveDataFileAsync(DataFileRow row) { Log.Add("removedata " + row.Name); return Task.FromResult<string?>("closed"); }
+        public void OpenFileLocation(DataFileRow row) => Log.Add("open " + row.Path);
+        public Task SyncNowAsync(string accountId) { Log.Add("sync " + accountId); return Task.CompletedTask; }
+        public Task<string?> ChangeLocationAsync(string accountId, Window owner) => Task.FromResult<string?>(null);
+        public void SaveMirrorSettings(string accountId, OpenOutlook.Mirror.MirrorAccountSettings settings) => Saved.Add((accountId, settings));
+    }
+
+    [AvaloniaFact]
+    public void Account_settings_dialog_has_email_and_data_files_tabs_like_outlook()
+    {
+        var host = new FakeHost();
+        var window = new AccountSettingsWindow(host);
         window.Show();
         Dispatcher.UIThread.RunJobs();
         try
         {
-            Shot(window, "11-data-files");
+            Shot(window, "11-account-settings-email");
+            var tabs = window.GetVisualDescendants().OfType<TabControl>().Single();
+            Assert.Equal(["Email", "Data Files"], tabs.Items.OfType<TabItem>().Select(t => t.Header?.ToString()).ToArray());
+            var buttons = window.GetVisualDescendants().OfType<Button>().ToList();
+            string TipOf(string caption) => ToolTip.GetTip(buttons.First(b => b.Content?.ToString() == caption))?.ToString() ?? "";
+            Assert.Equal("To be implemented", TipOf("Change…"));
+            Assert.Equal("To be implemented", TipOf("▲"));
+
+            // the first account is the default until another is chosen
+            var emailList = window.GetVisualDescendants().OfType<ListBox>().First();
+            var items = emailList.Items.OfType<ListBoxItem>().ToList();
+            Assert.Equal(2, items.Count);
+            Assert.Contains(items[0].GetVisualDescendants().OfType<TextBlock>(), t => t.Text!.StartsWith("✔") && t.Text.Contains("me@hotmail.test"));
+            emailList.SelectedItem = items[1];
+            Dispatcher.UIThread.RunJobs();
+            buttons.First(b => b.Content?.ToString() == "Set as Default").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("acc2", host.Default);
+            emailList = window.GetVisualDescendants().OfType<ListBox>().First();
+            Assert.Contains(emailList.Items.OfType<ListBoxItem>().ElementAt(1).GetVisualDescendants().OfType<TextBlock>(), t => t.Text!.StartsWith("✔"));
+            buttons.First(b => b.Content?.ToString() == "Repair…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Contains("repair acc2", host.Log);
+
+            // the data files tab lists mailbox copies and opened PST files with Outlook's toolbar
+            tabs.SelectedIndex = 1;
+            Dispatcher.UIThread.RunJobs();
+            Shot(window, "12-account-settings-data-files");
+            buttons = window.GetVisualDescendants().OfType<Button>().ToList();            // the Data Files tab exists now
             var texts = window.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text ?? "").ToList();
-            Assert.Contains(texts, t => t.Contains("me@hotmail.test"));
-            Assert.Contains(texts, t => t.Contains("5 MB") && t.Contains("up to date"));
-            Assert.Contains(texts, t => t.Contains("not available yet"));                      // Gmail copies come later
-            var months = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.Items.OfType<ComboBoxItem>().Any(i => i.Content?.ToString() == "12 months"));
-            Assert.Equal("12 months", ((ComboBoxItem)months.SelectedItem!).Content);           // default keep window
-            months.SelectedIndex = 3;                                                          // 3 months
+            Assert.Contains("D:/email/rmarrash_outlook.pst", texts);
+            Assert.Contains("C:/mail/me@hotmail.test.pst", texts);
+            Assert.Contains("Not available yet", texts);                                           // Gmail copies come later
+            Assert.Contains(texts, t => t == "700 MB");
+            foreach (var caption in new[] { "Add…", "Settings…", "Set as Default", "Remove", "Open File Location…" })
+                Assert.Contains(buttons, b => b.Content?.ToString() == caption);
+            Assert.Equal("To be implemented", TipOf("Set as Default"));
+            var fileList = window.GetVisualDescendants().OfType<ListBox>().Last();
+            fileList.SelectedItem = fileList.Items.OfType<ListBoxItem>().Last();
             Dispatcher.UIThread.RunJobs();
-            Assert.Equal(3, saved.Last().S.KeepMonths);
-            Assert.True(saved.Last().S.Enabled);
-            Assert.Equal(25L << 20, saved.Last().S.MaxAttachmentBytes);                        // default attachment cap
-            var sync = window.GetVisualDescendants().OfType<Button>().First(b => b.Content?.ToString() == "Sync now");
-            sync.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Dispatcher.UIThread.RunJobs();
-            Assert.Equal(["acc1"], synced);
+            buttons.First(b => b.Content?.ToString() == "Open File Location…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Contains("open D:/email/rmarrash_outlook.pst", host.Log);
         }
         finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Data_file_settings_dialog_saves_the_keep_window_and_attachment_limit()
+    {
+        var host = new FakeHost();
+        var row = host.DataFiles()[0];
+        var dialog = new DataFileSettingsDialog(host, row);
+        dialog.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var months = dialog.GetVisualDescendants().OfType<ComboBox>().First(c => c.Items.OfType<ComboBoxItem>().Any(i => i.Content?.ToString() == "12 months"));
+            Assert.Equal("12 months", ((ComboBoxItem)months.SelectedItem!).Content);              // the default keep window
+            months.SelectedIndex = 3;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(3, host.Saved.Last().S.KeepMonths);
+            Assert.True(host.Saved.Last().S.Enabled);
+            Assert.Equal(25L << 20, host.Saved.Last().S.MaxAttachmentBytes);                      // the default attachment limit
+            dialog.GetVisualDescendants().OfType<Button>().First(b => b.Content?.ToString() == "Sync now").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Assert.Contains("sync acc1", host.Log);
+        }
+        finally { dialog.Close(); }
     }
 
     [AvaloniaFact]

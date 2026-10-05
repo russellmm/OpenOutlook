@@ -26,6 +26,52 @@ MicrosoftMailSession? mSession = null;
 if (gAcc is not null) { var s = new MicrosoftMailSession(gAcc, secrets, tokenHttp); gBox = new GmailMailbox(gHttp, ct => new ValueTask<string>(s.GetAccessTokenAsync(ct)), gAcc.DisplayAddress); }
 if (mAcc is not null) mSession = new MicrosoftMailSession(mAcc, secrets, tokenHttp);
 
+if (step == "renderlive" && mAcc is not null)
+{
+    // renderlive <subject text>: the Hotmail message's HTML through the reader's sanitiser and snapshot renderer
+    var r0 = new GraphInboxReader(graphHttp, mAcc.AccountId);
+    var t0 = await mSession!.GetAccessTokenAsync();
+    var msg = (await r0.GetInboxAsync(t0)).Messages.FirstOrDefault(m => m.Subject.Contains(args[1], StringComparison.OrdinalIgnoreCase));
+    if (msg is null) { Console.WriteLine("not in the first 50 messages of the inbox"); return 1; }
+    var body = await r0.GetMessageBodyAsync(t0, msg.Id);
+    Console.WriteLine($"{msg.Subject}: {body?.ContentType}, {body?.Content.Length} chars");
+    try
+    {
+        var interactive = SafeHtmlDocument.BuildInteractive(body!.Content, new Dictionary<string, byte[]>());
+        Console.WriteLine("interactive document: " + interactive.Length);
+        var doc = SafeHtmlDocument.Build(body.Content, new Dictionary<string, byte[]>());
+        Console.WriteLine("sanitized document: " + doc.Length);
+        var r = await BrowserHtmlRenderer.RenderDocumentAsync(doc, 800, CancellationToken.None, trustedOriginal: false);
+        Console.WriteLine("rendered pages: " + r.Pages.Count);
+        foreach (var png in r.Pages) Console.WriteLine($"  page {System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16))} x {System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20))}, {png.Length} bytes");
+    }
+    catch (Exception ex) { Console.WriteLine("FAILED: " + ex); }
+    return 0;
+}
+if (step == "render")
+{
+    // Diagnoses the reading pane's snapshot renderer: usage MailSmoke render
+    var html = "<html><body><h1>Hello</h1><p>Plain paragraph</p></body></html>";
+    if (args.Length > 2)
+    {
+        // render <copy of a pst> <subject text>: the first message whose subject contains the text
+        using var e = OpenOutlook.PstNative.PstEngineFactory.Open(args[1]);
+        var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase));
+        if (hit is null) { Console.WriteLine("no such message"); return 1; }
+        var msg = e.OpenMessage(hit);
+        Console.WriteLine($"message: {hit.Subject}; html {msg.BodyHtml?.Length}, text {msg.BodyText?.Length}");
+        html = msg.BodyHtml ?? "";
+    }
+    try
+    {
+        var doc = SafeHtmlDocument.Build(html, new Dictionary<string, byte[]>());
+        Console.WriteLine("sanitized document: " + doc.Length + " chars");
+        var r = await BrowserHtmlRenderer.RenderDocumentAsync(doc, 800, CancellationToken.None, trustedOriginal: false);
+        Console.WriteLine("rendered pages: " + r.Pages.Count + ", text: " + r.Text?.ToString()?.Length);
+    }
+    catch (Exception ex) { Console.WriteLine("FAILED: " + ex); }
+    return 0;
+}
 if (step == "mirror" && mAcc is not null)
 {
     // Mirrors the Hotmail mailbox into a PST under .local/mirror-test (never touches the server): usage MailSmoke mirror [folder]

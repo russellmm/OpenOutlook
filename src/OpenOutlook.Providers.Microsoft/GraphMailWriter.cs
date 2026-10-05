@@ -67,13 +67,14 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         return string.Equals(parent, RequiredId(deleted.RootElement), StringComparison.Ordinal);
     }
 
-    public async Task MoveAsync(string token, string messageId, string destinationId, CancellationToken ct = default)
+    /// <summary>Moves a message to a folder (an id or a well-known name such as "deleteditems"). The moved message has a new id, which is returned.</summary>
+    public async Task<string> MoveAsync(string token, string messageId, string destinationId, CancellationToken ct = default)
     {
         ValidateId(destinationId);
         await VerifyAsync(token, ct).ConfigureAwait(false);
         using var result = await RequestJsonAsync(HttpMethod.Post, MessageUri(messageId) + "/move", token,
             new { destinationId }, HttpStatusCode.Created, ct).ConfigureAwait(false);
-        RequiredId(result.RootElement);
+        return RequiredId(result.RootElement);
     }
 
     public async Task CopyAsync(string token, string messageId, string destinationId, CancellationToken ct = default)

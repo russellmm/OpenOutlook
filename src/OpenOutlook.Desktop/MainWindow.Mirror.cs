@@ -19,13 +19,15 @@ namespace OpenOutlook.Desktop;
 
 /// <summary>
 /// The local copy of each Microsoft mailbox: a PST file per account (default folder or the owner's choice), kept up to date in the background and
-/// shown in the folder tree like any archive, so reading is from the file. Server to file only for now; changes made in the copy are not sent back yet.
+/// shown in the folder tree like any archive, so reading is from the file. Changes made in the copy (read, flag, move, delete, new folders) are sent to the server on the next sync; while offline they wait.
 /// </summary>
 public partial class MainWindow
 {
     private readonly MirrorSettingsStore _mirrorSettings = new();
     private readonly Dictionary<string, string> _mirrorStatus = new(StringComparer.Ordinal);
     private DispatcherTimer? _mirrorTimer;
+    private DispatcherTimer? _mirrorWatchTimer;
+    private readonly Dictionary<string, DateTime> _mirrorLastSync = new(StringComparer.Ordinal);       // when each copy was last synchronised (UTC)
     private bool _mirrorBusy;
 
     private void StartMirrorScheduler()
@@ -38,6 +40,19 @@ public partial class MainWindow
             await SyncAllMirrorsAsync(manual: false);
         };
         _mirrorTimer.Start();
+        // reading, flagging, moving or deleting in the copy writes the file: such a change is sent to the server within about half a minute
+        _mirrorWatchTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _mirrorWatchTimer.Tick += async (_, _) =>
+        {
+            if (_mirrorBusy) return;
+            foreach (var account in MirrorAccounts())
+            {
+                var path = MirrorPathFor(account);
+                if (!_mirrorLastSync.TryGetValue(account.AccountId, out var last) || !File.Exists(path)) continue;
+                if (File.GetLastWriteTimeUtc(path) > last.AddSeconds(5)) { await SyncMirrorAsync(account, manual: false); break; }
+            }
+        };
+        _mirrorWatchTimer.Start();
     }
 
     private IEnumerable<ConnectedAccount> MirrorAccounts()
@@ -82,7 +97,8 @@ public partial class MainWindow
             }
             var session = GetMicrosoftSession(account);
             var source = new GraphMirrorSource(new GraphMailFolderReader(_graphHttp, account.AccountId), new GraphMailboxSyncReader(_graphHttp, account.AccountId),
-                new GraphInboxReader(_graphHttp, account.AccountId), ct => session.GetAccessTokenAsync(ct));
+                new GraphInboxReader(_graphHttp, account.AccountId), ct => session.GetAccessTokenAsync(ct),
+                account.CanWriteMicrosoftMail ? new GraphMailWriter(_graphHttp, account.AccountId) : null);       // a sign-in that may only read cannot send changes back
             var progress = new Progress<MirrorProgress>(p =>
             {
                 if (p.Phase == "messages" && p.Total > 0) StatusText.Text = $"Updating {account.DisplayAddress}: {p.Folder} ({p.Done + 1} of {p.Total})…";
@@ -92,10 +108,25 @@ public partial class MainWindow
             using (var state = new SyncStateStore(System.IO.Path.ChangeExtension(path, ".sync")))
                 result = await Task.Run(() => MirrorSyncEngine.SyncAsync(source, store, state, syncOptions, progress, CancellationToken.None));
             if (result.Changed || created) RefreshMirrorNode(path, store);
-            var summary = result.Changed
-                ? $"{result.MessagesAdded} new, {result.MessagesRemoved} removed, {result.MessagesUpdated} updated"
-                : "up to date";
-            _mirrorStatus[account.AccountId] = result.Failed > 0 ? $"{summary}; {result.Failed} message(s) could not be copied ({result.FirstError})" : summary;
+            _mirrorLastSync[account.AccountId] = DateTime.UtcNow;
+            if (result.Offline)
+            {
+                var waiting = result.PendingLocal > 0 ? $"; {result.PendingLocal} change{(result.PendingLocal == 1 ? "" : "s")} waiting to be sent" : "";
+                _mirrorStatus[account.AccountId] = "working offline" + waiting;
+                StatusText.Text = $"Working offline: the copy of {account.DisplayAddress} stays available{waiting}.";
+                return;
+            }
+            var parts = new List<string>();
+            if (result.MessagesAdded > 0) parts.Add($"{result.MessagesAdded} new");
+            if (result.MessagesRemoved > 0) parts.Add($"{result.MessagesRemoved} removed");
+            if (result.MessagesUpdated > 0) parts.Add($"{result.MessagesUpdated} updated");
+            if (result.Pushed > 0) parts.Add($"{result.Pushed} change{(result.Pushed == 1 ? "" : "s")} sent to the server");
+            var summary = parts.Count > 0 ? string.Join(", ", parts) : "up to date";
+            var notes = new List<string>();
+            if (result.Failed > 0) notes.Add($"{result.Failed} problem{(result.Failed == 1 ? "" : "s")} ({result.FirstError})");
+            if (result.PendingLocal > 0) notes.Add($"{result.PendingLocal} change{(result.PendingLocal == 1 ? "" : "s")} not sent yet");
+            if (result.LocalOnly > 0) notes.Add($"{result.LocalOnly} message{(result.LocalOnly == 1 ? "" : "s")} only in this copy");
+            _mirrorStatus[account.AccountId] = notes.Count > 0 ? summary + "; " + string.Join("; ", notes) : summary;
             StatusText.Text = $"Mailbox copy of {account.DisplayAddress}: {summary}.";
         }
         catch (GraphMailException e) when (e.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)

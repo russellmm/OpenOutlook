@@ -2,9 +2,19 @@ using OpenOutlook.Providers.Microsoft;
 
 namespace OpenOutlook.Mirror;
 
-/// <summary>The Microsoft Graph side of the mirror: folders, message lists and message MIME of one verified mailbox.</summary>
-public sealed class GraphMirrorSource(GraphMailFolderReader folders, GraphMailboxSyncReader sync, GraphInboxReader inbox, Func<CancellationToken, Task<string>> token) : IMailSyncSource
+/// <summary>The Microsoft Graph side of the mirror: folders, message lists and message MIME of one verified mailbox, and (when a writer is given) the changes made in the local copy.</summary>
+public sealed class GraphMirrorSource(GraphMailFolderReader folders, GraphMailboxSyncReader sync, GraphInboxReader inbox, Func<CancellationToken, Task<string>> token, GraphMailWriter? writer = null)
+    : IMailSyncSource, IMailSyncSink
 {
+    private GraphMailWriter Writer => writer ?? throw new InvalidOperationException("This mailbox cannot be changed (the sign-in has no write permission).");
+    public bool CanPush => writer is not null;
+
+    public async Task SetReadAsync(string messageId, bool read, CancellationToken ct) => await Writer.SetReadAsync(await token(ct).ConfigureAwait(false), messageId, read, ct).ConfigureAwait(false);
+    public async Task SetFlaggedAsync(string messageId, bool flagged, CancellationToken ct) => await Writer.SetFlagAsync(await token(ct).ConfigureAwait(false), messageId, flagged, ct).ConfigureAwait(false);
+    public async Task<string> MoveAsync(string messageId, string destinationFolderId, CancellationToken ct) => await Writer.MoveAsync(await token(ct).ConfigureAwait(false), messageId, destinationFolderId, ct).ConfigureAwait(false);
+    public async Task PurgeAsync(string messageId, CancellationToken ct) => await Writer.DeletePermanentlyAsync(await token(ct).ConfigureAwait(false), messageId, ct).ConfigureAwait(false);
+    public async Task<string> CreateFolderAsync(string? parentId, string name, CancellationToken ct) => (await Writer.CreateFolderAsync(await token(ct).ConfigureAwait(false), parentId, name, ct).ConfigureAwait(false)).Id;
+
     public async Task<IReadOnlyList<RemoteFolder>> GetFoldersAsync(CancellationToken ct)
     {
         var t = await token(ct).ConfigureAwait(false);

@@ -18,13 +18,19 @@ public interface IMailSyncSource
 
 public sealed record MirrorSyncOptions(int KeepMonths = 12, long MaxAttachmentBytes = 25L * 1024 * 1024);
 public sealed record MirrorProgress(string Phase, string? Folder, int Done, int Total);
-public sealed record MirrorSyncResult(int FoldersCreated, int FoldersRemoved, int MessagesAdded, int MessagesRemoved, int MessagesUpdated, int Skipped, int Failed, string? FirstError, string? FirstSkipReason = null)
+/// <param name="Pushed">Changes made in the local copy that were sent to the server (read, flag, move, delete, new folder).</param>
+/// <param name="PendingLocal">Local changes still waiting (offline, or refused by the server and retried next time).</param>
+/// <param name="LocalOnly">Messages that exist only in the local copy (copied or imported there); they are not sent to the server.</param>
+/// <param name="Offline">The server could not be reached; nothing was downloaded and local changes are kept for later.</param>
+public sealed record MirrorSyncResult(int FoldersCreated, int FoldersRemoved, int MessagesAdded, int MessagesRemoved, int MessagesUpdated, int Skipped, int Failed, string? FirstError, string? FirstSkipReason = null,
+    int Pushed = 0, int PendingLocal = 0, int LocalOnly = 0, bool Offline = false)
 {
-    public bool Changed => FoldersCreated + FoldersRemoved + MessagesAdded + MessagesRemoved + MessagesUpdated > 0;
+    public bool Changed => FoldersCreated + FoldersRemoved + MessagesAdded + MessagesRemoved + MessagesUpdated + Pushed > 0;
 }
 
 /// <summary>
-/// One-way sync (server to local copy) of a mailbox into a PST: the folder tree, then for every folder the messages of the keep-window. Messages are
+/// Sync of a mailbox with its local copy in a PST. First the changes made in the copy are sent to the server (when the source can take them, see <see cref="IMailSyncSink"/>), then
+/// the server's state is brought in: the folder tree, then for every folder the messages of the keep-window. Messages are
 /// compared by server id and read / flag state, so a run only downloads what is new, removes what is gone from the server (or fell out of the window)
 /// and updates changed flags. The state of what was mirrored is kept in <see cref="SyncStateStore"/>; a crash leaves a state that the next run continues.
 /// </summary>
@@ -44,9 +50,18 @@ public static class MirrorSyncEngine
         var deleted = pst.DeletedItemsFolder() ?? throw new InvalidOperationException("The mirror file has no Deleted Items folder.");
         var top = pst.FindFolder(deleted.ParentNid) ?? throw new InvalidOperationException("The mirror file has no top folder.");
 
+        var sink = source is IMailSyncSink { CanPush: true } writable ? writable : null;
+        var scan = sink is null ? new LocalScan([], [], 0) : MirrorPush.Scan(pst, state, top, deleted);
+
         // ---- folders
         progress?.Report(new MirrorProgress("folders", null, 0, 0));
-        var remote = await source.GetFoldersAsync(ct).ConfigureAwait(false);
+        IReadOnlyList<RemoteFolder> remote;
+        try { remote = await source.GetFoldersAsync(ct).ConfigureAwait(false); }
+        catch (Exception e) when (MirrorPush.IsOffline(e) && e is not OperationCanceledException { InnerException: null })
+        {
+            // no connection: the local copy stays usable and its changes wait
+            return new MirrorSyncResult(0, 0, 0, 0, 0, 0, 0, e.Message, null, 0, scan.Pending, scan.LocalOnlyMessages, Offline: true);
+        }
         var byId = remote.ToDictionary(f => f.Id, StringComparer.Ordinal);
         var mapped = new Dictionary<string, MailFolder>(StringComparer.Ordinal);       // remote id -> PST folder
         foreach (var f in OrderParentsFirst(remote))
@@ -89,6 +104,28 @@ public static class MirrorSyncEngine
 
         // ---- messages
         var since = options.KeepMonths > 0 ? DateTimeOffset.UtcNow.AddMonths(-options.KeepMonths) : (DateTimeOffset?)null;
+        var listCache = new Dictionary<string, IReadOnlyList<RemoteMessage>>(StringComparer.Ordinal);
+        async Task<IReadOnlyList<RemoteMessage>> ListAsync(string folderId)
+        {
+            if (!listCache.TryGetValue(folderId, out var l)) listCache[folderId] = l = await source.ListMessagesAsync(folderId, since, ct).ConfigureAwait(false);
+            return l;
+        }
+
+        // ---- changes made in the local copy go to the server first
+        int pushed = 0, pending = 0;
+        var offlineNow = false;
+        if (sink is not null && scan.Pending > 0)
+        {
+            progress?.Report(new MirrorProgress("sending changes", null, 0, scan.Pending));
+            var push = await MirrorPush.PushAsync(sink, scan, pst, state, top, deleted, mapped, ListAsync, ct).ConfigureAwait(false);
+            pushed = push.Pushed;
+            pending = scan.Pending - push.Pushed;
+            if (push.Failed > 0) { failed += push.Failed; firstError ??= push.FirstError; }
+            offlineNow = push.Offline;
+            foreach (var id in push.TouchedFolders) listCache.Remove(id);                 // moved messages have new ids: the lists are read again
+        }
+        if (offlineNow)                                                                   // the connection dropped while sending: nothing is pulled, the changes wait
+            return new MirrorSyncResult(created, removedFolders, 0, 0, 0, 0, failed, firstError, null, pushed, pending, scan.LocalOnlyMessages, Offline: true);
         var maxMime = options.MaxAttachmentBytes + 8L * 1024 * 1024;
         var folderIndex = 0;
         foreach (var (remoteId, folder) in mapped.ToList())
@@ -96,7 +133,7 @@ public static class MirrorSyncEngine
             ct.ThrowIfCancellationRequested();
             folderIndex++;
             IReadOnlyList<RemoteMessage> list;
-            try { list = await source.ListMessagesAsync(remoteId, since, ct).ConfigureAwait(false); }
+            try { list = await ListAsync(remoteId).ConfigureAwait(false); }
             catch (OperationCanceledException) { throw; }
             catch (Exception e) { Fail(e); continue; }
             var have = state.MessagesIn(remoteId).ToDictionary(m => m.RemoteId, StringComparer.Ordinal);
@@ -205,7 +242,7 @@ public static class MirrorSyncEngine
             progress?.Report(new MirrorProgress("folder done", folder.Name, folderIndex, mapped.Count));
         }
         state.SetMeta("last_sync", DateTime.UtcNow.ToString("O"));
-        return new MirrorSyncResult(created, removedFolders, added, removed, updated, skipped, failed, firstError, firstSkipReason);
+        return new MirrorSyncResult(created, removedFolders, added, removed, updated, skipped, failed, firstError, firstSkipReason, pushed, pending, scan.LocalOnlyMessages, offlineNow);
     }
 
     private static IEnumerable<RemoteFolder> OrderParentsFirst(IReadOnlyList<RemoteFolder> folders)

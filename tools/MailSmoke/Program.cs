@@ -109,6 +109,62 @@ if (step == "renderlive" && mAcc is not null)
     catch (Exception ex) { Console.WriteLine("FAILED: " + ex); }
     return 0;
 }
+if (step == "livepush" && mAcc is not null)
+{
+    // livepush: syncs a test copy of the Hotmail mailbox, then changes one of the "[OpenOutlook test" messages in the copy (read, flag, move) and checks the server follows
+    var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "push-test");
+    Directory.CreateDirectory(dir);
+    var pstPath = System.IO.Path.Combine(dir, "copy.pst");
+    using var pst = File.Exists(pstPath) ? OpenOutlook.PstNative.PstEngineFactory.Open(pstPath, true) : OpenOutlook.PstNative.PstEngineFactory.Create(pstPath, mAcc.DisplayAddress);
+    using var st = new OpenOutlook.Mirror.SyncStateStore(System.IO.Path.ChangeExtension(pstPath, ".sync"));
+    var writer = new GraphMailWriter(graphHttp, mAcc.AccountId);
+    var src = new OpenOutlook.Mirror.GraphMirrorSource(new GraphMailFolderReader(graphHttp, mAcc.AccountId), new GraphMailboxSyncReader(graphHttp, mAcc.AccountId), new GraphInboxReader(graphHttp, mAcc.AccountId), ct => mSession!.GetAccessTokenAsync(ct), writer);
+    var opts = new OpenOutlook.Mirror.MirrorSyncOptions(1);
+    async Task<OpenOutlook.Mirror.MirrorSyncResult> Go(string label) { var r = await OpenOutlook.Mirror.MirrorSyncEngine.SyncAsync(src, pst, st, opts, null, CancellationToken.None); Console.WriteLine($"{label}: {r}"); return r; }
+    await Go("first sync");
+    var reader = new GraphInboxReader(graphHttp, mAcc.AccountId);
+    async Task<GraphInboxMessage?> OnServer(string folderId = "inbox") => (await reader.GetInboxAsync(await mSession!.GetAccessTokenAsync())).Messages.FirstOrDefault(m => m.Subject.Contains("[OpenOutlook test") && m.Subject.Contains("Gmail to Hotmail"));
+    var inbox = pst.AllFolders().First(f => f.Name == "Inbox");
+    var local = pst.GetMessages(inbox).FirstOrDefault(m => m.Subject.Contains("[OpenOutlook test") && m.Subject.Contains("Gmail to Hotmail"));
+    if (local is null) { Console.WriteLine("test message not in the copy"); return 1; }
+    var before = await OnServer();
+    Console.WriteLine($"server before: read={before!.IsRead} flagged={before.IsFlagged}");
+    pst.SetReadState(local, !before.IsRead);
+    pst.SetFlagged(local, !before.IsFlagged);
+    await Go("after read/flag change");
+    var after = await OnServer();
+    Console.WriteLine($"server after:  read={after!.IsRead} flagged={after.IsFlagged}  (expected read={!before.IsRead} flagged={!before.IsFlagged})");
+    local = pst.GetMessages(inbox).First(m => m.Subject.Contains("Gmail to Hotmail") && m.Subject.Contains("[OpenOutlook test"));
+    pst.SetReadState(local, before.IsRead);
+    pst.SetFlagged(local, before.IsFlagged);
+    await Go("revert");
+    var reverted = await OnServer();
+    Console.WriteLine($"server reverted: read={reverted!.IsRead} flagged={reverted.IsFlagged}");
+    // move to another folder and back
+    var target = pst.AllFolders().First(f => f.Name == "Active_emails");
+    local = pst.GetMessages(inbox).First(m => m.Subject.Contains("Gmail to Hotmail") && m.Subject.Contains("[OpenOutlook test"));
+    pst.MoveMessage(local, target);
+    await Go("moved to Active_emails");
+    var moved = pst.GetMessages(target).FirstOrDefault(m => m.Subject.Contains("Gmail to Hotmail") && m.Subject.Contains("[OpenOutlook test"));
+    Console.WriteLine($"in the copy's Active_emails: {moved is not null}; still in server inbox: {(await OnServer()) is not null}");
+    if (moved is not null) pst.MoveMessage(moved, inbox);
+    await Go("moved back");
+    Console.WriteLine($"back in server inbox: {(await OnServer()) is not null}; copy scan findings {pst.Scan().Findings.Count}");
+    return 0;
+}
+if (step == "scanlocal")
+{
+    // scanlocal <copy of a mirror pst> : how long finding the local changes takes and what it finds (read-only)
+    var pp = args[1];
+    using var e2 = OpenOutlook.PstNative.PstEngineFactory.Open(pp);
+    using var st2 = new OpenOutlook.Mirror.SyncStateStore(System.IO.Path.ChangeExtension(pp, ".sync"));
+    var dl = e2.DeletedItemsFolder()!;
+    var sw2 = System.Diagnostics.Stopwatch.StartNew();
+    var sc = OpenOutlook.Mirror.MirrorPush.Scan(e2, st2, e2.FindFolder(dl.ParentNid)!, dl);
+    Console.WriteLine($"scan: {sw2.Elapsed.TotalSeconds:0.0}s, messages in state {st2.MessageCount()}, changes {sc.Changes.Count}, new folders {sc.NewFolders.Count}, local only {sc.LocalOnlyMessages}");
+    foreach (var g in sc.Changes.GroupBy(c => c.Kind)) Console.WriteLine($"  {g.Key}: {g.Count()}");
+    return 0;
+}
 if (step == "launchtest")
 {
     // launchtest [browser path]: starts the layout browser the way the reading pane does and prints everything the browser says when it fails

@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Platform.Storage;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -105,6 +106,57 @@ public partial class MainWindow
         }
     }
 
+    private GmailContent? _gmailContent;
+    private string? _gmailContentMessageId;
+
+    private static bool CanSaveGmailAttachment(GmailAttachmentInfo a)
+    {
+        if (a.AttachmentId is null || a.SizeBytes < 0 || a.SizeBytes > GmailMimeBuilder.MaxAttachmentBytes) return false;
+        try { PstAttachmentExporter.ValidateSuggestedFileName(a.FileName); return true; }
+        catch (ArgumentException) { return false; }
+    }
+
+    /// <summary>"Save Attachments" for the open Gmail message: choose one if there are several, choose a folder, download, write as a new file (never overwrites).</summary>
+    private async Task SaveGmailAttachmentAsync(GmailFolderSelection folder, GmailContent content, string messageId)
+    {
+        var version = _messageVersion;
+        var candidates = content.Attachments.Where(CanSaveGmailAttachment).ToArray();
+        if (candidates.Length == 0) { StatusText.Text = "This message has no attachment that can be saved."; return; }
+        GmailAttachmentInfo? attachment = candidates[0];
+        if (candidates.Length > 1)
+        {
+            var chooser = new Window { Title = "Choose an attachment", Width = 450, Height = 300, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+            var list = new ListBox();
+            foreach (var item in candidates) list.Items.Add(new ListBoxItem { Content = $"{item.FileName} ({item.SizeBytes / 1024.0:0.#} KB)", Tag = item });
+            var button = new Button { Content = "Save selected", Margin = new Avalonia.Thickness(8) };
+            button.Click += (_, _) => chooser.Close((list.SelectedItem as ListBoxItem)?.Tag as GmailAttachmentInfo);
+            chooser.Content = new DockPanel { Children = { list, button } };
+            DockPanel.SetDock(button, Dock.Bottom);
+            attachment = await chooser.ShowDialog<GmailAttachmentInfo?>(this);
+        }
+        if (attachment is null || version != _messageVersion) return;
+        var folders = await SafePick.FoldersAsync(this, new Avalonia.Platform.Storage.FolderPickerOpenOptions
+        { Title = "Choose where to save this attachment as a new file", AllowMultiple = false }, failure => StatusText.Text = failure);
+        if (version != _messageVersion) return;
+        var directory = folders.FirstOrDefault()?.TryGetLocalPath();
+        if (directory is null) return;
+        ExportAttachmentButton.IsEnabled = false;
+        try
+        {
+            StatusText.Text = $"Downloading {attachment.FileName}…";
+            var data = await GetGmailMailbox(folder.Account).GetAttachmentAsync(messageId, attachment.AttachmentId!, _onlineCancellation?.Token ?? CancellationToken.None);
+            var target = System.IO.Path.Combine(directory, PstAttachmentExporter.ValidateSuggestedFileName(attachment.FileName));
+            await using (var file = new System.IO.FileStream(target, System.IO.FileMode.CreateNew, System.IO.FileAccess.Write, System.IO.FileShare.None))
+                await file.WriteAsync(data);
+            StatusText.Text = "Attachment saved to a new file.";
+        }
+        catch (OperationCanceledException) { StatusText.Text = "Attachment save cancelled."; }
+        catch (System.IO.IOException) { StatusText.Text = "Could not save the attachment: a file with that name already exists or the folder is not writable. Nothing was overwritten."; }
+        catch (GmailReadException error) { StatusText.Text = error.Message; }
+        catch (Exception) { StatusText.Text = "Could not save the attachment. Check the connection or choose another folder."; }
+        finally { ExportAttachmentButton.IsEnabled = version == _messageVersion && content.Attachments.Any(CanSaveGmailAttachment); }
+    }
+
     private async Task OpenGmailMessageAsync(GmailFolderSelection folder, GraphInboxMessage message, long version)
     {
         StatusText.Text = "Reading Gmail message…";
@@ -115,15 +167,17 @@ public partial class MainWindow
             if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
             _activeGraphMessage = null;
             _currentGraphAttachments = null;
-            ExportAttachmentButton.IsEnabled = false;
+            _gmailContent = content;
+            _gmailContentMessageId = message.Id;
+            ExportAttachmentButton.IsEnabled = content.Attachments.Any(CanSaveGmailAttachment);
             SubjectText.Text = message.Subject;
             SenderText.Text = message.From;
             RecipientText.Text = $"To   {message.To}";
             MessageDateText.Text = message.Received?.ToLocalTime().ToString("ddd M/d/yyyy h:mm tt") ?? "";
             SetReaderAvatar(message.From);
-            ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible = ReaderForwardButton.IsVisible = false;   // read-only account
+            ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible = ReaderForwardButton.IsVisible = folder.Account.CanSendGmail;   // reading-pane Reply / Reply All / Forward
             AttachmentText.Text = content.Attachments.Count == 0 ? "" :
-                $"Attachments: {string.Join(", ", content.Attachments.Select(a => a.FileName))} (saving Gmail attachments is not available yet)";
+                $"Attachments: {string.Join(", ", content.Attachments.Select(a => a.FileName + (CanSaveGmailAttachment(a) ? "" : " (cannot save)")))}";
             HideFormatBar();
             SetMessageBody(content.Html, content.Html is null ? (content.Text ?? content.Snippet ?? "") : "");
             StatusText.Text = _richRuns is null ? "Gmail message opened." : "Gmail message opened in rich-text view.";
@@ -145,11 +199,8 @@ public partial class MainWindow
     {
         if (_activeGmailFolder is not { } folder) return false;
         var account = folder.Account;
-        if (action is "new" or "reply" or "replyAll" or "forward" or "editDraft")
-        {
-            StatusText.Text = "Composing, replying and forwarding are not available for Gmail yet.";
-            return true;
-        }
+        if (action is "new" or "reply" or "replyAll" or "forward") { await ComposeGmailAsync(folder, action); return true; }
+        if (action == "editDraft") { StatusText.Text = "Editing a saved Gmail draft is not available yet."; return true; }
         if (action is not ("read" or "unread" or "flag" or "unflag" or "archive" or "delete"))
         {
             StatusText.Text = "That action is not available for Gmail yet.";

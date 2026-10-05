@@ -207,12 +207,8 @@ public sealed partial class MainWindow : Window
         if (await TryHandlePstFlagActionAsync(action)) return;
         if (await TryHandlePstDeleteAsync(action)) return;
         if (await TryHandleGmailActionAsync(action)) return;
+        if (action == "new") { OpenCompose(_activeMicrosoftAccount); return; }
         ConnectedAccount? account = _activeMicrosoftAccount;
-        if (account is null && action == "new")
-        {
-            try { account = _accountRegistry.Load().FirstOrDefault(a => a.Provider == OAuthProvider.MicrosoftConsumers); }
-            catch (Exception) { /* The account settings error appears below. */ }
-        }
         if (account is null)
         {
             await ExplainMailActionAsync("Select a message in a connected Microsoft mailbox to use this action. For PST archives, right-click the archive and turn on Editing Mode.", null);
@@ -225,11 +221,6 @@ public sealed partial class MainWindow : Window
         }
         var writer = new GraphMailWriter(_graphHttp, account.AccountId);
         Task<string> Token() => GetMicrosoftSession(account).GetAccessTokenAsync();
-        if (action == "new")
-        {
-            new ComposeWindow(account.DisplayAddress, writer, Token).Show(this);
-            return;
-        }
         if (MessageList.SelectedItem is not GraphMessageListRow { Message: var selected })
         {
             StatusText.Text = "Select a Microsoft message first.";
@@ -239,7 +230,7 @@ public sealed partial class MainWindow : Window
         if (action == "editDraft")
         {
             if (!selected.IsDraft) { StatusText.Text = "Select a message in Drafts to edit it."; return; }
-            new ComposeWindow(account.DisplayAddress, writer, Token, selected.Id).Show(this);
+            OpenCompose(account, null, selected.Id);
             return;
         }
         var actionFolder = _activeMicrosoftFolder;
@@ -315,7 +306,7 @@ public sealed partial class MainWindow : Window
         var writer = new GraphMailWriter(_graphHttp, account.AccountId);
         Task<string> Token() => GetMicrosoftSession(account).GetAccessTokenAsync();
         var draftId = await writer.CreateResponseDraftAsync(await Token(), messageId, action);
-        new ComposeWindow(account.DisplayAddress, writer, Token, draftId).Show(owner);
+        OpenCompose(account, null, draftId);
         StatusText.Text = "Draft created. Close the compose window to keep it in Drafts.";
     }
 
@@ -1054,9 +1045,7 @@ public sealed partial class MainWindow : Window
                 await ExplainMailActionAsync("Sign in again to edit this Microsoft draft.", account);
                 return;
             }
-            Task<string> Token() => GetMicrosoftSession(account).GetAccessTokenAsync();
-            new ComposeWindow(account.DisplayAddress,
-                new GraphMailWriter(_graphHttp, account.AccountId), Token, draft.Id).Show(this);
+            OpenCompose(account, null, draft.Id);
             return;
         }
         await OpenSelectedMessageWindowAsync();
@@ -1209,6 +1198,12 @@ public sealed partial class MainWindow : Window
 
     private async void ExportAttachmentClicked(object? sender, RoutedEventArgs e)
     {
+        if (_activeGmailFolder is { } gmailFolder && _gmailContent is { } gmailContent &&
+            MessageList.SelectedItem is GraphMessageListRow { Message: var gmailMessage } && gmailMessage.Id == _gmailContentMessageId)
+        {
+            await SaveGmailAttachmentAsync(gmailFolder, gmailContent, gmailMessage.Id);
+            return;
+        }
         if (_activeGraphMessage is { } graphMessage && _activeMicrosoftAccount is { } graphAccount &&
             _currentGraphAttachments is { } graphAttachments)
         {

@@ -546,4 +546,67 @@ public sealed class MainWindowHeadlessTests
         }
         finally { window.Close(); }
     }
+
+    private sealed class RecordingBackend(string address, string kind, bool reopen = false) : IComposeBackend
+    {
+        public List<string> Log { get; } = [];
+        public ComposeDraft? LastDraft;
+        public IReadOnlyList<ComposeFile>? LastFiles;
+        public string Address => address;
+        public string Kind => kind;
+        public long MaxAttachmentBytes => kind == "Gmail" ? 25L * 1024 * 1024 : 150L * 1024 * 1024;
+        public bool CanReopenDrafts => reopen;
+        public string SavedMessage => "Draft saved.";
+        public Task<LoadedDraft> LoadAsync(string draftId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SavedDraft> SaveAsync(string? draftId, ComposeDraft draft, IReadOnlyList<ComposeFile> files, IProgress<string> progress, CancellationToken cancellationToken = default)
+        { Log.Add("save"); LastDraft = draft; LastFiles = files; foreach (var f in files) f.Saved = true; return Task.FromResult(new SavedDraft("draft-" + address, null)); }
+        public Task SendAsync(string? draftId, ComposeDraft draft, IReadOnlyList<ComposeFile> files, IProgress<string> progress, CancellationToken cancellationToken = default)
+        { Log.Add("send"); LastDraft = draft; LastFiles = files; return Task.CompletedTask; }
+        public Task RemoveServerFileAsync(string draftId, string serverId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    [AvaloniaFact]
+    public async Task Compose_window_looks_like_outlooks_and_sends_from_the_chosen_account()
+    {
+        var hotmail = new RecordingBackend("me@hotmail.test", "Microsoft");
+        var gmail = new RecordingBackend("me@gmail.test", "Gmail");
+        var locked = new ComposeAccount("old@gmail.test", "Gmail", "sign in again to allow sending", () => new RecordingBackend("old@gmail.test", "Gmail"));
+        var accounts = new List<ComposeAccount>
+        {
+            new("me@hotmail.test", "Microsoft", null, () => hotmail), new("me@gmail.test", "Gmail", null, () => gmail), locked
+        };
+        var window = new ComposeWindow(accounts, accounts[0]) { Width = 1000, Height = 760 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            Shot(window, "10-compose");
+            // the From list offers every account; the one that cannot send is shown but not selectable
+            var from = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.Items.OfType<ComboBoxItem>().Any(i => i.Tag is ComposeAccount));
+            var items = from.Items.OfType<ComboBoxItem>().ToList();
+            Assert.Equal(3, items.Count);
+            Assert.False(items[2].IsEnabled);
+            Assert.Contains("sign in again", items[2].Content!.ToString());
+            Assert.Equal("me@hotmail.test", window.SelectedAccount.Address);
+
+            // switching the account before anything is saved changes who sends
+            from.SelectedIndex = 1;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("me@gmail.test", window.SelectedAccount.Address);
+
+            var boxes = window.GetVisualDescendants().OfType<TextBox>().ToList();
+            boxes.First(b => b.Watermark == "name@example.com").Text = "friend@example.org";
+            var subject = boxes.Last(b => !b.AcceptsReturn && b.Watermark is null && b.IsVisible);
+            subject.Text = "Hello";
+            boxes.First(b => b.AcceptsReturn).Text = "Body text";
+            var send = window.GetVisualDescendants().OfType<Button>().First(b => (b.Content as StackPanel)?.Children.OfType<TextBlock>().Any(t => t.Text == "Send") == true);
+            send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntil(() => gmail.Log.Contains("send"), 5000);
+            Assert.Contains("send", gmail.Log);
+            Assert.Empty(hotmail.Log);                                                    // the other account was not used
+            Assert.Equal("friend@example.org", gmail.LastDraft!.To);
+            Assert.Equal("Body text", gmail.LastDraft.Body);
+        }
+        finally { window.Close(); }
+    }
 }

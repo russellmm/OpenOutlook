@@ -135,7 +135,7 @@ public sealed class AccountSetupWindow : Window
     private void UpdateAvailability()
     {
         _permissions.Text = (SelectedAccount?.Provider ?? SelectedProvider) == OAuthProvider.Google
-            ? "Gmail sign-in allows reading and organizing mail (mark read, star, archive, trash, move to labels). It cannot send."
+            ? "Gmail sign-in allows reading, organizing and sending mail (mark read, star, archive, trash, move to labels, compose, reply, forward). OpenOutlook sends only when you press Send."
             : "Microsoft sign-in requests access to read, organize and send mail, plus read and edit your Microsoft contacts for the planned address book. OpenOutlook sends only when you press Send.";
         if (_isBusy) return;
         _provider.IsEnabled = SelectedAccount is null;
@@ -169,7 +169,7 @@ public sealed class AccountSetupWindow : Window
             _registry.Save(prior); // Check writable private metadata storage before browser authorization.
             _status.Text = "Opening your system browser. Return here after approving the requested access…";
             var scopes = provider == OAuthProvider.Google
-                ? new[] { "https://www.googleapis.com/auth/gmail.modify" }
+                ? new[] { "https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.compose" }
                 : MicrosoftAccountPermissions.PlannedPersonalScopes;
             var identity = await DesktopAccountConnector.ConnectAsync(provider, clientId, scopes,
                 SystemAuthorizationBrowser.LaunchAsync,

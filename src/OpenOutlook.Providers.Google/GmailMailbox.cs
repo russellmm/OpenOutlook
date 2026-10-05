@@ -132,7 +132,7 @@ public sealed class GmailMailbox
                 foreach (var h in ha.EnumerateArray())
                     if (OptionalString(h, "name") is { } n && OptionalString(h, "value") is { } v) headers.Add(new GmailHeader(n, v));
         }
-        return new GmailContent(html, text, attachments, headers, OptionalString(root, "snippet"));
+        return new GmailContent(html, text, attachments, headers, OptionalString(root, "snippet"), OptionalString(root, "threadId"));
     }
 
     // ---- changes (need the gmail.modify scope) ----
@@ -223,6 +223,98 @@ public sealed class GmailMailbox
                 : $"Gmail change failed with HTTP {(int)response.StatusCode}.", response.StatusCode);
     }
 
+    // ---- attachments, sending and drafts ----
+
+    private const int MaxAttachmentJsonBytes = 40 * 1024 * 1024;         // a 25 MB attachment is about 34 MB of base64 in JSON
+
+    /// <summary>Downloads one attachment of a message (up to Gmail's own 25 MB limit).</summary>
+    public async Task<byte[]> GetAttachmentAsync(string messageId, string attachmentId, CancellationToken cancellationToken = default)
+    {
+        if (!ValidId(messageId)) throw new ArgumentException("An invalid Gmail message ID was supplied.", nameof(messageId));
+        if (!ValidAttachmentId(attachmentId)) throw new ArgumentException("An invalid Gmail attachment ID was supplied.", nameof(attachmentId));
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var request = new HttpRequestMessage(HttpMethod.Get, Root + "/messages/" + messageId + "/attachments/" + Uri.EscapeDataString(attachmentId));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
+        if (!response.IsSuccessStatusCode) throw new GmailReadException($"Gmail read failed with HTTP {(int)response.StatusCode}.", response.StatusCode);
+        if (response.Content.Headers.ContentLength > MaxAttachmentJsonBytes) throw new GmailReadException("The attachment is larger than the supported size.");
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int n;
+        while ((n = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) != 0)
+        {
+            if (buffer.Length + n > MaxAttachmentJsonBytes) throw new GmailReadException("The attachment is larger than the supported size.");
+            buffer.Write(chunk, 0, n);
+        }
+        buffer.Position = 0;
+        try
+        {
+            using var json = await JsonDocument.ParseAsync(buffer, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var data = OptionalString(json.RootElement, "data") ?? throw new GmailReadException("Gmail returned an attachment without data.");
+            return GmailMimeBuilder.FromBase64Url(data);
+        }
+        catch (JsonException) { throw new GmailReadException("Gmail returned invalid JSON."); }
+        catch (FormatException) { throw new GmailReadException("Gmail returned invalid attachment data."); }
+    }
+
+    /// <summary>Sends a finished message (needs the gmail.send scope). threadId keeps a reply in its conversation. Returns the new message id.</summary>
+    public async Task<string> SendAsync(byte[] mime, string? threadId = null, CancellationToken cancellationToken = default)
+    {
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var json = await SendJsonAsync(HttpMethod.Post, "/messages/send", RawBody(mime, threadId), token, cancellationToken).ConfigureAwait(false);
+        return OptionalString(json.RootElement, "id") ?? throw new GmailReadException("Gmail did not confirm the message.");
+    }
+
+    /// <summary>Creates (draftId null) or replaces a draft; returns the draft id.</summary>
+    public async Task<string> SaveDraftAsync(string? draftId, byte[] mime, string? threadId = null, CancellationToken cancellationToken = default)
+    {
+        if (draftId is not null && !ValidId(draftId)) throw new ArgumentException("An invalid Gmail draft ID was supplied.", nameof(draftId));
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var json = draftId is null
+            ? await SendJsonAsync(HttpMethod.Post, "/drafts", new { message = RawBody(mime, threadId) }, token, cancellationToken).ConfigureAwait(false)
+            : await SendJsonAsync(HttpMethod.Put, "/drafts/" + draftId, new { id = draftId, message = RawBody(mime, threadId) }, token, cancellationToken).ConfigureAwait(false);
+        return OptionalString(json.RootElement, "id") ?? throw new GmailReadException("Gmail did not confirm the draft.");
+    }
+
+    public async Task SendDraftAsync(string draftId, CancellationToken cancellationToken = default)
+    {
+        if (!ValidId(draftId)) throw new ArgumentException("An invalid Gmail draft ID was supplied.", nameof(draftId));
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var json = await SendJsonAsync(HttpMethod.Post, "/drafts/send", new { id = draftId }, token, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static object RawBody(byte[] mime, string? threadId)
+    {
+        if (mime is null || mime.Length == 0) throw new ArgumentException("There is no message to send.", nameof(mime));
+        if (threadId is not null && !ValidId(threadId)) throw new ArgumentException("An invalid Gmail thread ID was supplied.", nameof(threadId));
+        var raw = GmailMimeBuilder.ToBase64Url(mime);
+        return threadId is null ? new { raw } : new { raw, threadId };
+    }
+
+    private async Task<JsonDocument> SendJsonAsync(HttpMethod method, string relativePath, object body, string token, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        using var request = new HttpRequestMessage(method, Root + relativePath);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
+        if (!response.IsSuccessStatusCode)
+            throw new GmailReadException(response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized
+                ? "Gmail did not allow sending. Sign in again from Account setup to allow sending mail."
+                : response.StatusCode == System.Net.HttpStatusCode.BadRequest ? "Gmail rejected the message (check the recipients and attachments)."
+                : $"Gmail could not complete the request (HTTP {(int)response.StatusCode}).", response.StatusCode);
+        var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (text.Length > MaxResponseBytes) throw new GmailReadException("Gmail response exceeds the size limit.");
+        try { return JsonDocument.Parse(text.Length == 0 ? "{}" : text); }
+        catch (JsonException) { throw new GmailReadException("Gmail returned invalid JSON."); }
+    }
+
+    private static bool ValidAttachmentId(string? id) => id is { Length: >= 1 and <= 4096 } &&
+        id.All(c => c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' or '-' or '=' or '.');
+
     // ---- internals ----
 
     private async Task<string> VerifiedTokenAsync(CancellationToken ct)
@@ -291,7 +383,7 @@ public sealed class GmailMailbox
         var filename = OptionalString(part, "filename") ?? "";
         if (part.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.Object)
         {
-            if (filename.Length > 0) attachments.Add(new GmailAttachmentInfo(filename, mime, OptionalInt(body, "size") ?? 0));
+            if (filename.Length > 0) attachments.Add(new GmailAttachmentInfo(filename, mime, OptionalInt(body, "size") ?? 0, OptionalString(body, "attachmentId")));
             else if (body.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.String)
             {
                 if (mime == "text/html" && html is null) html = DecodeBody(data.GetString()!);
@@ -337,5 +429,5 @@ public sealed class GmailMailbox
 public sealed record GmailLabel(string Id, string Name, bool IsSystem, int? Total, int? Unread);
 public sealed record GmailSummary(string Id, string? ThreadId, string Subject, string From, string To, DateTimeOffset? Date, int? SizeBytes,
     bool IsUnread, bool IsStarred, bool IsDraft, bool HasAttachments, string Snippet);
-public sealed record GmailAttachmentInfo(string FileName, string MimeType, int SizeBytes);
-public sealed record GmailContent(string? Html, string? Text, IReadOnlyList<GmailAttachmentInfo> Attachments, IReadOnlyList<GmailHeader> Headers, string? Snippet);
+public sealed record GmailAttachmentInfo(string FileName, string MimeType, int SizeBytes, string? AttachmentId = null);
+public sealed record GmailContent(string? Html, string? Text, IReadOnlyList<GmailAttachmentInfo> Attachments, IReadOnlyList<GmailHeader> Headers, string? Snippet, string? ThreadId = null);

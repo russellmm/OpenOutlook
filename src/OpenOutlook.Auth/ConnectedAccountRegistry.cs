@@ -10,6 +10,11 @@ public sealed record ConnectedAccount(OAuthProvider Provider, string AccountId, 
     public bool CanModifyGmail => Provider == OAuthProvider.Google &&
         RequestedScopes?.Any(s => s.Equals("https://www.googleapis.com/auth/gmail.modify", StringComparison.OrdinalIgnoreCase) ||
                                   s.Equals("https://mail.google.com/", StringComparison.OrdinalIgnoreCase)) == true;
+    /// <summary>Sending (and saving drafts) needs gmail.send / gmail.compose, or the full mail.google.com scope.</summary>
+    public bool CanSendGmail => Provider == OAuthProvider.Google &&
+        RequestedScopes?.Any(s => s.Equals("https://www.googleapis.com/auth/gmail.send", StringComparison.OrdinalIgnoreCase) ||
+                                  s.Equals("https://www.googleapis.com/auth/gmail.compose", StringComparison.OrdinalIgnoreCase) ||
+                                  s.Equals("https://mail.google.com/", StringComparison.OrdinalIgnoreCase)) == true;
     public bool CanWriteMicrosoftMail => Provider == OAuthProvider.MicrosoftConsumers &&
         RequestedScopes?.Contains("Mail.ReadWrite", StringComparer.OrdinalIgnoreCase) == true;
     public bool CanSendMicrosoftMail => CanWriteMicrosoftMail &&

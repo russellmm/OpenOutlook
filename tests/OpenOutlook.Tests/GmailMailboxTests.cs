@@ -91,7 +91,7 @@ public sealed class GmailMailboxTests
         var content = await Mailbox(client).GetContentAsync("m1");
         Assert.Equal(html, content.Html);
         Assert.Equal("plain body", content.Text);
-        Assert.Equal(new GmailAttachmentInfo("report.pdf", "application/pdf", 1234), Assert.Single(content.Attachments));
+        Assert.Equal(new GmailAttachmentInfo("report.pdf", "application/pdf", 1234, "x"), Assert.Single(content.Attachments));
         Assert.Contains(content.Headers, h => h.Name == "Subject" && h.Value == "S");
     }
 

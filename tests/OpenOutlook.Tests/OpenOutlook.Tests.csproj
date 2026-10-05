@@ -23,6 +23,7 @@
     <ProjectReference Include="../../src/OpenOutlook.Providers.Microsoft/OpenOutlook.Providers.Microsoft.csproj" />
     <ProjectReference Include="../../src/OpenOutlook.Providers.Google/OpenOutlook.Providers.Google.csproj" />
     <ProjectReference Include="../../src/OpenOutlook.Auth/OpenOutlook.Auth.csproj" />
+    <ProjectReference Include="../../src/OpenOutlook.Mirror/OpenOutlook.Mirror.csproj" />
     <ProjectReference Include="../../src/OpenOutlook.Desktop/OpenOutlook.Desktop.csproj" />
   </ItemGroup>
 

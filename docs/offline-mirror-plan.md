@@ -65,13 +65,20 @@ The engine writes Unicode PST only, and Outlook's OST is a PST with different he
 - Kill-the-process tests at every journal step; relocation tests on temp folders on both OSes; headless UI tests for the Data Files screen and location chooser.
 - `tools/MailSmoke` gains a `mirror` step for live accounts (read-only against the server unless `--write` is passed).
 
-## 9. Decisions needed from the owner
-1. **Format**: standard `.pst` (recommended, section 2) or invest in a true OST later?
-2. **Sidecar**: SQLite (recommended) or a plain JSON-lines file with no new dependency?
-3. **Gmail labels**: copy per label (IMAP-like, recommended) or a single "primary" folder per message?
-4. **Defaults**: mirror everything or the last 12 months? Maximum attachment size to mirror (suggest 25 MB)?
-5. Should mirroring be **on by default** for newly connected accounts, or opt-in from Data Files?
-6. Large mailbox expectations (message count) so the performance budget and batch sizes can be set.
+## 9. Decisions (owner, 2026-10-05)
+1. Format: standard `.pst` now; a true OST can be added later.
+2. Sync bookkeeping: SQLite.
+3. Gmail messages with several labels: a copy in each label folder (IMAP-like).
+4. Defaults: keep the last 12 months; attachments up to 25 MB.
+5. Mirroring is on by default for connected accounts.
+6. Size: about 100 messages per mailbox (small: no performance risk, batches can stay simple).
+
+## 9a. Finding: the engine cannot create a PST yet
+`opst_*` only edits an existing PST. Nothing in the C library, the C# wrapper or the Python tools writes a blank Unicode PST (header, NBT / BBT, AMap, message store, name-to-id map, root folder, standard folders). Without that the mirror has no file to start from. Options: (a) implement `opst_create` in the C engine, validated by SCANPST like every other rule (recommended: it is the same machinery, and it also gives "New archive file"); (b) ship a blank PST made once in Outlook as a template (needs a display-name / record-key rewrite so copies are unique). Phase 1 depends on one of them.
+
+## 9b. Progress
+- Phase 0 started: `src/OpenOutlook.Mirror` (settings with the defaults above, `MirrorLocations` for Windows / Linux default folders, per-account override, file-name safety, folder validation incl. free space, network, removable and cloud-sync warnings; `SyncStateStore` on SQLite with folders, messages, change tokens and the pending-change journal). 15 unit tests.
+- Not yet: Data Files screen, `MirrorStore` (needs a PST to open), sync adapters, journal replay.
 
 ## 10. Risks
 - Engine write cost on very large folders (mitigated by batching; Phase 1 measures it on the real mailbox).

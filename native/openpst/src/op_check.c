@@ -3,7 +3,10 @@
  *   tables   folder counts, parent links, contents rows vs messages
  *   idmap    ID-map records (node 0xC01) vs the ids in table rows
  *   xblocks  data-tree blocks: non-final blocks full, cbTotal consistent
- *   rowvers  PidTagLtpRowVer values unique store-wide and below dwUnique */
+ *   rowvers  PidTagLtpRowVer values unique store-wide and below dwUnique
+ *   subnodes attachment sizes (PR_ATTACH_SIZE = sum of the sizes of the attachment's property values) and the header counters of the
+ *            local NIDs used inside messages (attachment / LTP subnodes)            [found by repairing imported files with SCANPST]
+ *   rowcells contents-table rows carry the row-only cells Outlook writes (0x0E17 message status, 0x3013 per-row key) */
 #include "op_wr.h"
 
 #define NOMEM op_err(OPST_E_NOMEM, "out of memory")
@@ -407,6 +410,122 @@ static int check_rowvers(chk *c, ops *o, const tabvec *tabs) {
     return 0;
 }
 
+/* ---- messages: attachment sizes and local nid counters -------------------------------------------------------------------------------- */
+static unsigned fixed_pt_size(unsigned t) {
+    switch (t) {
+    case 2: return 2;
+    case 3: case 4: case 0xA: return 4;
+    case 0xB: return 1;
+    case 5: case 6: case 7: case 0x14: case 0x40: return 8;
+    default: return 0;
+    }
+}
+
+typedef struct { const hblocks *hp; const wsubs *subs; opw *w; uint64_t sum; int64_t stored; int64_t method; } pcsz;
+static int pcsz_cb(void *ctx, const uint8_t *k, const uint8_t *v) {
+    pcsz *c = (pcsz *)ctx;
+    unsigned pid = op_u16(k), pt = op_u16(v);
+    uint32_t hn = op_u32(v + 2);
+    unsigned fs = fixed_pt_size(pt);
+    if (fs && fs <= 4) {                                   /* value stored inline in the record: its own size counts */
+        c->sum += fs;
+        if (pid == 0x0E20) c->stored = (int32_t)hn;
+        if (pid == 0x3705) c->method = (int32_t)hn;
+        return 0;
+    }
+    if (!hn) return 0;
+    if (hn & 0x1F) {                                       /* value in a subnode of the attachment */
+        for (size_t i = 0; i < c->subs->n; i++) {
+            if (c->subs->e[i].nid != hn) continue;
+            hblocks hb;
+            if (opw_leaf_blocks(c->w, c->subs->e[i].bd, &hb) == 0) { for (size_t b = 0; b < hb.n; b++) c->sum += hb.b[b].n; hb_free(&hb); }
+            break;
+        }
+        return 0;
+    }
+    const uint8_t *d; size_t n;
+    if (heap_get(c->hp, hn, &d, &n) == 0) c->sum += n;
+    return 0;
+}
+
+typedef struct { opw *w; chk *c; uint32_t mx[32]; int probs; size_t atts, msgs, skipped; } subctx;
+static int sub_msg_cb(void *ctx, const uint8_t *e) {
+    subctx *x = (subctx *)ctx;
+    uint32_t nid = (uint32_t)(op_u64(e) & 0xFFFFFFFFu);
+    uint64_t bs = op_u64(e + 16);
+    if ((nid & 0x1F) != 4 || !bs) return 0;
+    wsubs subs;
+    if (opw_subnodes(x->w, bs, &subs) != 0) { x->skipped++; return 0; }          /* multi-level subnode trees are not examined */
+    x->msgs++;
+    for (size_t i = 0; i < subs.n; i++) {
+        unsigned t = subs.e[i].nid & 0x1F;
+        uint32_t idx = subs.e[i].nid >> 5;
+        if (idx > x->mx[t]) x->mx[t] = idx;
+        if (t != 5) continue;
+        hblocks hp;
+        wsubs own = {0, 0};
+        if (opw_leaf_blocks(x->w, subs.e[i].bd, &hp) != 0) continue;
+        if (heap_is_heap(&hp) && heap_client(&hp) == 0xBC) {
+            if (subs.e[i].bs && opw_subnodes(x->w, subs.e[i].bs, &own) != 0) {      /* a multi-level subnode tree: its sizes are not summed here */
+                own.e = NULL; own.n = 0; x->skipped++; wsubs_free(&own); hb_free(&hp);
+                continue;
+            }
+            pcsz z = {&hp, &own, x->w, 0, -1, -1};
+            /* only by-value attachments (method 1): the size of an embedded message or OLE object includes storage that is not a property value */
+            if (heap_bth_walk(&hp, heap_root(&hp), NULL, NULL, pcsz_cb, &z) == 0 && z.method == 1) {
+                x->atts++;
+                if (z.stored >= 0 && (uint64_t)z.stored != z.sum)
+                    note(x->c, &x->probs, "  attachment 0x%x of message 0x%x: PR_ATTACH_SIZE %lld != %llu (the sum of its property value sizes)",
+                         subs.e[i].nid, nid, (long long)z.stored, (unsigned long long)z.sum);
+                else if (z.stored < 0)
+                    note(x->c, &x->probs, "  attachment 0x%x of message 0x%x: PR_ATTACH_SIZE is missing", subs.e[i].nid, nid);
+            }
+            wsubs_free(&own);
+        }
+        hb_free(&hp);
+    }
+    wsubs_free(&subs);
+    return 0;
+}
+static int check_subnodes(chk *c, opw *w) {
+    subctx x;
+    memset(&x, 0, sizeof x);
+    x.w = w; x.c = c;
+    int rc = bt_items(w, 1, sub_msg_cb, &x);
+    if (rc) return rc;
+    static const unsigned counted[2] = {5, 0x1F};          /* local attachment and LTP nids come from the header counters; the table nids (0x671, 0x692) are fixed */
+    for (int k = 0; k < 2; k++) {
+        unsigned t = counted[k];
+        uint32_t hv = op_u32(w->hdr + 44 + 4 * t);
+        if (x.mx[t] > hv) note(c, &x.probs, "  local nids of type 0x%02x: highest index in message subnodes %u (0x%x), header says %u   <-- below the highest NID in use", t, x.mx[t], x.mx[t], hv);
+    }
+    c->rep->subnode_problems += x.probs;
+    info(c, "subnodes: %zu messages with subnodes, %zu attachments, %d problems", x.msgs, x.atts, x.probs);
+    return 0;
+}
+
+/* ---- contents-table rows: the row-only cells ------------------------------------------------------------------------------------------- */
+static int check_rowcells(chk *c, ops *o, const tabvec *tabs) {
+    int probs = 0;
+    size_t rows = 0;
+    for (size_t ti = 0; ti < tabs->n; ti++) {
+        if ((tabs->v[ti] & 0x1F) != 0xE) continue;
+        tctx tc;
+        if (ed_load_tc(o->w, tabs->v[ti], &tc) != 0) continue;
+        int c17 = tc_col(&tc, 0x0E17), c30 = tc_col(&tc, 0x3013);
+        size_t miss = 0;
+        for (size_t r = 0; r < tc.nrows; r++) {
+            rows++;
+            if ((c17 >= 0 && !tc.rows[r].present[c17]) || (c30 >= 0 && !tc.rows[r].present[c30])) miss++;
+        }
+        if (miss) note(c, &probs, "  contents table 0x%x: %zu of %zu rows lack the row cells 0x0E17 / 0x3013 that Outlook writes (SCANPST adds them)", tabs->v[ti], miss, tc.nrows);
+        tc_free(&tc);
+    }
+    c->rep->rowcell_problems += probs;
+    info(c, "rowcells: %zu message rows, %d problems", rows, probs);
+    return 0;
+}
+
 int opst_check(opst *p, opst_check_report *rep, char *text, size_t text_cap) {
     if (!p || !rep) return op_err(OPST_E_ARG, "null argument");
     memset(rep, 0, sizeof *rep);
@@ -427,6 +546,8 @@ int opst_check(opst *p, opst_check_report *rep, char *text, size_t text_cap) {
     if (!rc) rc = check_idmap(&c, &o, &tabs);
     if (!rc) rc = check_xblocks(&c, o.w);
     if (!rc) rc = check_rowvers(&c, &o, &tabs);
+    if (!rc) rc = check_subnodes(&c, o.w);
+    if (!rc) rc = check_rowcells(&c, &o, &tabs);
     free(tabs.v);
     ops_end_ro(&o);
     if (text && text_cap) {

@@ -8,6 +8,8 @@
 #define NOMEM op_err(OPST_E_NOMEM, "out of memory")
 #define BIG_VALUE 3000u                       /* values larger than this live in a subnode, not in the property heap (heap items are limited to 3580 bytes) */
 
+static int test_hook(const char *name) { const char *e = getenv(name); return e && *e; }       /* defect-reproduction hooks for the tests */
+
 /* ---- small helpers ------------------------------------------------------------------------------------------------------------- */
 static int64_t now_filetime(void) { return (int64_t)time(NULL) * 10000000LL + 116444736000000000LL; }
 
@@ -38,7 +40,7 @@ typedef struct { wsub *e; size_t n, cap; size_t ext_bytes; } sublist;
 /* a new local NID of `type`, taken from the header's counter of that type like Outlook does (SCANPST compares every NID in the file with these counters) */
 static uint32_t next_local(opw *w, unsigned type) {
     uint32_t idx = op_u32(w->hdr + 44 + 4 * type) + 1;
-    wr32(w->hdr + 44 + 4 * type, idx);
+    if (!test_hook("OPST_TEST_BAD_NIDCOUNTER")) wr32(w->hdr + 44 + 4 * type, idx);      /* test hook: leave the counter behind, as the first version did */
     return (idx << 5) | type;
 }
 static void sublist_free(sublist *s) { free(s->e); memset(s, 0, sizeof *s); }
@@ -286,6 +288,7 @@ static int build_attachment(ops *o, const opst_import_attachment *a, int64_t now
     if (!rc) {
         size_t total = a->len;                                     /* the data, wherever it is stored */
         for (size_t i = 0; i < p.n; i++) if (p.p[i].pid != 0x3701) total += p.p[i].v.n;
+        if (test_hook("OPST_TEST_BAD_ATTSIZE")) total += 1024;          /* test hook: the first version padded the size */
         *size_out = (int32_t)total;
         rc = p_i32(&p, 0x0E20, *size_out);
     }
@@ -452,11 +455,11 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
         /* row-only cells Outlook writes for every message (found by running SCANPST's repair over imported files and diffing): the message
            status and a 16-byte per-row key. */
         uint8_t rkey[16];
-        if (!rc) rc = p_i32(&row, 0x0E17, 0);
+        if (!rc && !test_hook("OPST_TEST_NO_ROWCELLS")) rc = p_i32(&row, 0x0E17, 0);
         if (!rc) rc = op_random(rkey, 16);
         rkey[7] = (uint8_t)((rkey[7] & 0x0F) | 0x40);            /* a version-4 GUID, like Outlook's own */
         rkey[8] = (uint8_t)((rkey[8] & 0x3F) | 0x80);
-        if (!rc) rc = p_bin(&row, 0x3013, rkey, sizeof rkey);
+        if (!rc && !test_hook("OPST_TEST_NO_ROWCELLS")) rc = p_bin(&row, 0x3013, rkey, sizeof rkey);
         /* files that keep an ID map (node 0xC01, replication ids) register each message there and carry the id, change number and version
            history in the row, exactly as the copy path does */
         if (!rc && tc_col(dtc, 0x0E30) >= 0) {

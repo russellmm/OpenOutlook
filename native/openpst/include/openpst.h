@@ -304,6 +304,7 @@ typedef struct opst_fix_report {
     int32_t messages_not_indexed;    /* R3: messages missing from the message index (node 0xE01) */
     int32_t row_version_issues;      /* R4: duplicate / too high PidTagLtpRowVer values */
     int32_t nid_mark_issues;         /* R5: header NID high-water marks that are too low (sub-node types) */
+    int32_t rowcell_issues;          /* R6: contents-table rows without the row-only cells 0x0E17 / 0x3013 */
 } opst_fix_report;
 OPST_API int opst_fix(opst *p, int apply, opst_fix_report *report);
 
@@ -313,6 +314,7 @@ OPST_API int opst_fix(opst *p, int apply, opst_fix_report *report);
 typedef struct opst_check_report {
     int32_t problems;                /* total number of findings */
     int32_t refs_problems, nids_problems, tables_problems, idmap_problems, xblocks_problems, rowver_problems;
+    int32_t subnode_problems, rowcell_problems;   /* attachment sizes and local nid counters; row-only table cells */
 } opst_check_report;
 OPST_API int opst_check(opst *p, opst_check_report *report, char *text, size_t text_cap);
 

@@ -319,6 +319,84 @@ int main(void) {
     CHECK(findings(p) == base_findings);
     opst_close(p);
 
+    /* the checker catches the two defects SCANPST found in the first version of the importer (a padded PR_ATTACH_SIZE and nid counters that
+       were not advanced); the hooks only exist to reproduce them */
+    {
+        const char *tmp2 = "opst_write_test2.pst";
+        if (copy_file(src, tmp2)) {
+            opst *q;
+            CHECK(open_w(tmp2, &q) == 0);
+            if (q) {
+                int base2 = findings(q);
+                uint32_t dest = find_source_folder(q, 1);
+                static const uint8_t data[300] = {1, 2, 3};
+                opst_import_attachment at = {0};
+                at.filename = "x.bin"; at.data = data; at.len = sizeof data;
+                opst_import_msg m;
+                memset(&m, 0, sizeof m);
+                m.subject = "defect probe"; m.attachments = &at; m.nattachments = 1;
+                SETENV("OPST_TEST_BAD_ATTSIZE", "1");
+                CHECK(dest && opst_msg_import(q, dest, &m, NULL) == 0);
+                CHECK(findings(q) > base2);
+                SETENV("OPST_TEST_BAD_ATTSIZE", "");
+                opst_close(q);
+                remove(tmp2);
+                char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);
+            }
+        }
+        if (copy_file(src, tmp2)) {
+            opst *q;
+            CHECK(open_w(tmp2, &q) == 0);
+            if (q) {
+                int base2 = findings(q);
+                uint32_t dest = find_source_folder(q, 1);
+                static const uint8_t data[300] = {1, 2, 3};
+                opst_import_attachment at = {0};
+                at.filename = "x.bin"; at.data = data; at.len = sizeof data;
+                opst_import_msg m;
+                memset(&m, 0, sizeof m);
+                m.subject = "defect probe 2"; m.attachments = &at; m.nattachments = 1;
+                SETENV("OPST_TEST_BAD_NIDCOUNTER", "1");
+                CHECK(dest && opst_msg_import(q, dest, &m, NULL) == 0);
+                CHECK(findings(q) > base2);
+                SETENV("OPST_TEST_BAD_NIDCOUNTER", "");
+                opst_close(q);
+                remove(tmp2);
+                char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);
+            }
+        }
+    }
+    /* rows without the row-only cells: the checker finds them and the fixer (rule R6) adds them */
+    {
+        const char *tmp2 = "opst_write_test2.pst";
+        if (copy_file(src, tmp2)) {
+            opst *q;
+            CHECK(open_w(tmp2, &q) == 0);
+            if (q) {
+                int base2 = findings(q);
+                uint32_t dest = find_source_folder(q, 1);
+                opst_import_msg m;
+                memset(&m, 0, sizeof m);
+                m.subject = "row cells probe";
+                SETENV("OPST_TEST_NO_ROWCELLS", "1");
+                CHECK(dest && opst_msg_import(q, dest, &m, NULL) == 0);
+                SETENV("OPST_TEST_NO_ROWCELLS", "");
+                int after = findings(q);
+                opst_fix_report fr;
+                memset(&fr, 0, sizeof fr);
+                CHECK(opst_fix(q, 0, &fr) == 0);
+                int nfound = fr.rowcell_issues;
+                CHECK(after > base2 && nfound >= 1);                       /* both checker and fixer see it (a table may lack one of the two columns) */
+                CHECK(opst_fix(q, 1, &fr) == 0);
+                CHECK(findings(q) == base2);
+                memset(&fr, 0, sizeof fr);
+                CHECK(opst_fix(q, 0, &fr) == 0 && fr.rowcell_issues == 0);
+                opst_close(q);
+                remove(tmp2);
+                char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);
+            }
+        }
+    }
     remove(tmp);
     printf("%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;

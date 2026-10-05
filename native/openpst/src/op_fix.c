@@ -7,6 +7,8 @@
  *              (found by comparing the properties of messages with the same conversation topic); the highest-NID field is raised
  *   R4 rowver  duplicate PidTagLtpRowVer values (0x67F3) get new store-wide unique values; dwUnique is kept above all of them
  *   R5 hwm     header NID high-water marks of types 5 and 31 must cover every node and sub-node
+ *   R6 rowcells contents-table rows lack the row-only cells 0x0E17 (message status, 0) and 0x3013 (a per-row GUID) that Outlook writes; they
+ *              are added (found by repairing files whose messages were imported by this library with SCANPST)
  * "no known issues" is not "SCANPST will find nothing". */
 #include "op_wr.h"
 
@@ -403,9 +405,35 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
             }
         }
     }
+    /* ---- R6 ---- */
+    for (size_t ti = 0; ti < tabs.n && !rc; ti++) {
+        if ((tabs.v[ti] & 0x1F) != 0xE) continue;
+        tctx tc;
+        if (ed_load_tc(w, tabs.v[ti], &tc) != 0) continue;
+        int c17 = tc_col(&tc, 0x0E17), c30 = tc_col(&tc, 0x3013), dirty = 0;
+        for (size_t r = 0; r < tc.nrows && !rc; r++) {
+            if (c17 >= 0 && !tc.rows[r].present[c17]) {
+                rep->rowcell_issues++;
+                if (apply) { uint8_t z[4] = {0, 0, 0, 0}; rc = tc_set_cell(&tc, r, c17, z, 4); dirty = 1; }
+            }
+            if (!rc && c30 >= 0 && !tc.rows[r].present[c30]) {
+                rep->rowcell_issues++;
+                if (apply) {
+                    uint8_t g[16];
+                    rc = op_random(g, 16);
+                    g[7] = (uint8_t)((g[7] & 0x0F) | 0x40);            /* a version-4 GUID, like Outlook's own */
+                    g[8] = (uint8_t)((g[8] & 0x3F) | 0x80);
+                    if (!rc) rc = tc_set_cell(&tc, r, c30, g, 16);
+                    dirty = 1;
+                }
+            }
+        }
+        if (!rc && dirty) rc = ed_store_tc(w, tabs.v[ti], &tc);
+        tc_free(&tc);
+    }
     free(tabs.v);
     bb_free(&blob);
-    if (!rc && apply && (rep->rows_without_ids || rep->dangling_idmap || rep->messages_not_indexed || rep->row_version_issues || rep->nid_mark_issues)) {
+    if (!rc && apply && (rep->rowcell_issues || rep->rows_without_ids || rep->dangling_idmap || rep->messages_not_indexed || rep->row_version_issues || rep->nid_mark_issues)) {
         rc = ops_note_max_message_nid(o, NULL, 0, NULL, 0, NULL, 0);
     }
     return rc;

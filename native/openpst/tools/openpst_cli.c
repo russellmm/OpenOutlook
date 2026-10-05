@@ -323,8 +323,8 @@ int main(int argc, char **argv) {
         if (rc) { fprintf(stderr, "openpst: %s\n", opst_last_error()); ret = 1; }
         else {
             printf("R1 rows without ID cells          %d\nR2 ID-map records of deleted nodes %d\nR3 messages missing from the index %d\n"
-                   "R4 duplicate / high row versions   %d\nR5 NID high-water marks too low    %d\n",
-                   fr.rows_without_ids, fr.dangling_idmap, fr.messages_not_indexed, fr.row_version_issues, fr.nid_mark_issues);
+                   "R4 duplicate / high row versions   %d\nR5 NID high-water marks too low    %d\nR6 rows without row cells          %d\n",
+                   fr.rows_without_ids, fr.dangling_idmap, fr.messages_not_indexed, fr.row_version_issues, fr.nid_mark_issues, fr.rowcell_issues);
             if (apply) printf("applied\n");
         }
     } else if (!strcmp(cmd, "check")) {

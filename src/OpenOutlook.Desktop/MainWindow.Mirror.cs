@@ -29,6 +29,33 @@ public partial class MainWindow
     private DispatcherTimer? _mirrorWatchTimer;
     private readonly Dictionary<string, DateTime> _mirrorLastSync = new(StringComparer.Ordinal);       // when each copy was last synchronised (UTC)
     private bool _mirrorBusy;
+    private readonly Dictionary<string, MirrorInfo> _mirrorInfo = new(StringComparer.Ordinal);       // what the status bar indicator shows, per account
+
+    /// <summary>Redraws the sync indicator at the right of the status bar from what is known about every mailbox copy.</summary>
+    private void UpdateSyncIndicator()
+    {
+        var state = SyncIndicatorState.Compute(_mirrorInfo.Values.ToList(), DateTime.UtcNow);
+        SyncIndicator.IsVisible = state.Visible;
+        SyncIndicatorGlyph.Text = state.Glyph;
+        SyncIndicatorText.Text = state.Text;
+        SyncIndicatorGlyph.Foreground = state.Phase switch
+        {
+            SyncPhase.Problem => Avalonia.Media.Brushes.Firebrick,
+            SyncPhase.Offline => Avalonia.Media.Brushes.DarkOrange,
+            SyncPhase.Idle => Avalonia.Media.Brushes.SeaGreen,
+            _ => Avalonia.Media.Brushes.SteelBlue
+        };
+        ToolTip.SetTip(SyncIndicator, state.Tooltip);
+    }
+
+    private void SyncIndicatorClicked(object? sender, RoutedEventArgs e) => ShowAccountSettings(dataFiles: true);
+
+    private void SetMirrorInfo(ConnectedAccount account, SyncPhase phase, string detail = "", int waiting = 0, bool keepLast = true)
+    {
+        _mirrorInfo.TryGetValue(account.AccountId, out var old);
+        _mirrorInfo[account.AccountId] = new MirrorInfo(account.DisplayAddress, phase, detail, keepLast ? old?.LastSyncUtc : null, waiting);
+        UpdateSyncIndicator();
+    }
 
     private void StartMirrorScheduler()
     {
@@ -44,6 +71,7 @@ public partial class MainWindow
         _mirrorWatchTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _mirrorWatchTimer.Tick += async (_, _) =>
         {
+            UpdateSyncIndicator();                                                    // keeps "3 min ago" current
             if (_mirrorBusy) return;
             foreach (var account in MirrorAccounts())
             {
@@ -74,14 +102,15 @@ public partial class MainWindow
         if (_mirrorBusy) { if (manual) StatusText.Text = "A mailbox copy is already being updated."; return; }
         var settings = _mirrorSettings.Load();
         var options = settings.For(account.AccountId);
-        if (!options.Enabled) { _mirrorStatus[account.AccountId] = "turned off"; return; }
+        if (!options.Enabled) { _mirrorStatus[account.AccountId] = "turned off"; SetMirrorInfo(account, SyncPhase.Off); return; }
         _mirrorBusy = true;
         var path = MirrorLocations.PstPathFor(settings, account.AccountId, account.DisplayAddress);
         try
         {
             var check = MirrorLocations.Check(System.IO.Path.GetDirectoryName(path)!);
-            if (!check.Ok) { _mirrorStatus[account.AccountId] = "the folder cannot be used: " + check.Problem; StatusText.Text = $"The mailbox copy folder of {account.DisplayAddress} cannot be used ({check.Problem}). Change it in Data Files."; return; }
+            if (!check.Ok) { _mirrorStatus[account.AccountId] = "the folder cannot be used: " + check.Problem; SetMirrorInfo(account, SyncPhase.Problem, "the folder cannot be used: " + check.Problem); StatusText.Text = $"The mailbox copy folder of {account.DisplayAddress} cannot be used ({check.Problem}). Change it in Data Files."; return; }
             _mirrorStatus[account.AccountId] = "synchronising…";
+            SetMirrorInfo(account, SyncPhase.Syncing);
             StatusText.Text = $"Updating the copy of {account.DisplayAddress}…";
             var created = !File.Exists(path);
             if (created)
@@ -119,6 +148,7 @@ public partial class MainWindow
             {
                 var waiting = result.PendingLocal > 0 ? $"; {result.PendingLocal} change{(result.PendingLocal == 1 ? "" : "s")} waiting to be sent" : "";
                 _mirrorStatus[account.AccountId] = "working offline" + waiting;
+                SetMirrorInfo(account, SyncPhase.Offline, waiting: result.PendingLocal);
                 StatusText.Text = $"Working offline: the copy of {account.DisplayAddress} stays available{waiting}.";
                 return;
             }
@@ -133,18 +163,23 @@ public partial class MainWindow
             if (result.PendingLocal > 0) notes.Add($"{result.PendingLocal} change{(result.PendingLocal == 1 ? "" : "s")} not sent yet");
             if (result.LocalOnly > 0) notes.Add($"{result.LocalOnly} message{(result.LocalOnly == 1 ? "" : "s")} only in this copy");
             _mirrorStatus[account.AccountId] = notes.Count > 0 ? summary + "; " + string.Join("; ", notes) : summary;
+            _mirrorInfo[account.AccountId] = new MirrorInfo(account.DisplayAddress, result.Failed > 0 ? SyncPhase.Problem : SyncPhase.Idle,
+                result.Failed > 0 ? $"{result.Failed} problem{(result.Failed == 1 ? "" : "s")} ({result.FirstError})" : (notes.Count > 0 ? string.Join("; ", notes) : ""), DateTime.UtcNow, result.PendingLocal);
+            UpdateSyncIndicator();
             StatusText.Text = $"Mailbox copy of {account.DisplayAddress}: {summary}.";
         }
         catch (Exception e) when ((e is GraphMailException { StatusCode: System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden }) ||
                                   (e is OpenOutlook.Providers.Google.GmailReadException { StatusCode: System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden }))
         {
             _mirrorStatus[account.AccountId] = "sign in again from Account Settings";
+            SetMirrorInfo(account, SyncPhase.Problem, "sign in again from Account Settings");
             StatusText.Text = $"The mailbox copy of {account.DisplayAddress} could not be updated: sign in again from Account Settings.";
         }
         catch (Exception e)
         {
             AppLog.Error("mirror", e, "mailbox copy sync failed");
             _mirrorStatus[account.AccountId] = "could not synchronise: " + e.Message;
+            SetMirrorInfo(account, SyncPhase.Problem, "could not synchronise: " + e.Message);
             StatusText.Text = $"The mailbox copy of {account.DisplayAddress} could not be updated: {e.Message}";
         }
         finally

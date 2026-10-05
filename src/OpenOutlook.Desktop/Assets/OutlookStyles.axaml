@@ -261,6 +261,26 @@
       <Setter Property="Padding" Value="0" />
     </Style>
 
+    <!-- Plain lists (Account Settings) -->
+    <Style Selector="ListBox.olList">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.olList > ListBoxItem">
+      <Setter Property="Padding" Value="4,0" />
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="Foreground" Value="{DynamicResource OlText}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlHairline}" />
+    </Style>
+    <Style Selector="ListBox.olList > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+    <Style Selector="ListBox.olList > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource OlSelected}" />
+    </Style>
+
     <!-- Folder tree -->
     <Style Selector="TreeView.olFolders">
       <Setter Property="Background" Value="Transparent" />

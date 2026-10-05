@@ -40,11 +40,17 @@
 
     <!-- Status bar -->
     <Border DockPanel.Dock="Bottom" Name="StatusBand" Background="{DynamicResource OlChrome}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,1,0,0" Height="26">
-      <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="10,0">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="10,0">
         <TextBlock Grid.Column="0" Name="StatusText" Text="Ready. Open a PST or select a connected account." FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
         <TextBlock Grid.Column="1" Name="MessageCountText" Text="" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" Margin="16,0,0,0" />
         <TextBlock Grid.Column="2" Name="ConnectionText" Text="" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" Margin="16,0,0,0" />
-        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="16,0,0,0">
+        <Button Grid.Column="3" Name="SyncIndicator" IsVisible="False" Background="Transparent" BorderThickness="0" Padding="8,0" Margin="12,0,0,0" VerticalAlignment="Stretch" Click="SyncIndicatorClicked">
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <TextBlock Name="SyncIndicatorGlyph" FontSize="13" VerticalAlignment="Center" />
+            <TextBlock Name="SyncIndicatorText" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="16,0,0,0">
           <Slider Name="ZoomSlider" Width="90" Minimum="50" Maximum="200" Value="100" IsVisible="False" VerticalAlignment="Center" ToolTip.Tip="Message zoom" />
           <TextBlock Name="ZoomText" Text="" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" />
         </StackPanel>

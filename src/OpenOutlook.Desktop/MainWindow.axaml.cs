@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<(string Path, uint FolderNid), IReadOnlyList<MailSummary>> _folderCache = new();
     private readonly Queue<(string Path, uint FolderNid)> _folderCacheOrder = new();
     private readonly SemaphoreSlim _readerGate = new(1, 1);
+    internal IReadOnlyList<RibbonResponsiveLayout> RibbonLayouts { get; private set; } = [];
     private readonly ConnectedAccountRegistry _accountRegistry = new();
     private readonly ISecretStore _secrets = SecretStores.CreateDefault();
     private readonly HttpClient _tokenHttp = DesktopOAuth.CreateHttpClient();
@@ -89,6 +90,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        RibbonLayouts = RibbonResponsiveLayout.AttachAll(RibbonTabs);                // groups collapse into drop-down buttons as the window narrows
         RemoveWebViewIfUnsupported();
         LoadOAuthClientConfigurationAtStartup();
         _appearance = _appearanceStore.Load();

@@ -690,6 +690,77 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public void The_status_bar_shows_the_state_of_the_mailbox_copies()
+    {
+        var window = new MainWindow { Width = 1300, Height = 700 };
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var indicator = window.FindControl<Button>("SyncIndicator")!;
+            Assert.False(indicator.IsVisible);                                                  // no mailbox copy yet
+            var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "acc1", "me@hotmail.test", "c", DateTimeOffset.UtcNow, ["Mail.ReadWrite"]);
+            CallVoid(window, "SetMirrorInfo", account, SyncPhase.Syncing, "", 0, true);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(indicator.IsVisible);
+            Assert.Equal("Syncing…", window.FindControl<TextBlock>("SyncIndicatorText")!.Text);
+            CallVoid(window, "SetMirrorInfo", account, SyncPhase.Offline, "", 3, true);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Offline · 3 changes waiting", window.FindControl<TextBlock>("SyncIndicatorText")!.Text);
+            Assert.Contains("me@hotmail.test", ToolTip.GetTip(indicator)!.ToString());
+        }
+        finally { window.Close(); }
+    }
+
+    /// <summary>The caption of a toolbar button: its text, or the text next to its icon.</summary>
+    private static string Cap(Button b) => b.Content is string s ? s : (b.Content as Control)?.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).FirstOrDefault() ?? (b.Content as StackPanel)?.Children.OfType<TextBlock>().Select(t => t.Text).FirstOrDefault() ?? "";
+
+    [AvaloniaFact]
+    public async Task The_ribbon_squeezes_its_groups_into_drop_downs_as_the_window_narrows()
+    {
+        var window = new MainWindow { Width = 2600, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var home = window.RibbonLayouts[0];
+            async Task Settle() { for (var i = 0; i < 6; i++) { await Task.Delay(30); Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); } }
+            await Settle();
+            // the Home tab is selected: at a wide window nothing is collapsed
+            var tabs = window.FindControl<TabControl>("RibbonTabs")!;
+            var homeIndex = tabs.Items.OfType<TabItem>().ToList().FindIndex(t => t.Header?.ToString() == "Home");
+            var layout = window.RibbonLayouts.First(l => l.GroupCount > 8);
+            Assert.True(layout.CollapsedGroups.Count == 0, layout.Describe());
+            Shot(window, "13-ribbon-wide");
+
+            window.Width = 1300;
+            await Settle();
+            Assert.NotEmpty(layout.CollapsedGroups);                                            // the groups on the right are collapsed into buttons
+            Assert.True(!layout.CollapsedGroups.Contains("New"), layout.Describe());                              // the first group stays open as long as it can
+            Shot(window, "14-ribbon-narrow");
+
+            window.Width = 520;
+            await Settle();
+            var narrowest = layout.CollapsedGroups.Count;
+            Assert.True(narrowest > 3);
+            Shot(window, "15-ribbon-narrowest");
+
+            // a collapsed group's drop-down still holds its real buttons
+            var button = window.GetVisualDescendants().OfType<Button>().First(b => ToolTip.GetTip(b)?.ToString() == layout.CollapsedGroups[0]);
+            var inner = (StackPanel)button.Content!;
+            var glyph = inner.Children[0];
+            Assert.True(glyph is ContentControl { Template: not null } && glyph.Bounds.Width > 10 && glyph.Bounds.Height > 10 && glyph.GetVisualDescendants().Count() > 3, $"{glyph.GetType().Name} {glyph.Bounds} visual={string.Join(",", glyph.GetVisualDescendants().Select(v => v.GetType().Name))} visible={glyph.IsVisible} opacity={glyph.Opacity}");
+            Assert.NotNull(button.Flyout);
+            Assert.IsType<Border>(((Flyout)button.Flyout!).Content);
+
+            window.Width = 2600;
+            await Settle();
+            Assert.Empty(layout.CollapsedGroups);                                               // widening brings everything back
+            Assert.Contains(window.GetVisualDescendants().OfType<Button>(), b => (b.Tag as string) == "reply");     // and the real Reply button is in the ribbon again
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public void Account_settings_dialog_has_email_and_data_files_tabs_like_outlook()
     {
         var host = new FakeHost();
@@ -702,23 +773,23 @@ public sealed class MainWindowHeadlessTests
             var tabs = window.GetVisualDescendants().OfType<TabControl>().Single();
             Assert.Equal(["Email", "Data Files"], tabs.Items.OfType<TabItem>().Select(t => t.Header?.ToString()).ToArray());
             var buttons = window.GetVisualDescendants().OfType<Button>().ToList();
-            string TipOf(string caption) => ToolTip.GetTip(buttons.First(b => b.Content?.ToString() == caption))?.ToString() ?? "";
+            string TipOf(string caption) => ToolTip.GetTip(buttons.First(b => Cap(b) == caption))?.ToString() ?? "";
             Assert.Equal("To be implemented", TipOf("Change…"));
-            Assert.Equal("To be implemented", TipOf("▲"));
 
             // the first account is the default until another is chosen
             var emailList = window.GetVisualDescendants().OfType<ListBox>().First();
             var items = emailList.Items.OfType<ListBoxItem>().ToList();
             Assert.Equal(2, items.Count);
-            Assert.Contains(items[0].GetVisualDescendants().OfType<TextBlock>(), t => t.Text!.StartsWith("✔") && t.Text.Contains("me@hotmail.test"));
+            Assert.Contains(items[0].GetVisualDescendants().OfType<Border>(), b => (b.Tag as string) == "default");        // the drawn check mark
+            Assert.Contains(items[0].GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "me@hotmail.test");
             emailList.SelectedItem = items[1];
             Dispatcher.UIThread.RunJobs();
-            buttons.First(b => b.Content?.ToString() == "Set as Default").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            buttons.First(b => Cap(b) == "Set as Default").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
             Assert.Equal("acc2", host.Default);
             emailList = window.GetVisualDescendants().OfType<ListBox>().First();
-            Assert.Contains(emailList.Items.OfType<ListBoxItem>().ElementAt(1).GetVisualDescendants().OfType<TextBlock>(), t => t.Text!.StartsWith("✔"));
-            buttons.First(b => b.Content?.ToString() == "Repair…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Contains(emailList.Items.OfType<ListBoxItem>().ElementAt(1).GetVisualDescendants().OfType<Border>(), b => (b.Tag as string) == "default");
+            buttons.First(b => Cap(b) == "Repair…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Contains("repair acc2", host.Log);
 
             // the data files tab lists mailbox copies and opened PST files with Outlook's toolbar
@@ -732,12 +803,12 @@ public sealed class MainWindowHeadlessTests
             Assert.Contains("Not available yet", texts);                                           // Gmail copies come later
             Assert.Contains(texts, t => t == "700 MB");
             foreach (var caption in new[] { "Add…", "Settings…", "Set as Default", "Remove", "Open File Location…" })
-                Assert.Contains(buttons, b => b.Content?.ToString() == caption);
-            Assert.Equal("To be implemented", TipOf("Set as Default"));
+                Assert.Contains(buttons, b => Cap(b) == caption);
+            Assert.Equal("To be implemented", ToolTip.GetTip(buttons.Last(b => Cap(b) == "Set as Default"))?.ToString());
             var fileList = window.GetVisualDescendants().OfType<ListBox>().Last();
             fileList.SelectedItem = fileList.Items.OfType<ListBoxItem>().Last();
             Dispatcher.UIThread.RunJobs();
-            buttons.First(b => b.Content?.ToString() == "Open File Location…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            buttons.First(b => Cap(b) == "Open File Location…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Contains("open D:/email/rmarrash_outlook.pst", host.Log);
         }
         finally { window.Close(); }
@@ -760,7 +831,7 @@ public sealed class MainWindowHeadlessTests
             Assert.Equal(3, host.Saved.Last().S.KeepMonths);
             Assert.True(host.Saved.Last().S.Enabled);
             Assert.Equal(25L << 20, host.Saved.Last().S.MaxAttachmentBytes);                      // the default attachment limit
-            dialog.GetVisualDescendants().OfType<Button>().First(b => b.Content?.ToString() == "Sync now").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            dialog.GetVisualDescendants().OfType<Button>().First(b => Cap(b) == "Sync now").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
             Assert.Contains("sync acc1", host.Log);
         }

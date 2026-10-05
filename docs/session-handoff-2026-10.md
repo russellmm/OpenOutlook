@@ -55,3 +55,9 @@ Still to do / verify:
 
 ## Bundled headless Chromium (2026-10-05)
 The reading pane lays HTML out with a headless browser. Edge 154 stopped starting headless on the owner's PC (every layout fell back to a basic preview), so the application now ships Google's chrome-headless-shell (Chrome for Testing, version pinned in `scripts/chromium-version.txt`, downloaded by `scripts/fetch_chromium.py` to `third_party/chromium/<platform>`). The Desktop project copies it to a `chromium` folder beside the exe at build and publish (about 270 MB unpacked on Windows). `BrowserHtmlRenderer` tries it first, then any installed Edge / Chrome / Chromium (the one that starts is remembered), and `BrowserProcessTracker` closes browsers left behind by earlier runs. Linux uses the `linux64` build the same way (not yet tested on a Linux desktop). Without the folder (a plain `dotnet build` before fetching) the installed browsers are used as before.
+
+## Look and feel (2026-10-05)
+- Responsive main ribbon (`RibbonResponsiveLayout.cs`): groups collapse from the right into drop-down buttons as the window narrows.
+- Sync indicator in the status bar (`SyncIndicatorModel.cs`, `MainWindow.Mirror.cs`): worst state wins; click opens Account Settings > Data Files.
+- Account Settings / Data Files themed like the app (`AccountSettingsWindow.cs`, `ListBox.olList` in `Assets/OutlookStyles.axaml`): icon toolbar, drawn default check mark, status dots.
+- Next: other look-and-feel items (compose icons, reading pane buttons, folder icons, dark mode), then the Linux side.

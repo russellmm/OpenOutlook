@@ -58,3 +58,5 @@ test-archive.pst
 # Native build output
 native/**/build-*/
 src/OpenOutlook.Desktop/runtimes/
+__pycache__/
+*.pyc

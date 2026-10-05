@@ -398,7 +398,7 @@
         <Border Grid.Row="1" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,6,0,0" ClipToBounds="True">
           <Grid Name="PaneGrid" ColumnDefinitions="2*,5,5*,5,4*">
             <!-- Folder pane -->
-            <DockPanel Grid.Column="0" Margin="0,0,0,0">
+            <DockPanel Grid.Column="0" Margin="0,0,0,0" ClipToBounds="True">
               <Border DockPanel.Dock="Top" Background="{DynamicResource OlGroupBand}" BorderBrush="{DynamicResource OlHairline}" BorderThickness="0,0,0,1" Height="26">
                 <Grid ColumnDefinitions="*,Auto" Margin="8,0">
                   <TextBlock Text="Folders" FontSize="11" Foreground="{DynamicResource OlTextTertiary}" VerticalAlignment="Center" />
@@ -410,7 +410,7 @@
             <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" Width="5" />
 
             <!-- Message list -->
-            <DockPanel Grid.Column="2">
+            <DockPanel Grid.Column="2" ClipToBounds="True">
               <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,8,10,4">
                 <TextBlock Grid.Column="0" Name="ListFilterAll" Text="All" FontSize="15" Foreground="{DynamicResource OlAccent}" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="1" Name="ListFilterUnread" Text="Unread" FontSize="15" Foreground="{DynamicResource OlTextSecondary}" Margin="16,0,0,0" VerticalAlignment="Center" Cursor="Hand" PointerPressed="ListFilterUnreadPressed" ToolTip.Tip="Show only unread messages — planned" />

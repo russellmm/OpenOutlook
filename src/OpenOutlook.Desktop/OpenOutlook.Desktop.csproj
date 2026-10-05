@@ -25,4 +25,7 @@
   <ItemGroup Condition="Exists('openoutlook-oauth.json')">
     <None Include="openoutlook-oauth.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenOutlook.HeadlessTests" />
+  </ItemGroup>
 </Project>

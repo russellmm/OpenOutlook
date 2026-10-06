@@ -99,5 +99,5 @@ Both hotmail mirror PSTs (Windows and Linux) scanned MINOR with one invisible fi
 - Result on the owner's PC: a hotmail mirror rebuilt with the published build scans NO_ERRORS in SCANPST.
 - Not done: a checker/fixer rule that detects and shares the trees in existing files (a mirror made before this change must be recreated), and a Linux run of the matrix.
 - A truncation of display-to is NOT a fix: SCANPST regenerates it from the recipient table ("row doesn't match sub-object").
-- Separate real bug: messages with Bcc recipients give ERRORS.
+- Separate real bug (documented, to be worked later): messages with Bcc recipients give a real SCANPST ERRORS result. Reproduce: `MailSmoke mkbigrecips <dir> 1:bccL` then `run_scanpst2.ps1`; see `docs/handoff-linux-bare-metal-2026-10-06.md` section 6 for the suspects.
 - Tools: `MailSmoke mkmulti|mkbigrecips|touchall|openpath|openeditable`.

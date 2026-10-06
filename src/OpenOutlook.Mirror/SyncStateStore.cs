@@ -112,6 +112,16 @@ public sealed class SyncStateStore : IDisposable
         return list;
     }
 
+    /// <summary>A copy of a message in any folder (Gmail keeps one per label); only entries that have a message in the PST count.</summary>
+    public MirrorMessageState? FindMessage(string remoteId)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "SELECT remote_id,folder_remote_id,pst_nid,change_key,is_read,flagged FROM message WHERE remote_id=$r AND pst_nid<>0 LIMIT 1";
+        cmd.Parameters.AddWithValue("$r", remoteId);
+        using var r = cmd.ExecuteReader();
+        return r.Read() ? new(r.GetString(0), r.GetString(1), (uint)r.GetInt64(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetInt32(4) != 0, r.GetInt32(5) != 0) : null;
+    }
+
     public MirrorMessageState? GetMessage(string remoteId, string folderRemoteId) => MessagesIn(folderRemoteId).FirstOrDefault(m => m.RemoteId == remoteId);
 
     public void DeleteMessage(string remoteId, string folderRemoteId) =>

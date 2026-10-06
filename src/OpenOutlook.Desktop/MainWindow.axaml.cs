@@ -350,7 +350,7 @@ public sealed partial class MainWindow : Window
         if (_graphRows is null) return;
         var row = _graphRows.FirstOrDefault(item => item.Message.Id == selected.Id);
         if (row is null) return;
-        if (_activeMicrosoftAccount is { } changedAccount) NoteLocalChange(changedAccount, selected.Id, action);
+        if ((_activeGmailFolder?.Account ?? _activeMicrosoftAccount) is { } changedAccount) NoteLocalChange(changedAccount, selected.Id, action);
         if (action is "delete" or "archive")
         {
             if (ReferenceEquals(MessageList.SelectedItem, row))
@@ -1164,11 +1164,22 @@ public sealed partial class MainWindow : Window
         try
         {
             var cancellationToken = _onlineCancellation?.Token ?? CancellationToken.None;
+            GraphMessageBody? body;
+            var localBody = await ReadLocalBodyAsync(account, message.Id);                    // the copy holds the body: no network wait
             var token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
-            var body = await new GraphInboxReader(_graphHttp, account.AccountId)
-                .GetMessageBodyAsync(token, message.Id, cancellationToken);
+            if (localBody is not null) body = localBody.Html is not null ? new GraphMessageBody("html", localBody.Html) : new GraphMessageBody("text", localBody.Text);
+            else body = await new GraphInboxReader(_graphHttp, account.AccountId).GetMessageBodyAsync(token, message.Id, cancellationToken);
             IReadOnlyList<GraphAttachment> attachments = [];
             var attachmentError = false;
+            if (localBody is not null && message.HasAttachments)
+            {
+                // show the message now; the attachment chips follow when the server has answered
+                if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
+                ShowGraphMessageHeader(message);
+                AttachmentText.Text = "Loading attachments…";
+                SetMessageBody(localBody.Html, localBody.Html is null ? localBody.Text : "");
+                StatusText.Text = "Microsoft message opened from the local copy.";
+            }
             if (message.HasAttachments)
             {
                 try
@@ -1180,20 +1191,13 @@ public sealed partial class MainWindow : Window
                 catch (Exception) { attachmentError = true; }
             }
             if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
-            _activeGraphMessage = message;
+            var bodyShown = localBody is not null && message.HasAttachments;               // already on screen; only the attachments are left to add
+            if (!bodyShown) ShowGraphMessageHeader(message);
             _currentGraphAttachments = attachments;
             ExportAttachmentButton.IsEnabled = attachments.Any(CanSaveGraphAttachment);
-            SubjectText.Text = message.Subject;
-            SenderText.Text = message.From;
-            RecipientText.Text = $"To   {message.To}";
-            MessageDateText.Text = message.Received?.ToLocalTime().ToString("ddd M/d/yyyy h:mm tt") ?? "";
-            SetReaderAvatar(message.From);
-            ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible =
-                ReaderForwardButton.IsVisible = true;
             AttachmentText.Text = attachmentError ? "Could not load attachments. Select this message again to retry." : "";
             ShowAttachmentChips(attachments.Select(a => (a.Name, (long)a.SizeBytes, CanSaveGraphAttachment(a))));
-            HideFormatBar();
-            SetMessageBody(string.Equals(body?.ContentType, "html", StringComparison.OrdinalIgnoreCase)
+            if (!bodyShown) SetMessageBody(string.Equals(body?.ContentType, "html", StringComparison.OrdinalIgnoreCase)
                     ? body?.Content : null,
                 string.Equals(body?.ContentType, "text", StringComparison.OrdinalIgnoreCase)
                     ? body?.Content : body is null ? message.Preview : "");
@@ -1204,6 +1208,19 @@ public sealed partial class MainWindow : Window
         catch (OperationCanceledException) { }
         catch (Exception)
         { if (version == _messageVersion) StatusText.Text = "Could not read this message. Try signing in again from Account setup."; }
+    }
+
+    /// <summary>The header block of the reading pane for a connected-mailbox message (everything but the body and the attachment chips).</summary>
+    private void ShowGraphMessageHeader(GraphInboxMessage message)
+    {
+        _activeGraphMessage = message;
+        SubjectText.Text = message.Subject;
+        SenderText.Text = message.From;
+        RecipientText.Text = $"To   {message.To}";
+        MessageDateText.Text = message.Received?.ToLocalTime().ToString("ddd M/d/yyyy h:mm tt") ?? "";
+        SetReaderAvatar(message.From);
+        ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible = ReaderForwardButton.IsVisible = true;
+        HideFormatBar();
     }
 
     private async void ExportMessageClicked(object? sender, RoutedEventArgs e)

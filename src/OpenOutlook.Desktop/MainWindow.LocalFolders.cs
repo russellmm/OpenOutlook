@@ -19,11 +19,7 @@ public partial class MainWindow
     {
         try
         {
-            var settings = _mirrorSettings.Load();
-            if (!settings.For(account.AccountId).Enabled) return null;
-            var path = MirrorLocations.PstPathFor(settings, account.AccountId, account.DisplayAddress);
-            var statePath = System.IO.Path.ChangeExtension(path, ".sync");
-            if (!File.Exists(statePath) || !_stores.TryGetValue(path, out var store)) return null;
+            if (LocalCopyOf(account) is not var (store, statePath)) return null;
             var prefix = account.AccountId + "|";
             var hidden = _localRemoved.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).Select(k => k[prefix.Length..]).ToHashSet(StringComparer.Ordinal);
             var flags = _localFlags.Where(k => k.Key.StartsWith(prefix, StringComparison.Ordinal)).ToDictionary(k => k.Key[prefix.Length..], k => k.Value, StringComparer.Ordinal);
@@ -48,6 +44,37 @@ public partial class MainWindow
             AppLog.Error("local-folder", e, "the local copy could not be read; asking the server");
             return null;
         }
+    }
+
+    /// <summary>The open local copy of an account and the path of its sync state, or null when mirroring is off or the copy is not open.</summary>
+    private (PstCore.IPstEngine Store, string StatePath)? LocalCopyOf(ConnectedAccount account)
+    {
+        var settings = _mirrorSettings.Load();
+        if (!settings.For(account.AccountId).Enabled) return null;
+        var path = MirrorLocations.PstPathFor(settings, account.AccountId, account.DisplayAddress);
+        var statePath = System.IO.Path.ChangeExtension(path, ".sync");
+        return File.Exists(statePath) && _stores.TryGetValue(path, out var store) ? (store, statePath) : null;
+    }
+
+    /// <summary>The body of a message from the local copy (no network request), or null when the copy does not hold it.</summary>
+    private async Task<LocalBody?> ReadLocalBodyAsync(ConnectedAccount account, string messageId)
+    {
+        try
+        {
+            if (LocalCopyOf(account) is not var (store, statePath)) return null;
+            await _readerGate.WaitAsync();
+            try
+            {
+                return await Task.Run(() =>
+                {
+                    using var state = new SyncStateStore(statePath);
+                    return LocalMailboxReader.ReadBody(store, state, messageId);
+                });
+            }
+            finally { _readerGate.Release(); }
+        }
+        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException or PstCore.PstException or Microsoft.Data.Sqlite.SqliteException)
+        { return null; }
     }
 
     /// <summary>A change made here that the server accepted: remembered until the next sync brings the copy up to date, so the list is right at once.</summary>
@@ -85,6 +112,8 @@ public partial class MainWindow
         _localRemoved.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
         foreach (var k in _localReads.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList()) _localReads.Remove(k);
         foreach (var k in _localFlags.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList()) _localFlags.Remove(k);
-        if (changed && _activeMicrosoftFolder?.Account.AccountId == account.AccountId) _ = RefreshMicrosoftFolderAsync();
+        if (!changed) return;
+        if (_activeMicrosoftFolder?.Account.AccountId == account.AccountId) _ = RefreshMicrosoftFolderAsync();
+        else if (_activeGmailFolder is { } gmail && gmail.Account.AccountId == account.AccountId) _ = ReloadGmailFolderAsync(gmail);
     }
 }

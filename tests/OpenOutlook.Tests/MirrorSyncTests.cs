@@ -86,6 +86,9 @@ public sealed class MirrorSyncTests : IDisposable
             Assert.Equal(1, inbox.UnreadCount);
             Assert.True(inbox.Messages.Single(m => m.Id == "m2").IsFlagged);
             Assert.Equal("In a subfolder", LocalMailboxReader.Read(pst, state, "proj")!.Messages.Single().Subject);
+            var body = LocalMailboxReader.ReadBody(pst, state, "m1")!;                         // the body comes from the copy too
+            Assert.Contains("Hello from m1", body.Text);
+            Assert.Null(LocalMailboxReader.ReadBody(pst, state, "no-such-message"));
             // a message deleted or flagged on this computer shows that at once, before the next sync
             var overlay = LocalMailboxReader.Read(pst, state, "inbox", new HashSet<string> { "m1" }, new Dictionary<string, bool> { ["m2"] = false })!;
             Assert.Equal(["m2"], overlay.Messages.Select(m => m.Id));

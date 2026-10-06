@@ -85,6 +85,17 @@ public partial class MainWindow
         StatusText.Text = $"Loading {selection.Name}…";
         try
         {
+            if (await ReadLocalFolderAsync(selection.Account, selection.LabelId) is { } local)        // the local copy answers without a network request
+            {
+                if (version != _folderVersion || cancellationToken.IsCancellationRequested) return;
+                _currentGraphMessages = local.Messages;
+                if (_graphRows is null) ShowGraphMessages(local.Messages);
+                else ReconcileGraphMessages(local.Messages);
+                StatusText.Text = $"{local.Messages.Count} newest of {local.TotalCount:N0} {selection.Name} messages · {selection.Account.DisplayAddress} · local copy";
+                if (!_mirrorLastSync.TryGetValue(selection.Account.AccountId, out var lastSync) || DateTime.UtcNow - lastSync > TimeSpan.FromSeconds(90))
+                    RequestMirrorSyncSoon(selection.Account);
+                return;
+            }
             var box = GetGmailMailbox(selection.Account);
             var ids = await box.ListLabelMessageIdsAsync(selection.LabelId, 100, cancellationToken);
             var summaries = await box.GetSummariesAsync(ids, cancellationToken);
@@ -202,8 +213,32 @@ public partial class MainWindow
         try
         {
             var cancellationToken = _onlineCancellation?.Token ?? CancellationToken.None;
+            var localBody = await ReadLocalBodyAsync(folder.Account, message.Id);
+            if (localBody is not null)
+            {
+                // the copy holds the body: show it at once; attachments and reply data follow from Gmail
+                if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
+                _activeGraphMessage = null;
+                _currentGraphAttachments = null;
+                _gmailContent = null;
+                _gmailContentMessageId = null;
+                SubjectText.Text = message.Subject;
+                SenderText.Text = message.From;
+                RecipientText.Text = $"To   {message.To}";
+                MessageDateText.Text = message.Received?.ToLocalTime().ToString("ddd M/d/yyyy h:mm tt") ?? "";
+                SetReaderAvatar(message.From);
+                ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible = ReaderForwardButton.IsVisible = false;      // back once Gmail has answered
+                AttachmentText.Text = message.HasAttachments ? "Loading attachments…" : "";
+                ShowAttachmentChips(null);
+                HideFormatBar();
+                SetMessageBody(localBody.Html, localBody.Html is null ? localBody.Text : "");
+                StatusText.Text = "Gmail message opened from the local copy.";
+                if (!message.IsRead && folder.Account.CanModifyGmail && _options.ReadPaneMarkOnView)
+                    _ = MarkGmailReadAfterViewingAsync(folder, message, version);
+            }
             var content = await GetGmailMailbox(folder.Account).GetContentAsync(message.Id, cancellationToken);
             if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
+            var bodyShown = localBody is not null;
             _activeGraphMessage = null;
             _currentGraphAttachments = null;
             _gmailContent = content;
@@ -217,6 +252,7 @@ public partial class MainWindow
             ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible = ReaderForwardButton.IsVisible = folder.Account.CanSendGmail;   // reading-pane Reply / Reply All / Forward
             AttachmentText.Text = "";
             ShowAttachmentChips(content.Attachments.Select(a => (a.FileName, (long)a.SizeBytes, CanSaveGmailAttachment(a))));
+            if (bodyShown) return;                                                          // the body is already on screen, from the copy
             HideFormatBar();
             SetMessageBody(content.Html, content.Html is null ? (content.Text ?? content.Snippet ?? "") : "");
             StatusText.Text = _richRuns is null ? "Gmail message opened." : "Gmail message opened in rich-text view.";

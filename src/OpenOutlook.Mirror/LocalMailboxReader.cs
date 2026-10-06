@@ -7,8 +7,24 @@ namespace OpenOutlook.Mirror;
 /// Reads a folder of a mailbox from its local copy (the PST plus the sync state) in the shape the live Graph list uses, so the folder list can show
 /// instantly without a network request. Message ids are the server ids, so reading, flagging and deleting still go to the server.
 /// </summary>
+/// <summary>A message body read from the local copy: HTML when the message has one, else plain text.</summary>
+public sealed record LocalBody(string? Html, string Text);
+
 public static class LocalMailboxReader
 {
+    /// <summary>The body of a message from the local copy, or null when the copy does not hold it (not downloaded, too large, removed): the caller then asks the server.</summary>
+    public static LocalBody? ReadBody(IPstEngine store, SyncStateStore state, string remoteId)
+    {
+        if (state.FindMessage(remoteId) is not { } known || state.GetFolder(known.FolderRemoteId) is not { } folder) return null;
+        try
+        {
+            var message = store.OpenMessage(new MailSummary { Nid = known.PstNid, FolderNid = folder.PstNid });
+            var html = message.HasHtml || message.HasRtf ? message.BodyHtml : "";
+            return string.IsNullOrWhiteSpace(html) && string.IsNullOrWhiteSpace(message.BodyText) ? null : new LocalBody(string.IsNullOrWhiteSpace(html) ? null : html, message.BodyText);
+        }
+        catch (PstException) { return null; }
+    }
+
     /// <summary>Messages shown for one folder (newest first); the copy holds more, this keeps the list responsive.</summary>
     public const int MaxMessages = 500;
 

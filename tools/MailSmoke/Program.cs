@@ -251,6 +251,12 @@ if (step == "localfolder" && mAcc is not null)
         var folderId = id == "junkemail" ? st.Folders().FirstOrDefault(f => pst.FindFolder(f.PstNid)?.Name == "Junk Email")?.RemoteId ?? id : id;
         var page = OpenOutlook.Mirror.LocalMailboxReader.Read(pst, st, folderId);
         Console.WriteLine($"{id}: {swo.ElapsedMilliseconds} ms, {(page is null ? "no local answer" : page.TotalCount + " messages, " + page.UnreadCount + " unread, showing " + page.Messages.Count)}");
+        foreach (var m in page?.Messages.Take(3) ?? [])
+        {
+            swo.Restart();
+            var body = OpenOutlook.Mirror.LocalMailboxReader.ReadBody(pst, st, m.Id);
+            Console.WriteLine($"   body of \"{(m.Subject.Length > 40 ? m.Subject[..40] : m.Subject)}\": {swo.ElapsedMilliseconds} ms, {(body is null ? "not in the copy" : (body.Html is null ? "text " : "html ") + (body.Html ?? body.Text).Length + " chars")}");
+        }
     }
     return 0;
 }

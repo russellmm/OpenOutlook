@@ -24,6 +24,7 @@ public interface IAccountSettingsHost
     Task<string?> RemoveAccountAsync(ConnectedAccount account, Window owner);
     IReadOnlyList<DataFileRow> DataFiles();
     Task<string?> AddDataFileAsync(Window owner);
+    Task<string?> AddDataFileByPathAsync(string path);
     Task<string?> RemoveDataFileAsync(DataFileRow row);
     void OpenFileLocation(DataFileRow row);
     Task SyncNowAsync(string accountId);
@@ -228,6 +229,14 @@ public sealed partial class AccountSettingsWindow : Window
         var settings = Tool("Settings…", "OlIconGear", "How much of the mailbox the copy keeps, sync, and where the file is");
         var makeDefault = Tool("Set as Default", "OlIconFlag", "", planned: true);
         var remove = Tool("Remove", "OlIconDetach", "Close the file in OpenOutlook (the file itself is never deleted)");
+        var byPath = Tool("Add by path…", "OlIconOpenArchive", "Type or paste a path such as X:\\email\\old.pst or \\\\server\\share\\mail.pst, for a network drive the file dialog does not show");
+        byPath.Click += async (_, _) =>
+        {
+            var path = await AskForPathAsync();
+            if (string.IsNullOrWhiteSpace(path)) return;
+            _note.Text = await _host.AddDataFileByPathAsync(path) ?? "";
+            Refresh();
+        };
         var open = Tool("Open File Location…", "OlIconOpenExport", "Show the folder that contains the data file");
         add.Click += async (_, _) => { var note = await _host.AddDataFileAsync(this); if (note is not null) _note.Text = note; Refresh(); };
         settings.Click += async (_, _) => await ShowSettingsAsync();
@@ -247,10 +256,35 @@ public sealed partial class AccountSettingsWindow : Window
             TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(6, 8, 6, 6), Foreground = Themed.Brush("OlTextSecondary", Brushes.Gray)
         };
         var dock = new DockPanel { Margin = new Thickness(4, 6) };
-        var toolbar = Toolbar(add, settings, makeDefault, remove, open);
+        var toolbar = Toolbar(add, byPath, settings, makeDefault, remove, open);
         DockPanel.SetDock(toolbar, Dock.Top); DockPanel.SetDock(hint, Dock.Top);
         dock.Children.Add(toolbar); dock.Children.Add(hint); dock.Children.Add(Frame(Header(FileColumns), _fileList));
         return dock;
+    }
+
+    /// <summary>A one-line prompt for a file path; returns null when cancelled.</summary>
+    private async Task<string?> AskForPathAsync()
+    {
+        var box = new TextBox { Watermark = "X:\\email\\archive.pst   or   \\\\server\\share\\archive.pst", MinWidth = 520 };
+        var ok = new Button { Content = "Open", IsDefault = true, Padding = new Thickness(22, 5) };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, Padding = new Thickness(22, 5) };
+        var dialog = new Window
+        {
+            Title = "Add a data file by path", SizeToContent = SizeToContent.WidthAndHeight, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Themed.Brush("OlCard", Brushes.White), CanResize = false
+        };
+        ok.Click += (_, _) => dialog.Close(box.Text);
+        cancel.Click += (_, _) => dialog.Close(null);
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(20), Spacing = 10,
+            Children =
+            {
+                new TextBlock { Text = "Path of the .pst file (network drives and \\\\server\\share paths work):", FontSize = 13 }, box,
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { ok, cancel } }
+            }
+        };
+        return await dialog.ShowDialog<string?>(this);
     }
 
     private DataFileRow? SelectedFile() => (_fileList.SelectedItem as ListBoxItem)?.Tag as DataFileRow;

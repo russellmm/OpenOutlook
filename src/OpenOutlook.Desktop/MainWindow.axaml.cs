@@ -193,6 +193,7 @@ public sealed partial class MainWindow : Window
                 var folders = BrowserProcessTracker.DeleteStaleProfiles();
                 if (folders > 0) AppLog.Note("reader", $"removed {folders} browser profile folder(s) left behind by an earlier run");
             });
+            if (IsElevated()) WarnAboutElevation();
             StartMirrorScheduler();                                  // the local copies of connected mailboxes
             _ = WarmUpMicrosoftAsync();                             // token and connection ready before the first click
             StartJunkScheduler();                                   // silent Junk Cleaner runs

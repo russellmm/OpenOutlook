@@ -22,7 +22,8 @@ install -m 644 LICENSE "$stage/opt/openoutlook/LICENSE"
 install -m 644 src/OpenOutlook.Desktop/Assets/openoutlook-512.png "$stage/usr/share/icons/hicolor/512x512/apps/openoutlook.png"
 install -m 644 src/OpenOutlook.Desktop/Assets/openoutlook.png "$stage/usr/share/icons/hicolor/256x256/apps/openoutlook.png"
 install -m 644 packaging/openoutlook.desktop "$stage/usr/share/applications/openoutlook.desktop"
-printf '#!/bin/sh\nexec /opt/openoutlook/OpenOutlook.Desktop "$@"\n' > "$stage/usr/bin/openoutlook"
+# EGL_LOG_LEVEL=fatal: WSLg and some VMs have no DRI3, and Mesa then prints two harmless warnings on every start
+printf '#!/bin/sh\nexport EGL_LOG_LEVEL=fatal\nexec /opt/openoutlook/OpenOutlook.Desktop "$@"\n' > "$stage/usr/bin/openoutlook"
 chmod 755 "$stage/usr/bin/openoutlook"
 
 # Depends: what the bundled browser needs (its own list, from Chrome for Testing) plus the keyring and file-opening helpers

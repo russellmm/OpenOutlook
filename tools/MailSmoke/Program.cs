@@ -290,6 +290,21 @@ if (step == "gmailtiming" && gBox is not null)
     return 0;
 }
 
+if (step == "openpath")
+{
+    // opens one PST read-only from any path (a mapped drive or a UNC share) and counts its folders: MailSmoke openpath <file>
+    var target = args[1];
+    var swp = System.Diagnostics.Stopwatch.StartNew();
+    Console.WriteLine($"path: {target}; exists={File.Exists(target)}; full path={Path.GetFullPath(target)}");
+    try
+    {
+        using var pst = OpenOutlook.PstNative.PstEngineFactory.Open(target, false);
+        Console.WriteLine($"opened in {swp.ElapsedMilliseconds} ms: {pst.AllFolders().Count()} folders, writable={pst.CanWrite}");
+    }
+    catch (Exception e) { Console.WriteLine("open failed: " + e.GetType().Name + ": " + e.Message); }
+    return 0;
+}
+
 if (step == "gmailsync" && gBox is not null)
 {
     // times a normal synchronisation pass of the real Gmail mailbox copy (the same work the app does after a change); close OpenOutlook first

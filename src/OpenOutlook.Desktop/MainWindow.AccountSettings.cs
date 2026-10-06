@@ -244,6 +244,18 @@ public partial class MainWindow
                 if (file.TryGetLocalPath() is { } p && await w.OpenArchiveAsync(System.IO.Path.GetFullPath(p))) added++;
             return added == 0 ? null : $"{added} data file{(added == 1 ? "" : "s")} added to the folder list.";
         }
+        public async Task<string?> AddDataFileByPathAsync(string path)
+        {
+            path = path.Trim().Trim('"');
+            string full;
+            try { full = System.IO.Path.GetFullPath(path); }
+            catch (Exception e) when (e is ArgumentException or NotSupportedException or System.IO.PathTooLongException) { return "That is not a valid path."; }
+            if (!File.Exists(full))
+                return OperatingSystem.IsWindows() && MainWindow.IsElevated() && full.Length > 1 && full[1] == ':'
+                    ? $"{full} was not found. OpenOutlook is running as administrator, and Windows hides mapped network drives from administrator programs: start it normally, or use the \\\\server\\share form of the path."
+                    : $"{full} was not found. Check the path (and that the network drive is connected).";
+            return await w.OpenArchiveAsync(full) ? $"{System.IO.Path.GetFileName(full)} added to the folder list." : "The file could not be opened as a data file.";
+        }
         public async Task<string?> RemoveDataFileAsync(DataFileRow row)
         {
             if (row.IsMirror)

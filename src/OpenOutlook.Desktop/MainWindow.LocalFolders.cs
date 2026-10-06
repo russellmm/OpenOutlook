@@ -47,6 +47,20 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>True when the program runs as administrator (an elevated token). Windows keeps mapped network drives per token, so an elevated program does not see the ones made in a normal session.</summary>
+    internal static bool IsElevated()
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try { return new System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent()).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator); }
+        catch (Exception) { return false; }
+    }
+
+    private void WarnAboutElevation()
+    {
+        AppLog.Note("startup", "running as administrator: mapped network drives are not visible to elevated programs");
+        StatusText.Text = "OpenOutlook is running as administrator, so Windows hides your mapped network drives (X:, Y:…). Start it normally, or open files by their \\\\server\\share path (Account Settings > Data Files > Add by path).";
+    }
+
     /// <summary>The open local copy of an account and the path of its sync state, or null when mirroring is off or the copy is not open.</summary>
     private (PstCore.IPstEngine Store, string StatePath)? LocalCopyOf(ConnectedAccount account)
     {

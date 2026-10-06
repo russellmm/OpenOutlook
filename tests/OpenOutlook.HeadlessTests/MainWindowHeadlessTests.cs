@@ -717,6 +717,7 @@ public sealed class MainWindowHeadlessTests
             new("rmarrash_outlook", "D:/email/rmarrash_outlook.pst", "Outlook data file", 700 * 1024 * 1024, "editable")
         ];
         public Task<string?> AddDataFileAsync(Window owner) { Log.Add("adddata"); return Task.FromResult<string?>(null); }
+        public Task<string?> AddDataFileByPathAsync(string path) { Log.Add("addbypath " + path); return Task.FromResult<string?>("added"); }
         public Task<string?> RemoveDataFileAsync(DataFileRow row) { Log.Add("removedata " + row.Name); return Task.FromResult<string?>("closed"); }
         public void OpenFileLocation(DataFileRow row) => Log.Add("open " + row.Path);
         public Task SyncNowAsync(string accountId) { Log.Add("sync " + accountId); return Task.CompletedTask; }
@@ -880,7 +881,7 @@ public sealed class MainWindowHeadlessTests
             Assert.Contains("C:/mail/me@hotmail.test.pst", texts);
             Assert.Contains("Not available yet", texts);                                           // Gmail copies come later
             Assert.Contains(texts, t => t == "700 MB");
-            foreach (var caption in new[] { "Add…", "Settings…", "Set as Default", "Remove", "Open File Location…" })
+            foreach (var caption in new[] { "Add…", "Add by path…", "Settings…", "Set as Default", "Remove", "Open File Location…" })
                 Assert.Contains(buttons, b => Cap(b) == caption);
             Assert.Equal("To be implemented", ToolTip.GetTip(buttons.Last(b => Cap(b) == "Set as Default"))?.ToString());
             var fileList = window.GetVisualDescendants().OfType<ListBox>().Last();

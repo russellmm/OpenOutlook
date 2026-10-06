@@ -141,6 +141,7 @@ public sealed partial class MainWindow : Window
             _embeddedNavigation?.TrySetResult(true);
         };
         GroupByDateCheck.IsCheckedChanged += GroupByDateChanged;
+        GroupByDateCheck.IsCheckedChanged += (_, _) => UpdateArrangeChip();
         // The status-bar zoom control and the reading pane's own zoom buttons drive one value.
         ZoomSlider.PropertyChanged += (_, e) =>
         {
@@ -928,6 +929,7 @@ public sealed partial class MainWindow : Window
         try { MessageList.ItemsSource = view; RefreshItemCount(); MessageList.SelectedItem = null; }
         finally { _updatingMessageList = false; }
         TrackReadingPaneItem(); // leaving the previous folder's open item closes it out for read-tracking
+        UpdateArrangeChip();
     }
 
     private void ReconcileGraphMessages(IReadOnlyList<GraphInboxMessage> messages)
@@ -1064,6 +1066,7 @@ public sealed partial class MainWindow : Window
         }
         finally { _updatingMessageList = false; }
         TrackReadingPaneItem(); // leaving the previous folder's open item closes it out for read-tracking
+        UpdateArrangeChip();
     }
 
     private void GroupByDateChanged(object? sender, RoutedEventArgs e)
@@ -1080,6 +1083,7 @@ public sealed partial class MainWindow : Window
 
     private void MessageListSorting(object? sender, DataGridColumnEventArgs e)
     {
+        Dispatcher.UIThread.Post(UpdateArrangeChip);                                         // after the grid has applied the sort
         // Sorting by Received keeps the date sections: the order flips inside them and the sections themselves follow (oldest first when ascending).
         if (e.Column is DataGridColumn { SortMemberPath: "ReceivedSort" } && _groupPath is null) return;
         if (_groupPath is not null && MessageList.ItemsSource is DataGridCollectionView fieldView)

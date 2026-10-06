@@ -160,6 +160,40 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Arrange_by_chip_follows_the_arrangement_and_the_menu_choices_group_and_sort()
+    {
+        var fixture = Fixture();
+        if (fixture is null) return;
+        var (window, copy) = await OpenFixtureAsync(fixture);
+        try
+        {
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            var chip = window.FindControl<Button>("ArrangeByButton")!;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Contains("By date", (string)chip.Content!);                                  // the default is the date sections
+            window.ArrangeMessageListBy(1);                                                     // From: grouped by sender and ordered by it
+            Dispatcher.UIThread.RunJobs();
+            var view = (Avalonia.Collections.DataGridCollectionView)list.ItemsSource!;
+            Assert.Equal("FromDisplay", view.GroupDescriptions.OfType<Avalonia.Collections.DataGridPathGroupDescription>().Single().PropertyName);
+            Assert.Equal("FromSort", view.SortDescriptions[0].PropertyPath);
+            Assert.Contains("By from", (string)chip.Content!);
+            window.ArrangeMessageListBy(4);                                                     // Size cannot be grouped: ordered only
+            Dispatcher.UIThread.RunJobs();
+            view = (Avalonia.Collections.DataGridCollectionView)list.ItemsSource!;
+            Assert.Empty(view.GroupDescriptions);
+            Assert.Equal("SizeBytes", view.SortDescriptions[0].PropertyPath);
+            Assert.Contains("By size", (string)chip.Content!);
+            window.ArrangeMessageListBy(3);                                                     // back to the date sections
+            Dispatcher.UIThread.RunJobs();
+            view = (Avalonia.Collections.DataGridCollectionView)list.ItemsSource!;
+            Assert.Single(view.GroupDescriptions);
+            Assert.Empty(view.SortDescriptions);
+            Assert.Contains("By date", (string)chip.Content!);
+        }
+        finally { window.Close(); Cleanup(copy); }
+    }
+
+    [AvaloniaFact]
     public async Task Space_bar_pages_the_message_then_moves_to_the_next_one()
     {
         var fixture = Fixture();

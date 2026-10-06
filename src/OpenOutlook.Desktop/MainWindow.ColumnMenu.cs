@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Collections;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.VisualTree;
@@ -73,6 +74,7 @@ public partial class MainWindow
         view.SortDescriptions.Clear();
         view.SortDescriptions.Add(DataGridSortDescription.FromPath(path, ascending ? ListSortDirection.Ascending : ListSortDirection.Descending));
         StatusText.Text = $"Arranged by {ColumnNames[column]}, {(ascending ? "ascending" : "descending")}.";
+        UpdateArrangeChip();
     }
 
     private void ReverseMessageSort()
@@ -130,5 +132,90 @@ public partial class MainWindow
         if (_currentMessages is not null) ShowMessages(_currentMessages);
         else if (_currentGraphMessages is not null) ShowGraphMessages(_currentGraphMessages);
         StatusText.Text = $"Grouped by {ColumnNames[column]}.";
+        UpdateArrangeChip();
+    }
+
+    // The "By date" chip above the list: the field the list is arranged by, with the same choices as the column-header menu.
+    private static readonly int[] ArrangeOrder = [3, 1, 2, 4, 5, 0, 6];                 // Date, From, Subject, Size, Importance, Attachments, Flag
+
+    /// <summary>The column the list is arranged by: the group field, else the date sections, else the first sort, else the date.</summary>
+    private int ArrangedColumn()
+    {
+        if (_groupPath is not null) return Math.Max(Array.IndexOf(GroupPaths, _groupPath), 0);
+        if (GroupByDateCheck.IsChecked == true) return 3;
+        if (MessageList.ItemsSource is DataGridCollectionView { SortDescriptions.Count: > 0 } view)
+        {
+            var sorted = Array.IndexOf(SortPaths, view.SortDescriptions[0].PropertyPath);
+            if (sorted >= 0) return sorted;
+        }
+        return 3;
+    }
+
+    private static string ArrangeName(int column) => column == 3 ? "date" : column == 0 ? "attachments" : ColumnNames[column].ToLowerInvariant();
+
+    private void UpdateArrangeChip() => ArrangeByButton.Content = $"By {ArrangeName(ArrangedColumn())} \u25be";
+
+    private void ArrangeByClicked(object? sender, RoutedEventArgs e)
+    {
+        var current = ArrangedColumn();
+        var flyout = new MenuFlyout();
+        foreach (var column in ArrangeOrder)
+        {
+            var index = column;
+            var item = new MenuItem
+            {
+                Header = column == 3 ? "Date" : column == 0 ? "Attachments" : ColumnNames[column],
+                ToggleType = MenuItemToggleType.Radio, IsChecked = column == current
+            };
+            item.Click += (_, _) => ArrangeMessageListBy(index);
+            flyout.Items.Add(item);
+        }
+        flyout.Items.Add(new Separator());
+        var reverse = new MenuItem { Header = "Reverse Sort" };
+        reverse.Click += (_, _) => { ReverseMessageSort(); UpdateArrangeChip(); };
+        flyout.Items.Add(reverse);
+        var grouped = new MenuItem
+        {
+            Header = "Show in Groups", ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = MessageList.ItemsSource is DataGridCollectionView { GroupDescriptions.Count: > 0 },
+            IsEnabled = GroupPaths[current] is not null
+        };
+        grouped.Click += (_, _) => ToggleListGroups(current);
+        flyout.Items.Add(grouped);
+        flyout.Placement = PlacementMode.BottomEdgeAlignedRight;                            // stays over the message list, not the reading pane
+        flyout.ShowAt((Control)sender!);
+    }
+
+    /// <summary>Chooses the field the list is arranged by: grouped and ordered by it where it can be grouped (Size is only ordered).</summary>
+    internal void ArrangeMessageListBy(int column)
+    {
+        if (GroupPaths[column] is not null) GroupMessageListBy(column);
+        else
+        {
+            _groupPath = null;
+            _suppressGroupToggle = true;
+            try { GroupByDateCheck.IsChecked = false; }
+            finally { _suppressGroupToggle = false; }
+            Interlocked.Increment(ref _messageVersion);
+            ClearReader();
+            if (_currentMessages is not null) ShowMessages(_currentMessages);
+            else if (_currentGraphMessages is not null) ShowGraphMessages(_currentGraphMessages);
+        }
+        if (column != 3) SortMessageList(column, !NewestFirst[column]);                   // the date keeps its default newest-first sections
+        UpdateArrangeChip();
+    }
+
+    private void ToggleListGroups(int column)
+    {
+        if (MessageList.ItemsSource is DataGridCollectionView { GroupDescriptions.Count: > 0 } view)
+        {
+            view.GroupDescriptions.Clear();
+            _groupPath = null;
+            _suppressGroupToggle = true;
+            try { GroupByDateCheck.IsChecked = false; }
+            finally { _suppressGroupToggle = false; }
+            UpdateArrangeChip();
+        }
+        else GroupMessageListBy(column);
     }
 }

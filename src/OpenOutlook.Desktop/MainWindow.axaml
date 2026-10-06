@@ -25,7 +25,7 @@
         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="6" VerticalAlignment="Center">
           <TextBox Name="ArchiveSearchBox" Classes="olSearch" Width="430" Watermark="Search" KeyDown="SearchBoxKeyDown" />
           <Button Name="ArchiveSearchButton" Classes="olRail" Width="30" Height="30" Click="SearchClicked" ToolTip.Tip="Search the selected folder (Enter also works)">
-            <ContentControl Template="{StaticResource OlIconSearch}" Width="16" Height="16" />
+            <Viewbox Width="22" Height="22"><ContentControl Template="{StaticResource OlIconSearch}" Width="32" Height="32" /></Viewbox>
           </Button>
         </StackPanel>
         <Border Grid.Column="2" Name="AccountAvatar" Width="26" Height="26" CornerRadius="13" Background="#5A6B7C" VerticalAlignment="Center" ToolTip.Tip="Accounts">
@@ -50,8 +50,10 @@
             <TextBlock Name="SyncIndicatorText" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
-        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="16,0,0,0">
-          <Slider Name="ZoomSlider" Width="90" Minimum="50" Maximum="200" Value="100" IsVisible="False" VerticalAlignment="Center" ToolTip.Tip="Message zoom" />
+        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="16,0,0,0">
+          <Slider Name="ZoomSlider" Classes="statusZoom" Width="90" Height="14" MinHeight="0" Minimum="50" Maximum="200" Value="100" IsVisible="False" VerticalAlignment="Center" ToolTip.Tip="Message zoom">
+            <Slider.Resources><x:Double x:Key="SliderHorizontalHeight">14</x:Double></Slider.Resources>
+          </Slider>
           <TextBlock Name="ZoomText" Text="" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" VerticalAlignment="Center" />
         </StackPanel>
       </Grid>
@@ -420,7 +422,8 @@
               <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,8,10,4">
                 <TextBlock Grid.Column="0" Name="ListFilterAll" Text="All" FontSize="15" Foreground="{DynamicResource OlAccent}" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="1" Name="ListFilterUnread" Text="Unread" FontSize="15" Foreground="{DynamicResource OlTextSecondary}" Margin="16,0,0,0" VerticalAlignment="Center" Cursor="Hand" PointerPressed="ListFilterUnreadPressed" ToolTip.Tip="Show only unread messages — planned" />
-                <CheckBox Grid.Column="3" Name="GroupByDateCheck" Classes="olChip" Content="By date ▾" IsChecked="True" VerticalAlignment="Center" />
+                <CheckBox Name="GroupByDateCheck" IsChecked="True" IsVisible="False" />   <!-- state holder: date sections on/off; the chip below is the user-facing control -->
+                <Button Grid.Column="3" Name="ArrangeByButton" Classes="olChip" Content="By date ▾" VerticalAlignment="Center" Click="ArrangeByClicked" ToolTip.Tip="Arrange the list by a field" />
               </Grid>
               <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource OlHairline}" />
               <DataGrid Name="MessageList" Classes="olList" SelectionMode="Extended" SelectionChanged="MessageSelected" Sorting="MessageListSorting"

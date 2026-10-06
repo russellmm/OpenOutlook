@@ -481,8 +481,11 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private string? _lastOpenError;                                 // why the last OpenArchiveAsync failed (shown by Account Settings, which hides the status bar)
+
     private async Task<bool> OpenArchiveAsync(string path, bool remember = true)
     {
+        _lastOpenError = null;
         if (_stores.ContainsKey(path)) return true;
         StatusText.Text = $"Opening {Path.GetFileName(path)}…";
         try
@@ -532,7 +535,9 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Could not open {Path.GetFileName(path)}: {ex.Message}";
+            AppLog.Error("pst-open", ex, $"could not open {path}");
+            _lastOpenError = $"Could not open {Path.GetFileName(path)}: {ex.Message}";
+            StatusText.Text = _lastOpenError;
             return false;
         }
     }

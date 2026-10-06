@@ -241,8 +241,12 @@ public partial class MainWindow
             { Title = "Open an Outlook data file", AllowMultiple = true, FileTypeFilter = [new FilePickerFileType("Outlook PST") { Patterns = ["*.pst"] }] }, f => w.StatusText.Text = f);
             var added = 0;
             foreach (var file in chosen)
-                if (file.TryGetLocalPath() is { } p && await w.OpenArchiveAsync(System.IO.Path.GetFullPath(p))) added++;
-            return added == 0 ? null : $"{added} data file{(added == 1 ? "" : "s")} added to the folder list.";
+            {
+                if (file.TryGetLocalPath() is not { } p) { w._lastOpenError = $"The chosen location ({file.Path}) is not a local file path."; AppLog.Note("pst-open", w._lastOpenError); continue; }
+                if (await w.OpenArchiveAsync(System.IO.Path.GetFullPath(p))) added++;
+            }
+            if (chosen.Count == 0) return null;                                              // the dialog was cancelled
+            return added == 0 ? w._lastOpenError ?? "The file could not be added (it may already be open)." : $"{added} data file{(added == 1 ? "" : "s")} added to the folder list.";
         }
         public async Task<string?> AddDataFileByPathAsync(string path)
         {

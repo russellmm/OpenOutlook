@@ -8,6 +8,7 @@ deb=$(ls -t "$root"/publish/openoutlook_*_amd64.deb | head -1)
 echo "package: $deb"
 dpkg-deb -I "$deb" | grep -E "Package|Version|Depends" | cut -c1-200
 echo "contents (top):"; dpkg-deb -c "$deb" | awk '{print $6}' | grep -vE "chromium/.+" | head -20
+dpkg-deb -c "$deb" | grep -q "opt/openoutlook/libopenpst.so" || { echo "FAIL: libopenpst.so is not in the package"; fail=1; }
 echo "chromium files: $(dpkg-deb -c "$deb" | grep -c 'opt/openoutlook/chromium/')"
 rm -rf ~/deb-smoke && mkdir ~/deb-smoke && dpkg -x "$deb" ~/deb-smoke
 exe=~/deb-smoke/opt/openoutlook/OpenOutlook.Desktop

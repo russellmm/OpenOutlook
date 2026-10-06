@@ -11,6 +11,20 @@ const string HotmailAddress = "rmarrash@hotmail.com";
 var stamp = DateTime.Now.ToString("HHmmss");
 var step = args.Length > 0 ? args[0] : "all";
 
+if (step == "openeditable")
+{
+    // the way the application opens a data file (editable when it can be, else read-only with a reason); no accounts needed: MailSmoke openeditable <file>
+    var file = Path.GetFullPath(args[1]);
+    var sw0 = System.Diagnostics.Stopwatch.StartNew();
+    try
+    {
+        using var opened = OpenOutlook.PstNative.PstEngineFactory.OpenEditable(file, out var reason);
+        Console.WriteLine($"opened {file} in {sw0.ElapsedMilliseconds} ms: {opened.AllFolders().Count()} folders, writable={opened.CanWrite}{(reason is null ? "" : ", read-only because: " + reason)}");
+    }
+    catch (Exception e) { Console.WriteLine("open failed: " + e.GetType().Name + ": " + e.Message); }
+    return 0;
+}
+
 OAuthClientConfiguration.Load();   // applies the Google client secret
 var accounts = new ConnectedAccountRegistry().Load();
 var gAcc = accounts.FirstOrDefault(a => a.Provider == OAuthProvider.Google && a.DisplayAddress.Equals(GmailAddress, StringComparison.OrdinalIgnoreCase));

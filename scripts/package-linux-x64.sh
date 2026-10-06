@@ -16,7 +16,12 @@ dotnet publish src/OpenOutlook.Desktop/OpenOutlook.Desktop.csproj \
   -m:1 -p:UseSharedCompilation=false \
   -o "$build_dir"
 
+# the PST engine must sit next to the program: from inside the single-file bundle the loader does not find it ("The native PST library is not available")
+native_lib="$project_root/src/OpenOutlook.Desktop/runtimes/linux-x64/native/libopenpst.so"
+[[ -f "$native_lib" ]] || { echo "libopenpst.so is missing: run scripts/build-native.sh first."; exit 1; }
+install -m 755 "$native_lib" "$build_dir/libopenpst.so"
 mkdir -p "$package_dir"
+install -m 755 "$native_lib" "$package_dir/libopenpst.so"
 install -m 755 "$build_dir/OpenOutlook.Desktop" "$publish_root/OpenOutlook.Desktop"
 install -m 755 "$build_dir/OpenOutlook.Desktop" "$package_dir/OpenOutlook.Desktop"
 install -m 644 packaging/README-linux-x64.txt "$publish_root/README.txt"
@@ -24,7 +29,7 @@ install -m 644 packaging/README-linux-x64.txt "$build_dir/README.txt"
 install -m 644 packaging/README-linux-x64.txt "$package_dir/README.txt"
 install -m 644 LICENSE "$package_dir/LICENSE"
 
-package_files=(OpenOutlook.Desktop README.txt LICENSE)
+package_files=(OpenOutlook.Desktop libopenpst.so README.txt LICENSE)
 # the bundled browser (scripts/fetch_chromium.py linux64) and the desktop integration files travel with the program
 if [[ -d "$build_dir/chromium" ]]; then
   find "$build_dir/chromium" -name chrome-headless-shell -type f -exec chmod 755 {} +

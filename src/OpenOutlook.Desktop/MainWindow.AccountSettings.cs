@@ -275,7 +275,13 @@ public partial class MainWindow
         public void OpenFileLocation(DataFileRow row) => w.OpenFileLocationOf(row.Path);
         public async Task SyncNowAsync(string accountId) { if (w.FindMirrorAccount(accountId) is { } a) await w.SyncMirrorAsync(a, manual: true); }
         public Task<string?> ChangeLocationAsync(string accountId, Window owner) => w.ChangeMirrorLocationAsync(accountId, owner);
-        public void SaveMirrorSettings(string accountId, MirrorAccountSettings settings) => w.SaveMirrorSettings(accountId, settings);
+        public void SaveMirrorSettings(string accountId, MirrorAccountSettings settings)
+        {
+            var wasOn = !w._mirrorSettings.Load().Accounts.TryGetValue(accountId, out var before) || before.Enabled;
+            w.SaveMirrorSettings(accountId, settings);
+            // turning the copy back on starts the sync that builds the file again (before, "Sync now" had to be clicked)
+            if (!wasOn && settings.Enabled && w.FindMirrorAccount(accountId) is { } a) _ = w.SyncMirrorAsync(a, manual: true);
+        }
         public IReadOnlyList<ConnectedAccount> JunkAccounts() => w.JunkAccounts();
         public OpenOutlook.JunkCleaner.JunkCleanerAccountSettings JunkSettings(string accountId) => w.JunkSettingsFor(accountId);
         public void SaveJunkSettings(OpenOutlook.JunkCleaner.JunkCleanerAccountSettings settings) => w.SaveJunkSettings(settings);

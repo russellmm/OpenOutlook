@@ -27,6 +27,7 @@ public sealed class GmailMirrorSource(GmailMailbox box, bool canPush) : IMailSyn
     {
         var labels = await box.ListLabelNamesAsync(ct).ConfigureAwait(false);
         _labelNames.Clear();
+        _flagSets.Clear();                                                              // a new pass asks Gmail again
         var wanted = labels.Where(l => l.IsSystem ? SystemFolders.ContainsKey(l.Id) : true).ToList();
         var userByName = wanted.Where(l => !l.IsSystem).ToDictionary(l => l.Name, l => l.Id, StringComparer.Ordinal);
         var list = new List<RemoteFolder>();
@@ -47,9 +48,20 @@ public sealed class GmailMirrorSource(GmailMailbox box, bool canPush) : IMailSyn
         var window = since is { } s ? $"after:{s.UtcDateTime:yyyy/MM/dd}" : null;
         var ids = await box.ListMessageIdsAsync(folderId, window, 20_000, ct).ConfigureAwait(false);
         if (ids.Count == 0) return [];
-        var unread = new HashSet<string>(await box.ListMessageIdsAsync(folderId, (window + " is:unread").Trim(), 20_000, ct).ConfigureAwait(false), StringComparer.Ordinal);
-        var starred = new HashSet<string>(await box.ListMessageIdsAsync(folderId, (window + " is:starred").Trim(), 20_000, ct).ConfigureAwait(false), StringComparer.Ordinal);
+        // unread and starred are asked once for the whole mailbox (in:anywhere) and shared by every label of this pass: 2 requests instead of 2 per label
+        var unread = await FlagSetAsync(window, "is:unread", ct).ConfigureAwait(false);
+        var starred = await FlagSetAsync(window, "is:starred", ct).ConfigureAwait(false);
         return ids.Select(id => new RemoteMessage(id, null, null, !unread.Contains(id), starred.Contains(id))).ToList();
+    }
+
+    private readonly Dictionary<string, HashSet<string>> _flagSets = new(StringComparer.Ordinal);
+
+    private async Task<HashSet<string>> FlagSetAsync(string? window, string flag, CancellationToken ct)
+    {
+        var key = (window + " " + flag).Trim();
+        if (_flagSets.TryGetValue(key, out var known)) return known;
+        var set = new HashSet<string>(await box.ListMessageIdsAsync(null, (key + " in:anywhere").Trim(), 20_000, ct).ConfigureAwait(false), StringComparer.Ordinal);
+        return _flagSets[key] = set;
     }
 
     public async Task<byte[]> GetMimeAsync(string messageId, CancellationToken ct)

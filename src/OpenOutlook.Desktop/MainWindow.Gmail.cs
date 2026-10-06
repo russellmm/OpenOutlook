@@ -1,3 +1,4 @@
+using Avalonia.Threading;
 using System;
 using Avalonia.Platform.Storage;
 using System.Collections.Generic;
@@ -92,7 +93,7 @@ public partial class MainWindow
                 if (_graphRows is null) ShowGraphMessages(local.Messages);
                 else ReconcileGraphMessages(local.Messages);
                 StatusText.Text = $"{local.Messages.Count} newest of {local.TotalCount:N0} {selection.Name} messages · {selection.Account.DisplayAddress} · local copy";
-                if (!_mirrorLastSync.TryGetValue(selection.Account.AccountId, out var lastSync) || DateTime.UtcNow - lastSync > TimeSpan.FromSeconds(90))
+                if (!_mirrorLastSync.TryGetValue(selection.Account.AccountId, out var lastSync) || DateTime.UtcNow - lastSync > TimeSpan.FromMinutes(5))
                     RequestMirrorSyncSoon(selection.Account);
                 return;
             }
@@ -295,7 +296,24 @@ public partial class MainWindow
         { StatusText.Text = "Gmail removes messages from Trash by itself after 30 days; deleting them permanently is not available."; return true; }
         var ids = messages.Select(m => m.Id).ToArray();
         var box = GetGmailMailbox(account);
-        _gmailActionBusy = true;
+        // The list changes at once; Gmail is told in the background (one request at a time, in the order given). A refusal puts things back.
+        foreach (var message in messages) ApplyCompletedMailAction(message, action);
+        StatusText.Text = action switch
+        {
+            "delete" => messages.Length == 1 ? "Message moved to Trash." : $"{messages.Length} messages moved to Trash.",
+            "archive" => messages.Length == 1 ? "Message archived." : $"{messages.Length} messages archived.",
+            _ => "Gmail updated."
+        };
+        _ = SendGmailActionAsync(account, folder, box, action, ids);
+        return true;
+    }
+
+    private readonly SemaphoreSlim _gmailActionGate = new(1, 1);
+    private DispatcherTimer? _gmailCountsTimer;
+
+    private async Task SendGmailActionAsync(ConnectedAccount account, GmailFolderSelection folder, GmailMailbox box, string action, string[] ids)
+    {
+        await _gmailActionGate.WaitAsync();
         try
         {
             switch (action)
@@ -307,21 +325,51 @@ public partial class MainWindow
                 case "archive": await box.ArchiveAsync(ids); break;
                 case "delete": await box.TrashAsync(ids); break;
             }
-            // The row changes are applied to the list that is still showing this folder.
-            if (_activeGmailFolder == folder) foreach (var message in messages) ApplyCompletedMailAction(message, action);
-            StatusText.Text = action switch
-            {
-                "delete" => messages.Length == 1 ? "Message moved to Trash." : $"{messages.Length} messages moved to Trash.",
-                "archive" => messages.Length == 1 ? "Message archived." : $"{messages.Length} messages archived.",
-                _ => "Gmail updated."
-            };
-            _ = RefreshGmailCountsAsync(account);
+            RequestGmailCountsRefresh(account);
         }
-        catch (GmailReadException error) { StatusText.Text = error.Message; }
-        catch (OperationCanceledException) { }
-        catch (Exception) { StatusText.Text = "Gmail change failed. Check the connection and retry."; }
-        finally { _gmailActionBusy = false; }
-        return true;
+        catch (Exception error) when (error is GmailReadException or OperationCanceledException or HttpRequestException or ArgumentException)
+        {
+            UndoLocalChange(account, ids);
+            StatusText.Text = error is GmailReadException ? "Gmail did not accept the change: " + error.Message : "Gmail change failed. Check the connection and retry.";
+            if (_activeGmailFolder == folder) await ReloadGmailFolderAsync(folder);              // the list shows what Gmail really has
+        }
+        finally { _gmailActionGate.Release(); }
+    }
+
+    /// <summary>Label counts are asked from Gmail once things have settled (one request per label), not after every click.</summary>
+    private void RequestGmailCountsRefresh(ConnectedAccount account)
+    {
+        _gmailCountsTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+        _gmailCountsTimer.Tick -= GmailCountsTick;
+        _gmailCountsTimer.Tick += GmailCountsTick;
+        _gmailCountsAccount = account;
+        _gmailCountsTimer.Stop();
+        _gmailCountsTimer.Start();
+    }
+
+    private ConnectedAccount? _gmailCountsAccount;
+
+    private void GmailCountsTick(object? sender, EventArgs e)
+    {
+        _gmailCountsTimer?.Stop();
+        if (_gmailCountsAccount is { } account) _ = RefreshGmailCountsAsync(account);
+    }
+
+    /// <summary>Moves the unread number beside the open Gmail folder at once (the exact numbers are read again a few seconds later).</summary>
+    private void AdjustGmailUnread(GmailFolderSelection folder, int delta)
+    {
+        var key = folder.Account.AccountId + "|" + folder.LabelId;
+        var count = Math.Max(0, (_gmailUnread.TryGetValue(key, out var n) ? n : 0) + delta);
+        _gmailUnread[key] = count;
+        void Walk(IEnumerable<object?> items)
+        {
+            foreach (var node in items.OfType<TreeViewItem>())
+            {
+                if (node.Tag is GmailFolderSelection s && s.Account.AccountId == folder.Account.AccountId && s.LabelId == folder.LabelId) node.Header = FolderHeader(s.Name, count);
+                Walk(node.Items.Cast<object?>());
+            }
+        }
+        Walk(FolderTree.Items.Cast<object?>());
     }
 
     private async void RibbonMoveClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -430,7 +478,7 @@ public partial class MainWindow
             if (version != _messageVersion || _activeGmailFolder != folder || _gmailActionBusy) return;
             await GetGmailMailbox(folder.Account).SetReadAsync([message.Id], true);
             if (_activeGmailFolder == folder) ApplyCompletedMailAction(message, "read");
-            _ = RefreshGmailCountsAsync(folder.Account);
+            RequestGmailCountsRefresh(folder.Account);
         }
         catch (Exception) { /* marking read is best effort; the message stays unread */ }
     }

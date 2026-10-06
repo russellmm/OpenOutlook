@@ -350,6 +350,11 @@ public sealed partial class MainWindow : Window
         if (_graphRows is null) return;
         var row = _graphRows.FirstOrDefault(item => item.Message.Id == selected.Id);
         if (row is null) return;
+        if (_activeGmailFolder is { } gmailNow)
+        {
+            var delta = action switch { "read" when !row.Message.IsRead => -1, "unread" when row.Message.IsRead => 1, "delete" or "archive" when !row.Message.IsRead => -1, _ => 0 };
+            if (delta != 0) AdjustGmailUnread(gmailNow, delta);
+        }
         if ((_activeGmailFolder?.Account ?? _activeMicrosoftAccount) is { } changedAccount) NoteLocalChange(changedAccount, selected.Id, action);
         if (action is "delete" or "archive")
         {

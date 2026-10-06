@@ -104,6 +104,7 @@ public partial class MainWindow
         var options = settings.For(account.AccountId);
         if (!options.Enabled) { _mirrorStatus[account.AccountId] = "turned off"; SetMirrorInfo(account, SyncPhase.Off); return; }
         _mirrorBusy = true;
+        var syncStarted = DateTime.UtcNow;
         var path = MirrorLocations.PstPathFor(settings, account.AccountId, account.DisplayAddress);
         try
         {
@@ -144,7 +145,7 @@ public partial class MainWindow
                 result = await Task.Run(() => MirrorSyncEngine.SyncAsync(source, store, state, syncOptions, progress, CancellationToken.None));
             if (result.Changed || created) RefreshMirrorNode(path, store);
             _mirrorLastSync[account.AccountId] = DateTime.UtcNow;
-            if (!result.Offline) AfterMirrorSyncLocal(account, result.Changed || result.Pushed > 0);
+            if (!result.Offline) AfterMirrorSyncLocal(account, result.Changed || result.Pushed > 0, syncStarted);
             if (result.Offline)
             {
                 var waiting = result.PendingLocal > 0 ? $"; {result.PendingLocal} change{(result.PendingLocal == 1 ? "" : "s")} waiting to be sent" : "";

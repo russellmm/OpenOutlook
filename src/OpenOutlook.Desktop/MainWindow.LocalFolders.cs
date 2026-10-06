@@ -11,6 +11,7 @@ public partial class MainWindow
     private readonly HashSet<string> _localRemoved = new(StringComparer.Ordinal);                  // accountId|messageId deleted or moved here, not yet in the copy
     private readonly Dictionary<string, bool> _localFlags = new(StringComparer.Ordinal);           // accountId|messageId -> flag changed here, not yet in the copy
     private readonly Dictionary<string, bool> _localReads = new(StringComparer.Ordinal);           // accountId|messageId -> read state changed here, not yet in the copy
+    private readonly Dictionary<string, DateTime> _localStamp = new(StringComparer.Ordinal);        // when each overlay entry was made (UTC)
     private DispatcherTimer? _mirrorSoonTimer;
     private ConnectedAccount? _mirrorSoonAccount;
 
@@ -81,6 +82,7 @@ public partial class MainWindow
     private void NoteLocalChange(ConnectedAccount account, string messageId, string action)
     {
         var key = account.AccountId + "|" + messageId;
+        _localStamp[key] = DateTime.UtcNow;
         if (action is "delete" or "archive") _localRemoved.Add(key);
         else if (action is "flag" or "unflag") _localFlags[key] = action == "flag";
         else if (action is "read" or "unread") _localReads[key] = action == "read";
@@ -92,7 +94,8 @@ public partial class MainWindow
     {
         if (Environment.GetEnvironmentVariable("OPENOUTLOOK_NO_MIRROR") == "1") return;
         _mirrorSoonAccount = account;
-        _mirrorSoonTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        _mirrorSoonTimer ??= new DispatcherTimer();
+        _mirrorSoonTimer.Interval = account.Provider == OAuthProvider.Google ? TimeSpan.FromSeconds(20) : TimeSpan.FromSeconds(4);     // a Gmail pass asks Gmail many things; let changes gather first
         _mirrorSoonTimer.Tick -= MirrorSoonTick;
         _mirrorSoonTimer.Tick += MirrorSoonTick;
         _mirrorSoonTimer.Stop();
@@ -105,13 +108,26 @@ public partial class MainWindow
         if (_mirrorSoonAccount is { } account) await SyncMirrorAsync(account, manual: false);
     }
 
-    /// <summary>After a sync the copy has caught up with this computer's changes; the list is re-read when it is the one on screen.</summary>
-    private void AfterMirrorSyncLocal(ConnectedAccount account, bool changed)
+    /// <summary>A change the server refused: the overlay entries for these messages are dropped so the list shows the truth again.</summary>
+    private void UndoLocalChange(ConnectedAccount account, IEnumerable<string> messageIds)
     {
+        foreach (var id in messageIds)
+        {
+            var key = account.AccountId + "|" + id;
+            _localRemoved.Remove(key); _localReads.Remove(key); _localFlags.Remove(key); _localStamp.Remove(key);
+        }
+    }
+
+    /// <summary>After a sync the copy has caught up with this computer's changes; the list is re-read when it is the one on screen.</summary>
+    private void AfterMirrorSyncLocal(ConnectedAccount account, bool changed, DateTime syncStartedUtc)
+    {
+        // only changes made before this pass began are in the copy now; later ones stay in the overlay for the next pass
         var prefix = account.AccountId + "|";
-        _localRemoved.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
-        foreach (var k in _localReads.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList()) _localReads.Remove(k);
-        foreach (var k in _localFlags.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList()) _localFlags.Remove(k);
+        bool Done(string k) => k.StartsWith(prefix, StringComparison.Ordinal) && (!_localStamp.TryGetValue(k, out var at) || at < syncStartedUtc);
+        _localRemoved.RemoveWhere(Done);
+        foreach (var k in _localReads.Keys.Where(Done).ToList()) _localReads.Remove(k);
+        foreach (var k in _localFlags.Keys.Where(Done).ToList()) _localFlags.Remove(k);
+        foreach (var k in _localStamp.Keys.Where(Done).ToList()) _localStamp.Remove(k);
         if (!changed) return;
         if (_activeMicrosoftFolder?.Account.AccountId == account.AccountId) _ = RefreshMicrosoftFolderAsync();
         else if (_activeGmailFolder is { } gmail && gmail.Account.AccountId == account.AccountId) _ = ReloadGmailFolderAsync(gmail);

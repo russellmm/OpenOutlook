@@ -274,6 +274,40 @@ if (step == "mirror" && mAcc is not null)
     Console.WriteLine($"{pstPath}\n   {res}\n   {watch.Elapsed.TotalSeconds:0.0}s; scan findings: {pst.Scan().Findings.Count}");
     return 0;
 }
+if (step == "gmailtiming" && gBox is not null)
+{
+    // times single Gmail calls (stars then un-stars one inbox message; nothing is deleted)
+    var swg = System.Diagnostics.Stopwatch.StartNew();
+    async Task<T> TimeG<T>(string label, Func<Task<T>> f) { swg.Restart(); var r = await f(); Console.WriteLine($"{label}: {swg.ElapsedMilliseconds} ms"); return r; }
+    var ids = await TimeG("list inbox ids (includes token check)", () => gBox.ListLabelMessageIdsAsync("INBOX", 5));
+    await TimeG("list inbox ids again", () => gBox.ListLabelMessageIdsAsync("INBOX", 5));
+    var one = new[] { ids[0] };
+    await TimeG("star (modify)", async () => { await gBox.SetStarredAsync(one, true); return 0; });
+    await TimeG("unstar (modify)", async () => { await gBox.SetStarredAsync(one, false); return 0; });
+    await TimeG("mark read (modify)", async () => { await gBox.SetReadAsync(one, true); return 0; });
+    var labels = await TimeG("labels with counts (the refresh after every action)", () => gBox.ListLabelsAsync());
+    Console.WriteLine($"{labels.Count} labels");
+    return 0;
+}
+
+if (step == "gmailsync" && gBox is not null)
+{
+    // times a normal synchronisation pass of the real Gmail mailbox copy (the same work the app does after a change); close OpenOutlook first
+    var set = new OpenOutlook.Mirror.MirrorSettingsStore().Load();
+    var opt = set.For(gAcc!.AccountId);
+    var path = OpenOutlook.Mirror.MirrorLocations.PstPathFor(set, gAcc.AccountId, gAcc.DisplayAddress);
+    using var pst = OpenOutlook.PstNative.PstEngineFactory.Open(path, true);
+    using var st = new OpenOutlook.Mirror.SyncStateStore(Path.ChangeExtension(path, ".sync"));
+    var src = new OpenOutlook.Mirror.GmailMirrorSource(gBox, gAcc.CanModifyGmail);
+    for (var pass = 1; pass <= 2; pass++)
+    {
+        var swm = System.Diagnostics.Stopwatch.StartNew();
+        var res = await OpenOutlook.Mirror.MirrorSyncEngine.SyncAsync(src, pst, st, new OpenOutlook.Mirror.MirrorSyncOptions(opt.KeepMonths, opt.MaxAttachmentBytes), null, CancellationToken.None);
+        Console.WriteLine($"sync pass {pass}: {swm.Elapsed.TotalSeconds:0.0} s, {res}");
+    }
+    return 0;
+}
+
 if (step == "timing" && mAcc is not null)
 {
     var sw = System.Diagnostics.Stopwatch.StartNew();

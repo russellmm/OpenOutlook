@@ -25,6 +25,17 @@ install -m 644 packaging/README-linux-x64.txt "$package_dir/README.txt"
 install -m 644 LICENSE "$package_dir/LICENSE"
 
 package_files=(OpenOutlook.Desktop README.txt LICENSE)
+# the bundled browser (scripts/fetch_chromium.py linux64) and the desktop integration files travel with the program
+if [[ -d "$build_dir/chromium" ]]; then
+  find "$build_dir/chromium" -name chrome-headless-shell -type f -exec chmod 755 {} +
+  rm -rf "$package_dir/chromium" && cp -r "$build_dir/chromium" "$package_dir/chromium"
+  package_files+=(chromium)
+else
+  echo "Note: no bundled browser (run python3 scripts/fetch_chromium.py linux64 before publishing); HTML mail falls back to an installed Chrome or Chromium."
+fi
+install -m 644 packaging/openoutlook.desktop "$package_dir/openoutlook.desktop"
+install -m 644 src/OpenOutlook.Desktop/Assets/openoutlook-512.png "$package_dir/openoutlook.png"
+package_files+=(openoutlook.desktop openoutlook.png)
 if [[ -f "$oauth_source" ]]; then
   install -m 644 "$oauth_source" "$build_dir/openoutlook-oauth.json"
   install -m 644 "$oauth_source" "$publish_root/openoutlook-oauth.json"

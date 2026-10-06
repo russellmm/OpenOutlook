@@ -5,7 +5,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH=$HOME/.dotnet:$PATH DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 rm -rf ~/oo_linux && mkdir ~/oo_linux
 cd "$root"
-tar --exclude=bin --exclude=obj --exclude='native/openpst/build-*' --exclude=.git --exclude=publish --exclude=runtimes --exclude='*.png' --exclude='*.zip' -cf - . | tar -xf - -C ~/oo_linux
+tar --exclude=bin --exclude=obj --exclude='native/openpst/build-*' --exclude=.git --exclude=publish --exclude=runtimes --exclude='*.png' --exclude=.local --exclude=third_party --exclude='*.zip' -cf - . | tar -xf - -C ~/oo_linux
+cp "$root"/src/OpenOutlook.Desktop/Assets/*.png ~/oo_linux/src/OpenOutlook.Desktop/Assets/     # the root screenshots are skipped above; the app icon is needed
 cd ~/oo_linux
 bash scripts/build-native.sh 2>&1 | tail -6
 cp "$root"/rmarrash_2.pst ~/rm2.pst

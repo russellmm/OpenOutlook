@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=OpenOutlook
+GenericName=Email client
+Comment=Mail client with local mailbox copies and Outlook PST support
+Exec=openoutlook %f
+Icon=openoutlook
+Terminal=false
+Categories=Network;Email;Office;
+MimeType=application/vnd.ms-outlook;
+StartupWMClass=OpenOutlook.Desktop

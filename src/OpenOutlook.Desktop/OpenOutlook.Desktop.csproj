@@ -40,7 +40,7 @@
     <ChromiumDir>$(MSBuildThisFileDirectory)../../third_party/chromium/$(ChromiumPlatform)/</ChromiumDir>
   </PropertyGroup>
   <ItemGroup Condition="'$(ChromiumPlatform)' != '' And Exists('$(ChromiumDir)VERSION.txt')">
-    <None Include="$(ChromiumDir)**" Link="chromium/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(ChromiumDir)**" Link="chromium/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="OpenOutlook.HeadlessTests" />

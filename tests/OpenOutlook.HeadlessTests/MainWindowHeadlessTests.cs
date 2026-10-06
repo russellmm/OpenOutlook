@@ -142,6 +142,10 @@ public sealed class MainWindowHeadlessTests
             Assert.True(list.Columns[5].IsVisible && list.Columns[6].IsVisible);
             Assert.Equal(0, list.Columns[5].DisplayIndex);                                      // next to the paperclip, at the left
             Shot(window, "17-importance-flag-columns");
+            var byDate = (Avalonia.Collections.DataGridCollectionView)list.ItemsSource!;
+            Assert.Single(byDate.GroupDescriptions);                                            // date sections are on
+            window.SortMessageList(3, ascending: true);                                         // sorting by Received keeps them
+            Assert.Single(((Avalonia.Collections.DataGridCollectionView)list.ItemsSource!).GroupDescriptions);
             window.SortMessageList(5, ascending: false);
             var view = (Avalonia.Collections.DataGridCollectionView)list.ItemsSource!;
             Assert.Equal("ImportanceSort", view.SortDescriptions[0].PropertyPath);

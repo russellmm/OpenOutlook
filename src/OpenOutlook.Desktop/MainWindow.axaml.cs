@@ -1064,6 +1064,8 @@ public sealed partial class MainWindow : Window
 
     private void MessageListSorting(object? sender, DataGridColumnEventArgs e)
     {
+        // Sorting by Received keeps the date sections: the order flips inside them and the sections themselves follow (oldest first when ascending).
+        if (e.Column is DataGridColumn { SortMemberPath: "ReceivedSort" } && _groupPath is null) return;
         if (_groupPath is not null && MessageList.ItemsSource is DataGridCollectionView fieldView)
         {
             fieldView.GroupDescriptions.Clear();                                             // a column click sorts the whole folder, like the date sections do

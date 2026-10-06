@@ -687,6 +687,49 @@ public sealed class MainWindowHeadlessTests
         public Task SyncNowAsync(string accountId) { Log.Add("sync " + accountId); return Task.CompletedTask; }
         public Task<string?> ChangeLocationAsync(string accountId, Window owner) => Task.FromResult<string?>(null);
         public void SaveMirrorSettings(string accountId, OpenOutlook.Mirror.MirrorAccountSettings settings) => Saved.Add((accountId, settings));
+        public List<OpenOutlook.JunkCleaner.JunkCleanerAccountSettings> JunkSaved = [];
+        public IReadOnlyList<OpenOutlook.Auth.ConnectedAccount> JunkAccounts() => Accounts_.Where(x => x.Provider == OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers).ToList();
+        public OpenOutlook.JunkCleaner.JunkCleanerAccountSettings JunkSettings(string accountId) =>
+            JunkSaved.LastOrDefault(j => j.AccountId == accountId) ?? new OpenOutlook.JunkCleaner.JunkCleanerAccountSettings { AccountId = accountId, Keywords = ["temu"] };
+        public void SaveJunkSettings(OpenOutlook.JunkCleaner.JunkCleanerAccountSettings settings) => JunkSaved.Add(settings);
+        public Task<string?> CleanJunkNowAsync(string accountId, Window owner) { Log.Add("cleanjunk " + accountId); return Task.FromResult<string?>("Moved 2"); }
+        public Task<string?> ImportJunkConfigAsync(string accountId, Window owner) { Log.Add("importjunk " + accountId); return Task.FromResult<string?>(null); }
+        public IReadOnlyList<string> JunkLog() => ["2026-10-05 10:00  me@hotmail.test  moved \"win\" from promo@temu.example [From keyword]"];
+    }
+
+    [AvaloniaFact]
+    public void The_junk_cleaner_tab_edits_settings_and_runs_a_clean()
+    {
+        var host = new FakeHost();
+        var window = new AccountSettingsWindow(host, startOnJunk: true);
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var tabs = window.GetVisualDescendants().OfType<TabControl>().Single();
+            Assert.Equal(2, tabs.SelectedIndex);
+            Assert.Contains("Junk Cleaner", tabs.Items.OfType<TabItem>().Select(t => t.Header?.ToString()));
+            var accounts = window.GetVisualDescendants().OfType<ComboBox>().First();
+            Assert.Single(accounts.Items);                                                      // Microsoft accounts only
+            var keywords = window.GetVisualDescendants().OfType<TextBox>().First(t => !t.IsReadOnly && t.AcceptsReturn);
+            Assert.Equal("temu", keywords.Text);
+            var enable = window.GetVisualDescendants().OfType<CheckBox>().First(c => c.Content?.ToString()!.StartsWith("Use the Junk") == true);
+            enable.IsChecked = true;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(host.JunkSaved.Last().Enabled);
+            keywords.Text = "temu" + (char)10 + "shein";
+            window.GetVisualDescendants().OfType<CheckBox>().First(c => c.Content?.ToString()!.Contains("no To") == true).IsChecked = true;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(["temu", "shein"], host.JunkSaved.Last().Keywords);
+            Assert.True(host.JunkSaved.Last().Rules.DeleteMissingTo);
+            var log = window.GetVisualDescendants().OfType<TextBox>().First(t => t.IsReadOnly);
+            Assert.Contains("temu.example", log.Text);
+            window.GetVisualDescendants().OfType<Button>().First(b => Cap(b) == "Clean now…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Assert.Contains("cleanjunk acc1", host.Log);
+            Shot(window, "16-junk-cleaner-tab");
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]
@@ -771,7 +814,7 @@ public sealed class MainWindowHeadlessTests
         {
             Shot(window, "11-account-settings-email");
             var tabs = window.GetVisualDescendants().OfType<TabControl>().Single();
-            Assert.Equal(["Email", "Data Files"], tabs.Items.OfType<TabItem>().Select(t => t.Header?.ToString()).ToArray());
+            Assert.Equal(["Email", "Data Files", "Junk Cleaner"], tabs.Items.OfType<TabItem>().Select(t => t.Header?.ToString()).ToArray());
             var buttons = window.GetVisualDescendants().OfType<Button>().ToList();
             string TipOf(string caption) => ToolTip.GetTip(buttons.First(b => Cap(b) == caption))?.ToString() ?? "";
             Assert.Equal("To be implemented", TipOf("Change…"));

@@ -84,12 +84,19 @@ public sealed class GraphJunkMailReader
                 !Uri.TryCreate(link.GetString(), UriKind.Absolute, out var candidate) ||
                 candidate.Scheme != Uri.UriSchemeHttps || candidate.Host != "graph.microsoft.com" ||
                 !candidate.IsDefaultPort || candidate.UserInfo.Length != 0 || candidate.Fragment.Length != 0 ||
-                !string.Equals(candidate.AbsolutePath, path, StringComparison.Ordinal) ||
+                !IsMessagesPath(candidate.AbsolutePath, folder.Id) ||
                 !ValidQuery(candidate.Query, pageSize))
                 throw new GraphMailException("Graph returned an unsafe pagination link.");
             next = candidate;
         }
         return result;
+    }
+
+    /// <summary>Graph writes the folder as a path segment or as mailFolders('id') in its next links, so the shape is checked, not the exact text.</summary>
+    private static bool IsMessagesPath(string absolutePath, string folderId)
+    {
+        var path = Uri.UnescapeDataString(absolutePath);
+        return path == $"{Root}/me/mailFolders/{folderId}/messages" || path == $"{Root}/me/mailFolders('{folderId}')/messages";
     }
 
     private async Task VerifyAccountAsync(string token, CancellationToken ct)

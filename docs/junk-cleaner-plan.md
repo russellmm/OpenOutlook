@@ -59,3 +59,11 @@ Phases 1-2 are the smallest useful step: after them a manual dry run against Hot
 - Found: `GraphJunkMailReader` (lists Junk Email) and `MicrosoftJunkPreviewMatcher` (matching, tested) already existed.
 - Done: `MicrosoftJunkCleanerRunner` (scan, move to Deleted Items with per-message failure isolation, cap, stops on sign-in errors) + 5 tests.
 - Next: Junk Cleaner tab in Account Settings, ribbon "Clean Junk Now" with preview, scheduler + last-run log, live dry run on Hotmail.
+
+## 8. Implemented (2026-10-05)
+- Account Settings > Junk Cleaner tab (`AccountSettingsWindow.Junk.cs`): per-account on/off, automatic cleaning + interval, keywords, the three rules, Clean now, import of the old config.json, log of removed mail.
+- Ribbon Junk group: "Clean Junk" runs a manual clean with a tick-box preview (`JunkPreviewDialog`); a "turned off / no keywords" account opens the tab instead.
+- Scheduler (`MainWindow.Junk.cs`, 1-minute timer, per-account interval, silent): moved mail is logged to `junk-cleaner.log` beside `mirror-settings.json`; the mailbox copy re-syncs afterwards. Disabled by `OPENOUTLOOK_NO_MIRROR=1`.
+- `JunkCleanerAccountSettings.AutoClean` added; importing the old config turns the cleaner on but leaves automatic cleaning as it was.
+- Live dry run (`dotnet run --project tools/MailSmoke -- junkscan`) on Hotmail: 299 in Junk, 282 match the old config (all three rules on). It found that `GraphJunkMailReader` rejected Graph's real next-page links; fixed (path shape check).
+- Not built: Gmail, PST sources, "always delete this sender" menu item.

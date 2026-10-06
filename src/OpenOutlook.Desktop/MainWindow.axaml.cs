@@ -188,6 +188,7 @@ public sealed partial class MainWindow : Window
                 await OpenArchiveAsync(Path.GetFullPath(path));
             _ = Task.Run(() => { var n = BrowserProcessTracker.KillLeftovers(); if (n > 0) AppLog.Note("reader", $"closed {n} layout browser(s) left behind by an earlier run"); });
             StartMirrorScheduler();                                  // the local copies of connected mailboxes
+            StartJunkScheduler();                                   // silent Junk Cleaner runs
             if (Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_HTML") == "1") _ = RunHtmlSelfTestAsync();      // diagnostics: renders a sample message and logs the outcome
             var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path));
             if (unavailable > 0)

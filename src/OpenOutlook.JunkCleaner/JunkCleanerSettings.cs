@@ -6,6 +6,7 @@ public sealed record JunkCleanerAccountSettings
     public required string AccountId { get; init; }
     public bool Enabled { get; init; } // Each account must be explicitly opted in.
     public IReadOnlyList<string> Keywords { get; init; } = Array.Empty<string>();
+    public bool AutoClean { get; init; } // Scheduled silent cleaning; a manual "Clean now" works whenever Enabled is on.
     public int IntervalMinutes { get; init; } = 15;
     public JunkRuleOptions Rules { get; init; } = new();
 }
@@ -29,6 +30,7 @@ public sealed record LegacyJunkCleanerPreview
         {
             AccountId = JunkCleanerSettingsStore.ValidateAccountId(accountId),
             Enabled = false,
+            AutoClean = false,
             Keywords = JunkCleanerSettingsStore.NormalizeKeywords(Keywords),
             IntervalMinutes = JunkCleanerSettingsStore.ValidateInterval(IntervalMinutes),
             Rules = Rules

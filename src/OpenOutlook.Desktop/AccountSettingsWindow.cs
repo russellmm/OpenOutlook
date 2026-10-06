@@ -4,6 +4,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
 using OpenOutlook.Auth;
+using OpenOutlook.JunkCleaner;
 using OpenOutlook.Mirror;
 
 namespace OpenOutlook.Desktop;
@@ -28,6 +29,12 @@ public interface IAccountSettingsHost
     Task SyncNowAsync(string accountId);
     Task<string?> ChangeLocationAsync(string accountId, Window owner);
     void SaveMirrorSettings(string accountId, MirrorAccountSettings settings);
+    IReadOnlyList<ConnectedAccount> JunkAccounts();
+    JunkCleanerAccountSettings JunkSettings(string accountId);
+    void SaveJunkSettings(JunkCleanerAccountSettings settings);
+    Task<string?> CleanJunkNowAsync(string accountId, Window owner);
+    Task<string?> ImportJunkConfigAsync(string accountId, Window owner);
+    IReadOnlyList<string> JunkLog();
 }
 
 /// <summary>Theme-aware lookups for the dialogs that are built in code (the XAML windows use DynamicResource; here the current theme's value is read when the control is made).</summary>
@@ -45,7 +52,7 @@ internal static class Themed
 }
 
 /// <summary>Account Settings, laid out like Outlook's dialog: an Email tab (the connected accounts) and a Data Files tab (mailbox copies and opened PST files).</summary>
-public sealed class AccountSettingsWindow : Window
+public sealed partial class AccountSettingsWindow : Window
 {
     private readonly IAccountSettingsHost _host;
     private readonly ListBox _emailList = new() { SelectionMode = SelectionMode.Single, Classes = { "olList" }, BorderThickness = new Thickness(0) };
@@ -55,7 +62,7 @@ public sealed class AccountSettingsWindow : Window
     private IReadOnlyList<ConnectedAccount> _accounts = [];
     private IReadOnlyList<DataFileRow> _files = [];
 
-    public AccountSettingsWindow(IAccountSettingsHost host, bool startOnDataFiles = false)
+    public AccountSettingsWindow(IAccountSettingsHost host, bool startOnDataFiles = false, bool startOnJunk = false)
     {
         _host = host;
         Title = "Account Settings";
@@ -78,7 +85,8 @@ public sealed class AccountSettingsWindow : Window
 
         _tabs.Items.Add(new TabItem { Header = "Email", Content = BuildEmailTab() });
         _tabs.Items.Add(new TabItem { Header = "Data Files", Content = BuildDataFilesTab() });
-        _tabs.SelectedIndex = startOnDataFiles ? 1 : 0;
+        _tabs.Items.Add(new TabItem { Header = "Junk Cleaner", Content = BuildJunkTab() });
+        _tabs.SelectedIndex = startOnJunk ? 2 : startOnDataFiles ? 1 : 0;
 
         var bottom = new Border
         {
@@ -261,6 +269,7 @@ public sealed class AccountSettingsWindow : Window
     /// <summary>Reloads both lists from the application (after a sign-in, a removal, a sync or a relocation).</summary>
     public void Refresh()
     {
+        RefreshJunkAccounts();
         var selectedAccount = SelectedAccount()?.AccountId;
         var selectedFile = SelectedFile()?.Path;
         _accounts = _host.Accounts();

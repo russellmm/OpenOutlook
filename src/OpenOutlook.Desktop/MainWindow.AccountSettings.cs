@@ -19,10 +19,10 @@ public partial class MainWindow
     private AccountSettingsWindow? _accountSettings;
     private readonly AccountDefaultStore _accountDefault = new();
 
-    private void ShowAccountSettings(bool dataFiles = false)
+    private void ShowAccountSettings(bool dataFiles = false, bool junk = false)
     {
         if (_accountSettings is { } open) { open.Activate(); return; }
-        var window = new AccountSettingsWindow(new AccountSettingsHost(this), dataFiles);
+        var window = new AccountSettingsWindow(new AccountSettingsHost(this), dataFiles, junk);
         window.Closed += (_, _) => _accountSettings = null;
         _accountSettings = window;
         window.Show(this);
@@ -260,5 +260,12 @@ public partial class MainWindow
         public async Task SyncNowAsync(string accountId) { if (w.FindMirrorAccount(accountId) is { } a) await w.SyncMirrorAsync(a, manual: true); }
         public Task<string?> ChangeLocationAsync(string accountId, Window owner) => w.ChangeMirrorLocationAsync(accountId, owner);
         public void SaveMirrorSettings(string accountId, MirrorAccountSettings settings) => w.SaveMirrorSettings(accountId, settings);
+        public IReadOnlyList<ConnectedAccount> JunkAccounts() => w.JunkAccounts();
+        public OpenOutlook.JunkCleaner.JunkCleanerAccountSettings JunkSettings(string accountId) => w.JunkSettingsFor(accountId);
+        public void SaveJunkSettings(OpenOutlook.JunkCleaner.JunkCleanerAccountSettings settings) => w.SaveJunkSettings(settings);
+        public Task<string?> CleanJunkNowAsync(string accountId, Window owner) =>
+            w.JunkAccounts().FirstOrDefault(a => a.AccountId == accountId) is { } a ? w.CleanJunkNowAsync(a, owner) : Task.FromResult<string?>("That account is not connected.");
+        public Task<string?> ImportJunkConfigAsync(string accountId, Window owner) => w.ImportJunkConfigAsync(accountId, owner);
+        public IReadOnlyList<string> JunkLog() => w._junkLog.Recent();
     }
 }

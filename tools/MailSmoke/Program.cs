@@ -249,6 +249,22 @@ if (step == "mirror" && mAcc is not null)
     Console.WriteLine($"{pstPath}\n   {res}\n   {watch.Elapsed.TotalSeconds:0.0}s; scan findings: {pst.Scan().Findings.Count}");
     return 0;
 }
+if (step == "junkscan" && mAcc is not null)
+{
+    // dry run: lists what the Junk Cleaner would remove from the Hotmail Junk folder; nothing is moved or saved
+    var legacy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OutlookJunkCleaner", "config.json");
+    var cfg = File.Exists(legacy)
+        ? OpenOutlook.JunkCleaner.JunkCleanerSettingsStore.PreviewLegacyConfig(legacy).ImportForAccount(mAcc.AccountId) with { Enabled = true }
+        : new OpenOutlook.JunkCleaner.JunkCleanerAccountSettings { AccountId = mAcc.AccountId, Enabled = true, Keywords = ["temu"] };
+    Console.WriteLine($"settings from {(File.Exists(legacy) ? legacy : "built-in sample")}: {cfg.Keywords.Count} keywords, rules high={cfg.Rules.DeleteHighImportance} noTo={cfg.Rules.DeleteMissingTo} onBehalf={cfg.Rules.DeleteOnBehalfOf}");
+    var runner = new MicrosoftJunkCleanerRunner(new GraphJunkMailReader(graphHttp, async ct => await mSession!.GetAccessTokenAsync(ct), mAcc.AccountId),
+        new GraphMailWriter(graphHttp, mAcc.AccountId), ct => mSession!.GetAccessTokenAsync(ct), mAcc.AccountId);
+    var scan = await runner.ScanAsync(cfg);
+    Console.WriteLine($"Junk folder: {scan.Scanned} messages, {scan.Matched.Count} would be moved to Deleted Items");
+    foreach (var h in scan.Matched.Take(40)) Console.WriteLine($"  {h.Sender}  |  {h.Subject}  [{string.Join(", ", h.Reasons)}]");
+    return 0;
+}
+
 if (step == "attach" && mAcc is not null)
 {
     var r = new GraphInboxReader(graphHttp, mAcc.AccountId);

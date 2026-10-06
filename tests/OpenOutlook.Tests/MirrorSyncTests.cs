@@ -71,6 +71,29 @@ public sealed class MirrorSyncTests : IDisposable
     private static List<MailSummary> In(IPstEngine pst, string folder) => pst.GetMessages(pst.AllFolders().Single(f => f.Name == folder)).ToList();
 
     [Fact]
+    public async Task The_local_copy_answers_a_folder_in_the_shape_of_the_server_list()
+    {
+        if (!Native) return;
+        var server = Server();
+        var (pst, state) = Open("local");
+        using (pst) using (state)
+        {
+            Assert.Null(LocalMailboxReader.Read(pst, state, "inbox"));                          // nothing synchronised yet: ask the server
+            await MirrorSyncEngine.SyncAsync(server, pst, state, new MirrorSyncOptions(12, 25 << 20), null, CancellationToken.None);
+            var inbox = LocalMailboxReader.Read(pst, state, "inbox")!;
+            Assert.Equal("Inbox", inbox.FolderName);
+            Assert.Equal(["m1", "m2"], inbox.Messages.Select(m => m.Id).OrderBy(x => x));       // server ids, so actions still reach the server
+            Assert.Equal(1, inbox.UnreadCount);
+            Assert.True(inbox.Messages.Single(m => m.Id == "m2").IsFlagged);
+            Assert.Equal("In a subfolder", LocalMailboxReader.Read(pst, state, "proj")!.Messages.Single().Subject);
+            // a message deleted or flagged on this computer shows that at once, before the next sync
+            var overlay = LocalMailboxReader.Read(pst, state, "inbox", new HashSet<string> { "m1" }, new Dictionary<string, bool> { ["m2"] = false })!;
+            Assert.Equal(["m2"], overlay.Messages.Select(m => m.Id));
+            Assert.False(overlay.Messages[0].IsFlagged);
+        }
+    }
+
+    [Fact]
     public async Task First_sync_builds_the_folder_tree_and_downloads_the_messages()
     {
         if (!Native) return;

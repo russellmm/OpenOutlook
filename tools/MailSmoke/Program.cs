@@ -236,6 +236,24 @@ if (step == "render")
     catch (Exception ex) { Console.WriteLine("FAILED: " + ex); }
     return 0;
 }
+if (step == "localfolder" && mAcc is not null)
+{
+    // times reading folders from the real mailbox copy (opened read-only; close OpenOutlook first)
+    var path = OpenOutlook.Mirror.MirrorLocations.PstPathFor(new OpenOutlook.Mirror.MirrorSettingsStore().Load(), mAcc.AccountId, mAcc.DisplayAddress);
+    Console.WriteLine(path + (File.Exists(path) ? $" ({new FileInfo(path).Length / 1048576} MB)" : " (missing)"));
+    var swo = System.Diagnostics.Stopwatch.StartNew();
+    using var pst = OpenOutlook.PstNative.PstEngineFactory.Open(path, false);
+    Console.WriteLine($"open: {swo.ElapsedMilliseconds} ms");
+    using var st = new OpenOutlook.Mirror.SyncStateStore(Path.ChangeExtension(path, ".sync"));
+    foreach (var id in new[] { "inbox", "inbox", "junkemail" })
+    {
+        swo.Restart();
+        var folderId = id == "junkemail" ? st.Folders().FirstOrDefault(f => pst.FindFolder(f.PstNid)?.Name == "Junk Email")?.RemoteId ?? id : id;
+        var page = OpenOutlook.Mirror.LocalMailboxReader.Read(pst, st, folderId);
+        Console.WriteLine($"{id}: {swo.ElapsedMilliseconds} ms, {(page is null ? "no local answer" : page.TotalCount + " messages, " + page.UnreadCount + " unread, showing " + page.Messages.Count)}");
+    }
+    return 0;
+}
 if (step == "mirror" && mAcc is not null)
 {
     // Mirrors the Hotmail mailbox into a PST under .local/mirror-test (never touches the server): usage MailSmoke mirror [folder]

@@ -350,6 +350,7 @@ public sealed partial class MainWindow : Window
         if (_graphRows is null) return;
         var row = _graphRows.FirstOrDefault(item => item.Message.Id == selected.Id);
         if (row is null) return;
+        if (_activeMicrosoftAccount is { } changedAccount) NoteLocalChange(changedAccount, selected.Id, action);
         if (action is "delete" or "archive")
         {
             if (ReferenceEquals(MessageList.SelectedItem, row))
@@ -820,6 +821,7 @@ public sealed partial class MainWindow : Window
             await LoadGmailFolderAsync(gmail, Interlocked.Increment(ref _folderVersion), _folderRefreshCancellation.Token);
             return;
         }
+        if (_activeMicrosoftFolder is { } current) await SyncMirrorAsync(current.Account, manual: true);       // the copy is brought up to date first
         await RefreshMicrosoftFolderAsync();
     }
 
@@ -840,6 +842,18 @@ public sealed partial class MainWindow : Window
         try
         {
             var cacheKey = account.AccountId + "|" + selection.Id;
+            if (await ReadLocalFolderAsync(account, selection.Id) is { } local)             // the local copy answers without a network request
+            {
+                if (version != _folderVersion || cancellationToken.IsCancellationRequested) return;
+                _currentGraphMessages = local.Messages;
+                if (_graphRows is null) ShowGraphMessages(local.Messages);
+                else ReconcileGraphMessages(local.Messages);
+                StatusText.Text = $"{local.Messages.Count} newest of {local.TotalCount:N0} {local.FolderName} items · {local.UnreadCount:N0} unread · {account.DisplayAddress} · local copy";
+                ApplyFolderCounts(account, new Dictionary<string, int> { [selection.Id] = local.UnreadCount });
+                if (!_mirrorLastSync.TryGetValue(account.AccountId, out var lastSync) || DateTime.UtcNow - lastSync > TimeSpan.FromSeconds(90))
+                    RequestMirrorSyncSoon(account);                                          // new mail on the server appears once the copy is refreshed
+                return;
+            }
             if (_graphRows is null && _graphPageCache.TryGetValue(cacheKey, out var cached))      // a folder seen before shows at once; the fresh list replaces it below
             {
                 _currentGraphMessages = cached.Messages;

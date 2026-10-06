@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using OpenOutlook.Auth;
 using Avalonia.Threading;
 using OpenOutlook.Providers.Microsoft;
 
@@ -139,12 +140,21 @@ public partial class MainWindow
     /// which takes a few hundred milliseconds on big folders). Any failure falls back to the sidecar overlay.</summary>
     private async Task PersistNativeReadAsync(string key, Action persist)
     {
-        var mailbox = MessageList.SelectedItem is GraphMessageListRow ? _activeMicrosoftAccount : null;
+        // a Microsoft message's key is "msg:<account>/<message id>"
+        ConnectedAccount? mailbox = null;
+        string? messageId = null;
+        if (key.StartsWith("msg:", StringComparison.Ordinal) && key.IndexOf('/') is var slash and > 4)
+        {
+            var accountId = key[4..slash];
+            mailbox = MirrorAccounts().FirstOrDefault(a => a.AccountId == accountId && a.Provider == OAuthProvider.MicrosoftConsumers);
+            messageId = key[(slash + 1)..];
+        }
         try
         {
             await Task.Run(persist);
             _readOverrides.Remove(key);
             PersistReadState();
+            if (mailbox is not null && messageId is not null) NoteLocalChange(mailbox, messageId, "read");       // the local copy shows it read until the next sync
             if (mailbox is not null) await RefreshMicrosoftFolderCountsAsync(mailbox, CancellationToken.None, force: true);    // the folder's unread number follows
             return;
         }

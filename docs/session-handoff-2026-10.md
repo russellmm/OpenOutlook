@@ -65,3 +65,7 @@ The reading pane lays HTML out with a headless browser. Edge 154 stopped startin
 ## Performance (2026-10-05)
 Measured live (MailSmoke `timing [cache]`): a Graph request is about 150-300 ms. Done: account check (/me) remembered per token (`GraphAccountVerification`, enabled at app start-up only), folder details and message list fetched in parallel, HTTP/2 preferred, folder list shown from the last-seen page while the fresh one loads, unread numbers taken from the page itself and the folder tree re-read at most once a minute, token + connection warm-up at start-up.
 Next (bigger): serve live folders and messages from the local mailbox copy (PST), optimistic UI for read/flag/delete, body prefetch.
+
+## Local-first folders (2026-10-05)
+Folders of a Microsoft account are now shown from its mailbox copy (`LocalMailboxReader` in OpenOutlook.Mirror, wired in `MainWindow.LocalFolders.cs` and `LoadMicrosoftFolderAsync`): about 10 ms instead of 0.5 s. Message ids stay server ids, so reading, flagging, moving and deleting still go to Graph. Changes made here (`_localRemoved/_localFlags/_localReads`) show at once and are dropped when the next sync has caught up; a sync is requested 4 s after a change, when a folder is opened and the last sync is over 90 s old, and by the Refresh button. After a sync that changed something the open list reloads.
+Not yet local: message bodies and attachments (still Graph, about 0.25 s), the folder tree and its counts, Gmail accounts, move/drag between folders (relies on the next sync). List shows the newest 500 of a folder.

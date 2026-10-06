@@ -33,6 +33,12 @@ public partial class MainWindow
     /// showed. Suppress the flyout for a moment after any drag finishes.</summary>
     private void MessageListContextRequested(object? sender, Avalonia.Controls.ContextRequestedEventArgs e)
     {
+        if (HeaderColumnIndexOf(e.Source, out var header) is { } column && header is not null)
+        {
+            e.Handled = true;                                                               // a header has its own menu; the message menu is for messages
+            ShowColumnHeaderMenu(column, header);
+            return;
+        }
         if ((DateTime.UtcNow - _lastDragEndUtc).TotalMilliseconds < 600) e.Handled = true;
     }
 

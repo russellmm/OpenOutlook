@@ -431,11 +431,11 @@
                 <DataGrid.Columns>
                   <DataGridTemplateColumn Width="30" SortMemberPath="HasAttachment">
                     <DataGridTemplateColumn.Header>
-                      <ContentControl Template="{StaticResource OlIconPaperclip}" Width="13" Height="13" ToolTip.Tip="Attachment" />
+                      <Viewbox Width="14" Height="14" ToolTip.Tip="Attachment"><ContentControl Template="{StaticResource OlIconPaperclip}" Width="32" Height="32" /></Viewbox>
                     </DataGridTemplateColumn.Header>
                     <DataGridTemplateColumn.CellTemplate>
                       <DataTemplate>
-                        <ContentControl Template="{StaticResource OlIconPaperclip}" Width="13" Height="13" HorizontalAlignment="Center" IsVisible="{Binding HasAttachment}" />
+                        <Viewbox Width="14" Height="14" HorizontalAlignment="Center" IsVisible="{Binding HasAttachment}"><ContentControl Template="{StaticResource OlIconPaperclip}" Width="32" Height="32" /></Viewbox>
                       </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                   </DataGridTemplateColumn>
@@ -457,6 +457,26 @@
                   </DataGridTemplateColumn>
                   <DataGridTextColumn Header="Received" Width="150" Binding="{Binding ReceivedDisplay}" SortMemberPath="ReceivedSort" />
                   <DataGridTextColumn Header="Size" Width="72" Binding="{Binding SizeDisplay}" SortMemberPath="SizeBytes" />
+                  <DataGridTemplateColumn Width="34" IsVisible="False" SortMemberPath="ImportanceSort">
+                    <DataGridTemplateColumn.Header>
+                      <Viewbox Width="14" Height="14" ToolTip.Tip="Importance"><Canvas Width="16" Height="16"><Path Stroke="{DynamicResource OlIcon}" StrokeThickness="2.4" StrokeLineCap="Round" Data="M8,2 L8,9.5 M8,13.2 L8,13.4" /></Canvas></Viewbox>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding ImportanceGlyph}" Foreground="{Binding ImportanceBrush}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
+                  <DataGridTemplateColumn Width="34" IsVisible="False" SortMemberPath="IsFlagged">
+                    <DataGridTemplateColumn.Header>
+                      <Viewbox Width="14" Height="14" ToolTip.Tip="Flag status"><ContentControl Template="{StaticResource OlIconFlag}" Width="32" Height="32" /></Viewbox>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                      <DataTemplate>
+                        <Viewbox Width="14" Height="14" HorizontalAlignment="Center" IsVisible="{Binding IsFlagged}"><ContentControl Template="{StaticResource OlIconFlag}" Width="32" Height="32" /></Viewbox>
+                      </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
                 </DataGrid.Columns>
               </DataGrid>
             </DockPanel>

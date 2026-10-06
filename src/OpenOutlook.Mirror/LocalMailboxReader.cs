@@ -51,7 +51,7 @@ public static class LocalMailboxReader
             var flagged = flags is not null && flags.TryGetValue(id, out var changed) ? changed : known.Flagged;
             rows.Add(new GraphInboxMessage(id, s.Subject, s.From, s.To,
                 s.Received == default ? null : new DateTimeOffset(DateTime.SpecifyKind(s.Received, DateTimeKind.Utc)),
-                s.Size, s.HasAttachment, s.IsRead, "", flagged, false));
+                s.Size, s.HasAttachment, s.IsRead, "", flagged, false, s.Importance is >= 0 and <= 2 ? s.Importance : 1));
         }
         rows.Sort((a, b) => Nullable.Compare(b.Received, a.Received));
         var unread = rows.Count(r => !r.IsRead);

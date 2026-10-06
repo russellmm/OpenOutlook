@@ -906,6 +906,8 @@ public sealed partial class MainWindow : Window
         var view = new DataGridCollectionView(_graphRows);
         if (GroupByDateCheck.IsChecked == true)
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(nameof(GraphMessageListRow.DateGroup)));
+        else if (_groupPath is not null)
+            view.GroupDescriptions.Add(new DataGridPathGroupDescription(_groupPath));
         _updatingMessageList = true;
         try { MessageList.ItemsSource = view; RefreshItemCount(); MessageList.SelectedItem = null; }
         finally { _updatingMessageList = false; }
@@ -1036,6 +1038,8 @@ public sealed partial class MainWindow : Window
         var view = new DataGridCollectionView(rows);
         if (GroupByDateCheck.IsChecked == true)
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(nameof(MessageListRow.DateGroup)));
+        else if (_groupPath is not null)
+            view.GroupDescriptions.Add(new DataGridPathGroupDescription(_groupPath));
         _updatingMessageList = true;
         try
         {
@@ -1049,6 +1053,7 @@ public sealed partial class MainWindow : Window
     private void GroupByDateChanged(object? sender, RoutedEventArgs e)
     {
         if (_suppressGroupToggle || (_currentMessages is null && _currentGraphMessages is null)) return;
+        _groupPath = null;                                                                  // the tick means date sections again
         var messages = _currentMessages;
         var graphMessages = _currentGraphMessages;
         Interlocked.Increment(ref _messageVersion);
@@ -1059,6 +1064,12 @@ public sealed partial class MainWindow : Window
 
     private void MessageListSorting(object? sender, DataGridColumnEventArgs e)
     {
+        if (_groupPath is not null && MessageList.ItemsSource is DataGridCollectionView fieldView)
+        {
+            fieldView.GroupDescriptions.Clear();                                             // a column click sorts the whole folder, like the date sections do
+            _groupPath = null;
+            return;
+        }
         if (GroupByDateCheck.IsChecked != true || MessageList.ItemsSource is not DataGridCollectionView view)
             return;
         // A column click sorts the whole folder; date sections are the default view only.
@@ -1743,6 +1754,7 @@ public sealed partial class MainWindow : Window
         foreach (var column in settings.Columns.OrderBy(column => column.DisplayIndex))
         {
             var target = MessageList.Columns[column.ColumnIndex];
+            if (settings.Columns.Count == MessageList.Columns.Count) target.IsVisible = column.Visible;
             target.DisplayIndex = column.DisplayIndex;
             target.Width = new DataGridLength(column.Width,
                 column.IsStar ? DataGridLengthUnitType.Star : DataGridLengthUnitType.Pixel);
@@ -1796,7 +1808,7 @@ public sealed partial class MainWindow : Window
             var isStar = column.Width.UnitType == DataGridLengthUnitType.Star;
             var width = column.Width.UnitType is DataGridLengthUnitType.Pixel or DataGridLengthUnitType.Star
                 ? column.Width.Value : column.ActualWidth;
-            return new MessageColumnLayout(index, column.DisplayIndex, width, isStar);
+            return new MessageColumnLayout(index, column.DisplayIndex, width, isStar, column.IsVisible);
         }).ToArray();
         var settings = new ViewLayoutSettings
         {

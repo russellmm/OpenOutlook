@@ -6,7 +6,7 @@ namespace OpenOutlook.Providers.Microsoft;
 
 public sealed record GraphInboxMessage(string Id, string Subject, string From, string To,
     DateTimeOffset? Received, int? SizeBytes, bool HasAttachments, bool IsRead, string Preview,
-    bool IsFlagged = false, bool IsDraft = false);
+    bool IsFlagged = false, bool IsDraft = false, int Importance = 1);
 
 public sealed record GraphInboxPage(string FolderName, int TotalCount, int UnreadCount,
     IReadOnlyList<GraphInboxMessage> Messages, bool HasMore);
@@ -55,7 +55,7 @@ public sealed class GraphInboxReader
             "?$select=id,displayName,totalItemCount,unreadItemCount"),
             accessToken, cancellationToken);
         var pageTask = GetJsonAsync(new Uri(Origin + "/me/mailFolders/" + pathId + "/messages?$top=50&$orderby=receivedDateTime%20desc&" +
-            "$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview,flag,isDraft"),
+            "$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview,flag,isDraft,importance"),
             accessToken, cancellationToken);
         try { await Task.WhenAll(folderTask, pageTask).ConfigureAwait(false); }
         catch
@@ -96,7 +96,8 @@ public sealed class GraphInboxReader
             messages.Add(new GraphInboxMessage(id, OptionalString(item, "subject", 4096) ?? "(no subject)",
                 address, to, received, null,
                 Boolean(item, "hasAttachments"), Boolean(item, "isRead"),
-                OptionalString(item, "bodyPreview", 4096) ?? "", IsFlagged(item), OptionalBoolean(item, "isDraft")));
+                OptionalString(item, "bodyPreview", 4096) ?? "", IsFlagged(item), OptionalBoolean(item, "isDraft"),
+                OptionalString(item, "importance", 16)?.ToLowerInvariant() switch { "high" => 2, "low" => 0, _ => 1 }));
         }
         var hasMore = page.RootElement.TryGetProperty("@odata.nextLink", out var next) && next.ValueKind == JsonValueKind.String;
         return new GraphInboxPage(folderName, total, unread, messages, hasMore);

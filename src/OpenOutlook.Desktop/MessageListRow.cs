@@ -34,6 +34,13 @@ public sealed class MessageListRow(MailSummary summary) : INotifyPropertyChanged
     public DateTime ReceivedSort => Summary.Received == DateTime.MinValue ? Summary.Sent : Summary.Received;
     public string ReceivedDisplay => ReceivedSort == DateTime.MinValue ? "" : ReceivedSort.ToString("g");
     public string DateGroup => MessageDateGroups.Label(ReceivedSort, DateTime.Today);
+    public int ImportanceSort => Summary.Importance;
+    public string ImportanceGlyph => ImportanceSort switch { 2 => "!", 0 => "\u2193", _ => "" };
+    public Avalonia.Media.IBrush ImportanceBrush => ImportanceSort == 0 ? Avalonia.Media.Brushes.SteelBlue : Avalonia.Media.Brushes.Firebrick;
+    public string ImportanceName => ImportanceSort switch { 2 => "High importance", 0 => "Low importance", _ => "Normal importance" };
+    public bool IsFlagged => Summary.Flagged;
+    public string FlagName => IsFlagged ? "Flagged" : "No flag";
+    public string AttachmentName => HasAttachment ? "With attachments" : "No attachments";
     public int SizeBytes => Summary.Size;
     public string SizeDisplay => SizeBytes <= 0 ? "" : $"{(SizeBytes + 1023L) / 1024:N0} KB";
 }

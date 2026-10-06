@@ -125,6 +125,37 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Message_list_header_has_its_own_menu_and_importance_and_flag_columns()
+    {
+        var fixture = Fixture();
+        if (fixture is null) return;
+        var (window, copy) = await OpenFixtureAsync(fixture);
+        try
+        {
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            Assert.Equal(7, list.Columns.Count);
+            Assert.False(list.Columns[5].IsVisible);                                            // Importance and Flag are choices, not defaults
+            Assert.False(list.Columns[6].IsVisible);
+            window.SetColumnVisible(5, true);
+            window.SetColumnVisible(6, true);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(list.Columns[5].IsVisible && list.Columns[6].IsVisible);
+            Assert.Equal(0, list.Columns[5].DisplayIndex);                                      // next to the paperclip, at the left
+            Shot(window, "17-importance-flag-columns");
+            window.SortMessageList(5, ascending: false);
+            var view = (Avalonia.Collections.DataGridCollectionView)list.ItemsSource!;
+            Assert.Equal("ImportanceSort", view.SortDescriptions[0].PropertyPath);
+            window.GroupMessageListBy(1);                                                       // Group By This Field on From
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("FromDisplay", ((Avalonia.Collections.DataGridCollectionView)list.ItemsSource!).GroupDescriptions.OfType<Avalonia.Collections.DataGridPathGroupDescription>().Single().PropertyName);
+            window.SetColumnVisible(5, false);
+            window.SetColumnVisible(6, false);
+            Assert.False(list.Columns[5].IsVisible);
+        }
+        finally { window.Close(); Cleanup(copy); }
+    }
+
+    [AvaloniaFact]
     public async Task Space_bar_pages_the_message_then_moves_to_the_next_one()
     {
         var fixture = Fixture();

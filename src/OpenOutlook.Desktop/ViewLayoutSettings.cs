@@ -16,7 +16,7 @@ public sealed record ViewLayoutSettings
     public IReadOnlyList<MessageColumnLayout> Columns { get; init; } = [];
 }
 
-public sealed record MessageColumnLayout(int ColumnIndex, int DisplayIndex, double Width, bool IsStar);
+public sealed record MessageColumnLayout(int ColumnIndex, int DisplayIndex, double Width, bool IsStar, bool Visible = true);
 
 public sealed class ViewLayoutSettingsStore
 {
@@ -66,9 +66,10 @@ public sealed class ViewLayoutSettingsStore
         var weightsValid = ValidWeight(settings.FolderPaneWeight) &&
                            ValidWeight(settings.MessagePaneWeight) && ValidWeight(settings.ReaderPaneWeight);
         var columns = settings.Columns?.ToArray() ?? [];
-        var columnsValid = columns.Length == 5 &&
-                           columns.Select(column => column.ColumnIndex).Order().SequenceEqual(Enumerable.Range(0, 5)) &&
-                           columns.Select(column => column.DisplayIndex).Order().SequenceEqual(Enumerable.Range(0, 5)) &&
+        var columnsValid = columns.Length is 5 or 7 &&                                              // 5 before Importance and Flag existed
+                           columns.Select(column => column.ColumnIndex).Order().SequenceEqual(Enumerable.Range(0, columns.Length)) &&
+                           columns.Select(column => column.DisplayIndex).Order().SequenceEqual(Enumerable.Range(0, columns.Length)) &&
+                           columns.Any(column => column.Visible) &&
                            columns.All(column => double.IsFinite(column.Width) &&
                                (column.IsStar ? column.Width is >= 0.2 and <= 10 : column.Width is >= 30 and <= 1000));
         return new ViewLayoutSettings

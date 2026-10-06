@@ -1,5 +1,7 @@
 # Junk Cleaner: native integration plan
 
+Status: **built** for Microsoft accounts (2026-10-05): sections 5 phases 1-4 (core, Microsoft source, UI, scheduler) are done, the flagged-mail rule was added, and the live dry run on Hotmail was checked; phase 5 (Gmail) and phase 6 (PST sources) are not built. See section 8 and `FEATURES.md` section 9.
+
 Source app: `F:\Claude\OutlookJunkCleaner` (WPF tray app, drives classic Outlook over COM). Goal: the same behaviour built into OpenOutlook, for every connected account, with no Outlook dependency, on Windows and Linux.
 
 ## 1. What the old app does (to keep)

@@ -1,5 +1,7 @@
 # Session handoff (2026-10-05)
 
+> Documentation map (kept in step with the code as of 2026-10-05): `README.md` (overview, build), `docs/FEATURES.md` (every feature per platform), `BUILD_STATUS.md` (state, tests, open items), `PRODUCT_REQUIREMENTS.md` (requirements + conformance table), `DESIGN_SPEC.md` (baseline design; sections 11-18 = design as built). This file is the chronological working log; older material is in `docs/history/`.
+
 Read this first when resuming. Longer background: `native-engine-status.md` (what exists and how it is validated), `OpenOutlook_Design_Document.md` (every PST rule found, rules 1-35), `accounts-setup.md` (Hotmail / Gmail), `OpenOutlook_Avalonia_Integration_Plan.md` (phases, backlog), `Ctools.MD` / `PythonTools.MD` (tool references).
 
 ## State
@@ -39,7 +41,7 @@ cp src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll /f/Claude/OpenOut
 4. PST engine: the 3 broken tables of `test-archive.pst` are not rebuilt by any rule; ANSI/4K files are read-only; the soak harness does not cover folder rename/move; Python fixer lacks R10.
 5. Offline mailbox mirror (PST per account, user-chosen location): see `offline-mirror-plan.md`.
 6. Plan backlog (section 11): Calendar/People/Tasks, categories, undo/redo, address book, rules, Graph write for archive-to-mailbox, packaging for Linux, fuzzing/ASAN CI, 1 GB perf pass.
-6. Linux: the app starts under Xvfb in WSL; real sign-in on Linux (libsecret keyring) has not been exercised by the owner yet.
+6. Linux: packages, CI and the WSL checks exist (see the Linux sections below and `FEATURES.md`); a real sign-in on a Linux desktop with the keyring has not been confirmed by the owner yet.
 
 ## In progress: Gmail compose / reply / forward / attachments + new compose window (2026-10-05)
 Done and committed (builds; 450 .NET tests pass, 13 headless pass):

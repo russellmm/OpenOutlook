@@ -1,6 +1,6 @@
 # OpenOutlook — Design Specification (draft for review)
 
-Status: **Approved design baseline**, amended with owner-confirmed deletion, Hotmail Junk Cleaner and reuse decisions on 2026-09-24. Companion: `PRODUCT_REQUIREMENTS.md`. Implementation is underway; this remains the target design and its feasibility gates still apply. See `BUILD_STATUS.md` for current progress. Section 9 records how the reading pane, sanitizer profiles, image limits and failure containment are actually built, including what real hardware ruled out.
+Status: sections 1-10 are the **approved design baseline** (2026-09-24, with amendments up to 2026-10-02). Several decisions in them were superseded while the product was built; **section 11 lists exactly which, and sections 12-18 describe the design as it was built** (state of 2026-10-05). Where a statement in sections 1-10 contradicts section 11, section 11 wins. Companion documents: `PRODUCT_REQUIREMENTS.md` (requirements with a conformance table), `docs/FEATURES.md` (feature inventory per platform), `BUILD_STATUS.md` (current state).
 
 ## 1. Technical direction
 
@@ -12,7 +12,7 @@ Status: **Approved design baseline**, amended with owner-confirmed deletion, Hot
 
 ## 2. Project structure
 
-Created projects: `OpenOutlook.Desktop` (Avalonia shell and OS integration), `OpenOutlook.Domain` (initial policies/cache contract), `OpenOutlook.Providers.Microsoft` (Graph read adapters), `OpenOutlook.Providers.Google` (Gmail read adapter), `OpenOutlook.JunkCleaner` (portable rules/settings), `PstCore` (owner-contributed PST source), and `OpenOutlook.Tests`. Planned components include `OpenOutlook.Storage` (SQLite/FTS, migrations and blobs) and, only if needed after feasibility work, `OpenOutlook.Providers.ImapSmtp`. PST write validation remains a separate engineering track. The prototype UI still calls some provider types directly; moving those interactions behind application interfaces is part of the target design.
+Projects (as built): `OpenOutlook.Desktop` (Avalonia shell, windows, OS integration), `OpenOutlook.Auth` (OAuth PKCE, loopback listener, account registry, token stores: Windows Credential Manager and libsecret), `OpenOutlook.Domain` (policies, offline cache contract), `OpenOutlook.Providers.Microsoft` (Graph readers and writers), `OpenOutlook.Providers.Google` (Gmail reader, writer, MIME builder), `OpenOutlook.Mirror` (mailbox copies: sync state, pull and push engines, local reader), `OpenOutlook.JunkCleaner` (portable rules and settings), `OpenOutlook.PstNative` (binding of the C library, `NativePstEngine`), `PstCore` (shared models, `IPstEngine`, EML export), `native/openpst` (the C library), `tests/OpenOutlook.Tests`, `tests/OpenOutlook.HeadlessTests`, and tools `tools/MailSmoke`, `tools/PstSoak`, `tools/PstProbe`, `tools/python`. A separate `OpenOutlook.Storage` (SQLite/FTS) was **not** built; see section 11.
 
 ## 3. Unified model and provider semantics
 
@@ -157,3 +157,71 @@ Per image: 8 MiB encoded, 16 million decoded pixels, at most 64 sources per mess
 ## 10. Technical references
 
 [Microsoft desktop app configuration](https://learn.microsoft.com/en-us/entra/identity-platform/scenario-desktop-app-configuration), [Microsoft auth code/refresh](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow), [Graph mail permissions](https://learn.microsoft.com/en-us/graph/permissions-reference), [Graph folder delta](https://learn.microsoft.com/en-us/graph/api/mailfolder-delta?view=graph-rest-1.0), [Graph message delta](https://learn.microsoft.com/en-us/graph/delta-query-messages), [Gmail OAuth for installed apps](https://developers.google.com/identity/protocols/oauth2/native-app), [Gmail scope list](https://developers.google.com/workspace/gmail/api/auth/scopes), [Gmail mailbox sync](https://developers.google.com/workspace/gmail/api/guides/sync), [Gmail label semantics](https://developers.google.com/workspace/gmail/api/guides/labels), [Google testing/verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification).
+
+
+## 11. What the build changed relative to the baseline (2026-10-05)
+
+| Baseline statement (sections 1-10) | As built | Where |
+|---|---|---|
+| Ubuntu 26.04 only; Windows is a later, separate release | One code base builds for **Windows 11** (daily-use platform) and **Linux** (`.deb`, tar.gz; tested on Ubuntu 26.04 in WSL2/WSLg and in CI). Domain logic stayed platform-neutral; platform code is limited to token stores, browser launch, file dialogs and window placement. | 17 |
+| PST access through the managed `PstCore` reader/writer | Replaced by **OpenPST**, a from-scratch C library (read, write, import, create, check, fix), bound through `OpenOutlook.PstNative`. The managed engine was removed; `PstCore` keeps the shared models and the `IPstEngine` contract. | 12 |
+| PST edits happen in an "Editing Mode" behind a mandatory `.bak` and a CRC seal; file never grows; folder rename/delete and MIME insertion are follow-ups | Archives are **always editable** unless locked: journal plus `.lck`, write-behind, read-only fallback; the `.bak` copy is an option. The file grows (AMap sections), folders can be created, renamed, moved, deleted and purged, messages imported from EML/Graph/Gmail, new PSTs created. SCANPST.EXE is the correctness oracle. Unicode-512 only for writing. | 12 |
+| One local SQLite database with metadata, bodies, drafts, operation queue, sync cursors and FTS5 | Not built. Instead each connected account has a **mailbox copy**: a PST (messages) plus a small SQLite state file (id mapping, change keys, pending operations). The server stays authoritative. There is no full-text index. | 13 |
+| Sync by Graph delta and Gmail history ids, durable queue with idempotency keys | **List-and-compare** per folder/label (Graph and Gmail). Local changes are pushed with a pending-operation table for offline periods. Delta/history sync (large mailboxes) and queued **sending** are future work. | 13 |
+| Gmail scope proposal `gmail.modify` | `gmail.modify` + `gmail.compose` (send, drafts). Permanent delete is not offered. | 3 (accounts-setup.md) |
+| Reading pane: snapshot is the default everywhere; the interactive WebKitGTK view is an opt-in because it cannot composite under Wayland | Same on Linux. On **Windows** the embedded WebView2 is tried first and the snapshot is the fallback. Layout uses a **bundled** chrome-headless-shell (pinned) because Edge stopped starting headless; installed browsers are the fallback. | 16 |
+| Hotmail Junk Cleaner: reuse the portable rules, scan through the Microsoft provider (planned) | Built for Microsoft accounts: runner with preview, optional automatic cleaning, log, import; flagged-mail rule added. | 15 |
+| Section 8 risk 11 and section 9 "Known gap": UI-thread exceptions end the process; `CrashNotice` not wired; `SafePick` callback unused | **Obsolete.** `Dispatcher.UIThread.UnhandledException` logs, shows `CrashNotice` and survives; every file-dialog call site reports failures. (Recorded in `docs/history/BUILD_STATUS-through-2026-10-02.md`.) | 9 |
+| Section 9 "Open inconsistency": PST HTML messages start on the embedded reader | Superseded by the same platform rule as above. | 16 |
+| Performance targets "to be confirmed" | Measured: a Graph or Gmail request takes about 150-300 ms; folders and bodies from the mailbox copy about 10 ms and 0-3 ms. | 14 |
+| Interface section 6 (no mention of window geometry limits) | Window position cannot be restored under WSLg; the window opens on the primary monitor. | 17 |
+
+## 12. PST engine as built
+
+- **Layers:** `native/openpst` (C: NDB block/node layer, LTP heap/BTH/property/table contexts, messaging layer; modules for reading, writing, import, folder operations, creating files, the checker `opst_check` and the fixer `opst_fix` with rules R1-R12) → `OpenOutlook.PstNative` (P/Invoke wrapper, `NativeLibraryLoader`, `NativePstEngine`, `PstEngineFactory.Open / OpenEditable / Create`) → `PstCore.IPstEngine` (what the UI codes against).
+- **Native library placement:** `openpst.dll` / `libopenpst.so` must be beside the program (the loader looks in the application directory and `runtimes/<rid>/native`; it does not find a library embedded in a single-file bundle). Packaging copies it there on both platforms.
+- **Write safety:** every write goes through a journal; a `.lck` file marks the archive in use; when locking fails the archive opens read-only with the reason shown; failed opens are logged (`[pst-open]`). Correctness is judged by repairing a copy with Microsoft's SCANPST.EXE and diffing (method in `docs/native-engine-status.md`); `tools/PstSoak` runs seeded random operations and checks after each one.
+- **Formats:** Unicode PST with 512-byte pages: read and write. ANSI, 4K-page OST (compressed blocks) and cyclic-encrypted files: read-only.
+- **Creating files:** `opst_create` writes an empty file with the node set Outlook creates (validated against a blank file made by Outlook 2024); mailbox copies are created this way.
+- All file-format rules found, with how each was found: `OpenOutlook_Design_Document.md`; editing semantics: `pst-editing-design.md`; module reference: `Ctools.MD`.
+
+## 13. Mailbox copies (offline mirror) as built
+
+- **Storage:** `<address>.pst` plus `<address>.sync` (SQLite: `meta`, `folder(remote_id, pst_nid, sync_token, last_sync)`, `message(remote_id, folder_remote_id, pst_nid, change_key, is_read, flagged)`, `pending(op, args, attempts)`) in the folder from `MirrorSettingsStore` (`mirror-settings.json`: default folder and per-account `Enabled`, `KeepMonths` (default 12), `MaxAttachmentBytes` (default 25 MB), location). `MirrorLocations` validates a folder (writable, space, warns for network and cloud-synced folders).
+- **Sources:** `IMailSyncSource` / `IMailSyncSink` abstract the provider. `GraphMirrorSource` maps Graph folders (well-known names for Deleted Items etc.); `GmailMirrorSource` maps labels to folders ("Parent/Child" label names nest, `TRASH` = Deleted Items), asks Gmail once per pass for the account-wide unread and starred id sets, and keeps an LRU cache of downloaded MIME.
+- **Pull (`MirrorSyncEngine`):** list the server folders, create/remove local folders, list each folder (within the keep window), download missing messages as MIME and import them, update read/flag/changes, remove vanished messages; failures are isolated per message; oversize or non-mail items become tombstones (`pst_nid` 0) and stay readable online.
+- **Push (`MirrorPush`):** compares the PST with the state rows and sends read/flag changes, moves, deletes and new folders (new folders get a `local:` id until created); server wins conflicts; offline keeps the changes pending; list caches are invalidated after a push. `PushNotSupportedException` marks a source that cannot accept a change.
+- **Scheduling (`MainWindow.Mirror.cs`):** first pass 20 s after start, then every 15 min; a 30 s file-watch sends changes made inside the copy; a pass is also requested 4 s (Microsoft) or 20 s (Gmail) after a change made in the app, when an opened folder's last sync is older than 90 s (Microsoft) or 5 min (Gmail), by Refresh and by Sync now. `OPENOUTLOOK_NO_MIRROR=1` disables the scheduler (tests, tools).
+- **Presentation:** the copy is opened as a data file (it is listed in Account Settings > Data Files) but is **not** shown as a second mailbox in the folder list; `SyncIndicatorModel` condenses the per-account states into one status-bar indicator (worst state wins).
+- Plan, decisions and remaining ideas: `docs/offline-mirror-plan.md`.
+
+## 14. Local-first reading and actions as built
+
+- **Reading:** for an account with a synchronised copy, the folder list comes from `LocalMailboxReader.Read` (newest 500 messages of the folder, in the shape of the live list; message ids stay the server ids) and the body from `LocalMailboxReader.ReadBody`. When the copy cannot answer (off, folder never synchronised, file not open, body not stored) the code falls back to the server exactly as before. Attachments and, for Gmail, the reply data still come from the server and are added when they arrive.
+- **Overlay:** a change made in the app is remembered in `_localRemoved`, `_localFlags` and `_localReads` (with a time stamp) so the list is right before the copy catches up; a synchronisation pass that **started after** the change clears it; a server refusal clears it and reloads the list.
+- **Actions:** read/unread, flag, archive and delete change the list first and are then sent to the provider one request at a time in order (`_msActionGate`, `_gmailActionGate`); a refusal restores the list and says why. Deleting inside Deleted Items (permanent) still asks and waits. Unread counts are adjusted locally and re-read from the server shortly after.
+- **Request costs:** `GraphAccountVerification` remembers per token that `/me` matched the account (45 minutes, tokens kept only as hashes, enabled only in the application so request-counting tests are unaffected); folder details and the message page are fetched in parallel; HTTP/2 is preferred; a token and a connection are warmed up at start; the last page of each folder is shown while the fresh one loads when the copy is not used.
+
+## 15. Junk Cleaner as built
+
+- `OpenOutlook.JunkCleaner`: `JunkMatcher` / `JunkRuleOptions` (keywords against the From line components; rules `DeleteHighImportance`, `DeleteMissingTo`, `DeleteOnBehalfOf`, `DeleteFlagged`; unknown provider fields are never a positive match), `JunkCleanerSettingsStore` (`junk-cleaner.json`, per account: `Enabled`, `AutoClean`, `IntervalMinutes` 1-60, keywords, rules; atomic writes; legacy `config.json` preview/import).
+- `OpenOutlook.Providers.Microsoft`: `GraphJunkMailReader` (well-known `junkemail` folder of the verified account, bounded pagination with next-link shape checks), `MicrosoftJunkPreviewMatcher`, `MicrosoftJunkCleanerRunner` (scan, move matches to `deleteditems`, at most 500 per run, per-message failure isolation, stops on sign-in errors).
+- `OpenOutlook.Desktop`: `AccountSettingsWindow.Junk.cs` (tab), `JunkPreviewDialog` (tick boxes), `MainWindow.Junk.cs` (manual run, one-minute scheduler, import), `JunkCleanerLog` (what moved and why, `junk-cleaner.log`). Gmail and PST junk handling: not built.
+
+## 16. Reading and composing across platforms
+
+- **Layout engine:** `BrowserHtmlRenderer` + `BrowserProcessTracker` start a headless browser: first the bundled chrome-headless-shell beside the program, then installed Edge/Chrome/Chromium (the one that works is remembered); leftover browser processes and stale profile folders from killed runs are removed at start.
+- **Interactive view:** Windows uses the embedded WebView2 (documents over about 2 MB go straight to the snapshot); Linux uses WebKitGTK only if `libwebkit2gtk-4.1` is installed (otherwise the control is removed at start); under Wayland an embedded view cannot be trusted to paint, so connected mail starts on the snapshot.
+- **Compose:** `ComposeWindow` with `IComposeBackend` implementations (`GraphComposeBackend` for server drafts, `GmailComposeBackend` for locally built MIME); the visual HTML editor uses the platform web view; `ComposeHtml` is the sanitizer profile for outgoing bodies.
+
+## 17. Platforms, packaging and CI
+
+- **Windows:** `dotnet publish` single-file self-contained win-x64 into a folder that also holds `openpst.dll`, `openoutlook-oauth.json` and the `chromium` folder; tokens in Windows Credential Manager; the sign-in browser is launched through the shell; mapped network drives work in a normal (non-elevated) session, an elevated program is told that Windows hides them.
+- **Linux:** `scripts/package-linux-x64.sh` and `scripts/build-deb.sh` produce a tar.gz and a `.deb` (`/opt/openoutlook`, `openoutlook` command, desktop entry, icons; Depends come from the bundled browser's list plus libsecret and xdg-utils); the browser files are marked `ExcludeFromSingleFile` and `libopenpst.so` is copied beside the program.
+- **WSL / WSLg specifics:** mapped Windows drives need `/etc/fstab` drvfs mounts and are added to the GTK dialog sidebar by `WslDriveBookmarks`; popups are drawn inside the window (`X11PlatformOptions.OverlayPopups`) and dialogs are `Topmost` because WSLg does not keep transient windows above their owner; the window is placed on the monitor Windows has as primary (`WslWindowPlacement` reads WSLg's monitor list), asked for before the window shows and again up to eight times; the launcher sets `BROWSER` to the Windows browser and hides Mesa's DRI3 warnings.
+- **CI:** `.github/workflows/linux.yml` (Ubuntu 24.04): native build and tests, unit tests, headless UI tests, browser download, packages, a start of the unpacked `.deb` under Xvfb with a self-test render, artifacts. Scripts for the same on a Windows PC with WSL: `scripts/wsl-*.sh`.
+- Data and settings locations: `docs/FEATURES.md` section 11.
+
+## 18. User-interface additions since the baseline
+
+Responsive ribbon (groups collapse into drop-downs), Account Settings dialog (Email, Data Files, Junk Cleaner tabs, "Add by path…"), sync indicator, message-list header menu (Arrange By, Reverse Sort, Field Chooser, Remove This Column, Group By This Field), Importance and Flag columns (hidden by default, visibility persisted), sorting by Received keeps date sections, application icon, themed lists and tabs (`Assets/OutlookStyles.axaml`: `olTabs`, `olList`, `olGroup`). Icon templates are 32x32 canvases and must be wrapped in a `Viewbox` to be drawn smaller.

@@ -1,6 +1,72 @@
 # OpenOutlook — Product Requirements (draft for review)
 
-Status: **Approved requirements baseline**, amended with owner-confirmed deletion, Hotmail Junk Cleaner and reuse decisions on 2026-09-24. The 4 GB validation gap and remaining feasibility questions in section 7 are explicit. This is the requirements baseline; implementation is underway. See `BUILD_STATUS.md` for what is currently built and what remains. Notes marked **Status (2026-09-30)** record how far each requirement is met today and are descriptions of progress, not changes to the requirement.
+Status: **Approved requirements baseline** (2026-09-24, amended with owner-confirmed deletion, Hotmail Junk Cleaner and reuse decisions). The requirements below are unchanged; what changed is how far they are met and on which platform. **Section 0 is the conformance table of 2026-10-05**; the per-requirement notes marked *Status (2026-09-30)* in sections 3 and 4 are older and are superseded by section 0 wherever they disagree. Feature detail per platform: `docs/FEATURES.md`; current state: `BUILD_STATUS.md`; design: `DESIGN_SPEC.md`.
+
+
+## 0. Conformance at 2026-10-05
+
+Legend: **Met** = built and used; **Partly** = built with the limits stated; **Not met** = not built; **Changed** = built differently than written (the change is in `DESIGN_SPEC.md` section 11). W = Windows, L = Linux.
+
+### Accounts and mail (3.1)
+
+| Requirement | Status | Notes |
+|---|---|---|
+| System-browser OAuth (PKCE) for personal Microsoft and Google accounts; no passwords; reconnect and remove | **Met** (W, L) | Linux sign-in uses the keyring; the owner's first real Linux sign-in is not confirmed. Google consent screen still in Testing mode. |
+| Guided sign-in with OpenOutlook-owned client ids; Account Settings add/remove | **Met** | Account Settings dialog (Email tab). Removing an account does not yet offer to delete its mailbox copy. |
+| Read, compose, reply, reply all, forward, drafts, delete, read/unread, flag/star, folder/label organisation, attachments | **Met** (Microsoft, Gmail) | Gmail cannot edit a saved draft. Permanent Gmail delete is not offered. |
+| Per-account signature (plain and HTML) | **Not met** | |
+| Contacts / address book, recipient lookup | **Not met** | Permission requested; no UI. |
+| Automatic sync on start and periodically, manual Send/Receive, visible progress and last sync | **Met** | Mailbox copies: 20 s after start, every 15 min, after changes, on Refresh; status-bar indicator and Data Files status. |
+| Offline: synchronised folders readable offline; drafts/send queue/mutations while disconnected | **Partly** | Reading (headers, bodies up to the keep window, attachments within the cap) and changes work offline; changes wait and are sent later. **Sending and drafts offline (Outbox): not built.** |
+| Gmail labels as folders with multi-label semantics | **Met** | One folder per label; a message with several labels appears in each. |
+| Cross-account and cross-PST full-text search with coverage indicator | **Not met** | Only selected-folder header search in PSTs. |
+| Unread counts; optional new-mail notifications | **Partly** | Counts yes; notifications not built. |
+| Deletion semantics (Delete to Trash/Deleted Items; permanent delete after confirmation) | **Partly** | Microsoft and PST: met (permanent delete asks first). Gmail: Delete moves to Trash; permanent delete not offered (scope). Shift+Delete handling follows the same rules where implemented. |
+
+### Hotmail Junk Cleaner (3.2)
+
+| Requirement | Status | Notes |
+|---|---|---|
+| Per-account opt-in, Junk folder only, From-keyword matching, three optional rules | **Met** | Plus a flagged-mail rule (added at the owner's request). |
+| Clean Now with count, reasons and confirmation; moves to Deleted Items | **Met** | Preview with tick boxes. |
+| Always clean, 1-60 minutes, silent, audit history | **Met** | Cap of 500 messages per run; log of what moved and why. |
+| Explicit one-time import of the legacy `config.json` | **Met** | Turns the cleaner on; leaves automatic cleaning as it was. |
+
+### PST archives (3.3)
+
+| Requirement | Status | Notes |
+|---|---|---|
+| Attach/detach several PSTs, browse, read, search, save attachments, export to EML | **Met** | Search is selected-folder header search. |
+| Write operations on all supplied PSTs: read/unread, flag, move, delete, create/rename/delete/restructure folders; backup and recovery; Outlook-readable results | **Met** (engine), **Partly** (evidence) | OpenPST writes Unicode files; SCANPST.EXE reports no errors on the owner's files and on soak results. Journal and lock file; `.bak` is optional. Opening results in classic Outlook was done by the owner for earlier files; not repeated for every build. ANSI and 4K files are read-only. |
+| Copy/move between a PST and a connected account, with verification and duplicate handling | **Partly** | PST to PST and import of EML/Graph/Gmail messages into a PST are built; a user-facing "copy this PST folder to my Hotmail account" transfer is not. The mailbox copies are the PST-side mirror of an account. |
+| Safe writes under interruption and out-of-space | **Met** | Journal rollback; `RecoveredFromInterruptedWrite`. |
+| ~4 GB scale | **Not met** | Largest tested file about 2.6 GB. |
+
+### Viewing and files (3.4)
+
+| Requirement | Status | Notes |
+|---|---|---|
+| Three panes, ribbon, shortcuts; persisted window size, pane widths, columns | **Met** (W, L) | Window **position** is not restored on Linux under WSLg (opens on the primary monitor). |
+| Themes, accents, text scaling | **Met** | Dark mode and high-DPI not fully verified. |
+| HTML rendering with images, layout fidelity, long messages, plain text alternative, view original, open in browser | **Met** | Bundled headless Chromium; WebView2 on Windows, WebKitGTK optional on Linux. |
+| Text selection and copy in the reading pane | **Partly** | Block granularity over the snapshot; native selection in the interactive view and in the browser. |
+| Preview/open attachments with warnings; sanitised names | **Met** | Open / Save as; risky types are never opened. |
+| Save attachments, export EML, print through the system print dialog | **Partly** | Printable PDF only; no native print dialog. |
+
+### Quality gates (4)
+
+| Gate | Status | Notes |
+|---|---|---|
+| PST integrity (SCANPST, soak, round trips) | **Met** for Unicode files; interruption tests done on copies | |
+| Sync correctness (no duplicates, stale-state safety) | **Partly** | Server wins; per-message failure isolation; offline changes wait; delta/history sync and a durable send queue not built. |
+| Security and privacy (PKCE, keyring/credential store, local-only data, isolation) | **Partly** | Dependency vulnerability review not done; local mailbox copies are unencrypted files (as stated in 2). |
+| Performance (first folder list, UI responsive) | **Met** for connected mail (folders from the copy in about 10 ms); the 2.6 GB archive opens within the targets on the owner's PC; no formal benchmark record. | |
+| Accessibility | **Partly** | Keyboard navigation and text scaling; screen-reader labels not audited. |
+| Packaging and verification | **Partly** | Windows folder build; Linux `.deb` and tar.gz built and smoke-tested in CI; not yet validated on a bare-metal Linux desktop. |
+
+### Contacts, calendar and out-of-scope items
+
+Calendar, tasks and People appear as navigation items but are not built (they were outside the first release). The Windows build, listed under "future" in section 6, **exists** and is the daily-use platform.
 
 ## 1. Vision and audience
 
@@ -10,7 +76,7 @@ A personal, local-first desktop mail client for Ubuntu 26.04 that feels familiar
 
 ## 2. Users, environments, and constraints
 
-- Ubuntu 26.04 desktop, .NET 8 and Avalonia 11 preferred; self-contained local Linux x64 distribution requiring no separately installed .NET runtime. Windows OpenOutlook is a future release; design should avoid Linux-only domain logic.
+- **Platforms (amended 2026-10-02):** the owner uses OpenOutlook on **Windows 11** daily, and it also runs on **Ubuntu 26.04** (tested in WSL2/WSLg and CI, packaged as a `.deb` and tar.gz). .NET 8 and Avalonia 11; self-contained builds that need no separately installed .NET runtime. Domain logic is shared; platform code is limited to token stores, browser launch, dialogs and window placement.
 - Up to four personal accounts initially: two Outlook.com/Hotmail and two Gmail; onboarding may start with one of each. No enterprise Exchange/Microsoft 365 or generic-provider IMAP requirement for v1. If a provider API integration fails in practice, investigate provider-supported **OAuth over IMAP/SMTP** as a fallback; this does not bypass OAuth, provider policies, or the required mail features.
 - Standalone PSTs, used in OpenOutlook on Ubuntu and later reopened in classic Outlook on Windows. Supplied private samples: `rmarrash_1.pst` (~868 MB), `rmarrash_2.pst` (~761 KB), `rmarrash_3.pst` (~2.5 GiB / ~2.6 GB decimal). Desired scaling up to ~4 GB; no representative 4 GB sample is currently available.
 - Personal/local-only runtime: no hosted sync server, no telemetry by default, no app-specific unlock password, no application-layer encrypted mail cache. Ubuntu account permissions and optional OS full-disk encryption protect local mail content; OAuth refresh tokens should use the desktop keyring (with a clear sign-in error if unavailable, not plaintext fallback).
@@ -75,7 +141,7 @@ A personal, local-first desktop mail client for Ubuntu 26.04 that feels familiar
 
 ## 6. Explicit exclusions / future opportunities
 
-OpenOutlook Windows build, enterprise accounts, generic-provider IMAP (provider-specific OAuth IMAP/SMTP fallback is investigable), calendar/tasks, send-as aliases, scheduled send, native batch PDF export, public multi-user OAuth publication, and hosted sync service. GitHub publication of source does **not** imply redistribution of PST samples, tokens or app registration secrets.
+Enterprise accounts, generic-provider IMAP (provider-specific OAuth IMAP/SMTP fallback is investigable), calendar/tasks, send-as aliases, scheduled send, native batch PDF export, public multi-user OAuth publication, and hosted sync service. GitHub publication of source does **not** imply redistribution of PST samples, tokens or app registration secrets.
 
 ## 7. Open decisions for owner approval
 

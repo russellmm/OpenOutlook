@@ -1,6 +1,6 @@
 # OpenOutlook – Native PST Engine Integration Plan
 
-Status: approved direction (2026-10-04). Local branch / patch set only; nothing is pushed.
+Status: approved direction (2026-10-04), **implemented** (phases 0-4 and the later work are on `main`; see `native-engine-status.md` and `docs/FEATURES.md`). The text below is the original plan and decision record; section 11 (backlog) is partly done: packaging for Linux, Graph/Gmail features and the mailbox copies exist, Calendar/People/Tasks, undo/redo, rules and the address book do not.
 
 ## 1. Decisions
 

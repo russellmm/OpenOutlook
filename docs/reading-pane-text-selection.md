@@ -1,5 +1,7 @@
 # Reading pane: HTML rendering, text selection, and why an embedded browser does not work here
 
+> **Platform note (2026-10-05).** This analysis was made on a Wayland Linux desktop. On **Windows** the embedded WebView2 view works and is tried first (documents over about 2 MB go to the snapshot); the snapshot reader described here is the fallback there and the default for connected mail everywhere. The layout browser is now a bundled chrome-headless-shell (`DESIGN_SPEC.md` section 16). Under WSLg the interactive WebKitGTK view is available only if `libwebkit2gtk-4.1` is installed and has not been judged on a real desktop.
+
 ## The constraint that decides everything
 
 OpenOutlook renders received HTML mail two ways:

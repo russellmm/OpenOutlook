@@ -1,5 +1,7 @@
 # PST Editing — design & phased plan (started 2026-10-01)
 
+> **Historical document.** This describes the first editing track on the managed engine (Editing Mode, `.bak` seal, no file growth). That engine was replaced by the native OpenPST library, which edits archives in place behind a journal, grows the file, creates/renames/moves/deletes folders and imports messages. The current design is in `DESIGN_SPEC.md` section 12, `native-engine-status.md` and `OpenOutlook_Design_Document.md`. The format rules recorded here remain valid.
+
 Goal: move messages between folders, delete (Deleted Items + purge), persistent flags — on real
 archives, without ever risking data loss. Owner archives: rmarrash_1.pst (909MB), _2 (779KB, the
 disposable test fixture — never write to 1/3 in tests), _3 (2.6GB).

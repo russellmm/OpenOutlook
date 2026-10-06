@@ -61,7 +61,7 @@ Run a soak: `PstSoak clean.pst --second clean2.pst --seed 1 --ops 300 --keep out
 ## Status
 - 2026-10-05: fixer rule R11 (design rule 37); `rmarrash_2.pst` and `test-archive.pst` repaired to SCANPST NO_ERRORS (originals kept in `.local/originals`, not in git); `test_write` 168 checks pass on both.
 - 8 soak seeds (300-400 operations): no checker findings; SCANPST NO_ERRORS on every result.
-- Tests: `test_write` 168 checks pass; .NET 417 pass, 6 known Windows-only failures (5 unix-permission cache tests, 1 loopback socket test); 4 headless UI tests pass.
+- Tests: `test_write` 168 checks pass; .NET 417 pass, 6 known Windows-only failures (5 unix-permission cache tests, 1 loopback socket test); 4 headless UI tests pass. **Later the same day:** 531 .NET tests (all pass on Linux; the 5 Unix-permission tests fail on Windows) and 21 headless UI tests; see `BUILD_STATUS.md`.
 
 ## Known limits / next
 - Writing is Unicode-512 only; ANSI and 4K files open read-only.
@@ -87,4 +87,4 @@ Run a soak: `PstSoak clean.pst --second clean2.pst --seed 1 --ops 300 --keep out
 
 Accounts and setup: see `accounts-setup.md`. Handoff for the next session: see `session-handoff-2026-10.md`.
 
-Known limits: Gmail has no composing, replying, forwarding or attachment saving (needs another scope for sending); Hotmail unread counts in the picker come from the folder list; the Google consent screen shows the project's name ("Home Assistant 13") because the OpenOutlook client shares a Google Cloud project with another app (cosmetic; fix by renaming the consent screen or using a separate project).
+Known limits (at the time; Gmail compose, reply, forward and attachment saving were added later on the same day, see `session-handoff-2026-10.md`): Hotmail unread counts in the picker come from the folder list; the Google consent screen shows the project's name ("Home Assistant 13") because the OpenOutlook client shares a Google Cloud project with another app (cosmetic; fix by renaming the consent screen or using a separate project).

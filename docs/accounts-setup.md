@@ -1,6 +1,6 @@
 # Connecting Microsoft (Hotmail / Outlook.com) and Gmail accounts
 
-Works the same on Windows and Linux. Sign-in uses the system browser (OAuth with PKCE, a loopback callback on 127.0.0.1); OpenOutlook never sees your password. Refresh tokens are kept in the operating system's secret store, never in a file:
+Works the same on Windows and Linux (Ubuntu; under WSL see "Linux and WSL" at the end). Sign-in uses the system browser (OAuth with PKCE, a loopback callback on 127.0.0.1); OpenOutlook never sees your password. Refresh tokens are kept in the operating system's secret store, never in a file:
 
 | System | Where tokens are stored |
 |--------|-------------------------|
@@ -55,6 +55,13 @@ Setting up the Google side (once):
 - The Microsoft authorization request built from the configured client id was accepted by Microsoft's login endpoint on Windows. Completing a sign-in needs a person at the browser and has not been done by the automated tests.
 
 ## Account Settings (File > Info > Account Settings)
-The Account Settings button opens a menu like Outlook's (Account Settings…, Account Name and Sync Settings, and four items still marked "To be implemented"). **Account Settings…** is a dialog with two tabs:
+The Account Settings button opens a menu like Outlook's (Account Settings…, Account Name and Sync Settings, and four items still marked "To be implemented"). **Account Settings…** is a dialog with three tabs (Email, Data Files, Junk Cleaner):
 - **Email**: the connected accounts (New… connects one, Repair… signs in again, Remove disconnects it from this computer, Set as Default chooses the default sender of new messages). Change… and the arrows are marked "To be implemented".
-- **Data Files**: the local mailbox copy of each account (a PST, default `%LOCALAPPDATA%\OpenOutlook\Mail` or `~/.local/share/openoutlook/mail`) and every Outlook data file you opened. Add… opens a PST, Settings… shows details (for a mailbox copy: how much mail it keeps, the largest attachment, Sync now, Change location…), Remove closes a file (never deletes it), Open File Location… shows its folder. Gmail copies are not available yet.
+- **Data Files**: the local mailbox copy of each account (a PST, default `%LOCALAPPDATA%\OpenOutlook\Mail` or `~/.local/share/openoutlook/mail`) and every Outlook data file you opened. Add… opens a PST, Settings… shows details (for a mailbox copy: how much mail it keeps, the largest attachment, Sync now, Change location…), Remove closes a file (never deletes it), Open File Location… shows its folder. Gmail accounts have a copy as well (one folder per label). A mailbox copy is stored in `%LOCALAPPDATA%\OpenOutlook\Mail` (Windows) or `~/.local/share/openoutlook/mail` (Linux) unless you change the location, and it is not shown as a second mailbox in the folder list.
+- **Junk Cleaner** (Microsoft accounts): per account on/off, keywords (one per line), the rules (high importance, no To address, "on behalf of", flagged), automatic cleaning with an interval, **Clean now…** (shows a list with tick boxes before anything moves to Deleted Items), **Import from OutlookJunkCleaner…** and the log of what was removed. The ribbon's Junk group has **Clean Junk** for the same preview.
+- **Add by path…** (Data Files tab): type or paste a path such as `X:\email\archive.pst` or `\\server\share\archive.pst` when the file dialog does not list a network drive.
+
+## Linux and WSL
+- Tokens need a **persistent, unlocked default keyring** (GNOME Keyring or KWallet). Under WSL: `sudo apt install gnome-keyring dbus-user-session libsecret-tools`; the first use opens "Choose password for new keyring" (`scripts/wsl-create-keyring.sh` triggers it); `scripts/wsl-keyring-diag.sh` shows the state.
+- Sign-in pages open in the system browser. The `.deb` launcher points `BROWSER` at the Windows browser when it runs under WSL.
+- Windows network drives are available to WSL only after they are mounted (`/etc/fstab` drvfs lines such as `X: /mnt/x drvfs defaults,nofail,uid=1000,gid=1000 0 0`); the file dialog lists `/mnt/<letter>` drives in its sidebar.

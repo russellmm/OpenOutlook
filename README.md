@@ -1,70 +1,80 @@
 # OpenOutlook
 
-An **early, incomplete development prototype** of a classic-Outlook-inspired mail client for Ubuntu, built with .NET 8 and Avalonia 11. **Not ready for daily use or release.** The current desktop can open PST archives **read-only**, browse messages, search selected-folder headers, save supported PST attachments, and export eligible PST messages and folders with plain text, HTML and by-value file attachments to EML. Account setup has a browser sign-in flow for personal Microsoft and Google accounts. The project owner supplied the OpenOutlook Microsoft application ID and showed a successful Hotmail connection; Google sign-in remains unconfigured. The desktop restores saved Microsoft accounts on startup, lists visible Microsoft mail folders, and reads the newest 50 messages and their bodies from a selected folder through Microsoft Graph. A selected Hotmail file attachment can be saved to a new local file. A headless check against the owner-authorized account verified saved-token refresh, folder listing, message reading, and attachment metadata/raw file streaming. There is no background synchronization or PST editing. Microsoft compose supports To/Cc/Bcc, text or visual HTML editing, file attachments and reopening saved drafts; mail actions remain wired. The visual editor can be moved by dragging its blue bar. Its formatting toolbar includes fonts, colors, alignment, lists, indent, links, image URLs, tables and undo/redo; Compose shows readable preview text, with source available separately. Closing a changed Compose window saves the draft first, while **Discard changes** closes without saving. The owner has confirmed live Hotmail send, reply, forward, opening and sending an existing draft, and deleting messages from Inbox. Other write actions and sending with attachments still need separate live verification; an existing account may need to sign in again to grant any missing expanded permissions. Contacts are planned and included in that permission request but do not yet have an address-book UI.
+A classic-Outlook-style mail client for **Windows 11** and **Linux**, built with .NET 8 and Avalonia 11. It opens, edits and creates Outlook PST files with its own engine, connects personal Microsoft (Hotmail / Outlook.com) and Gmail accounts, keeps a local copy of each mailbox so folders and messages open instantly, and cleans Hotmail junk mail by rules. It is a personal project in daily testing by its owner, **not a finished release**.
 
-In a connected Microsoft folder, Delete now processes every selected message. **View → Shortcuts** lets you assign mail-action keys; **Del** deletes selected messages by default while the message list has focus. Shortcuts are saved under the OpenOutlook configuration directory.
+Where to read next:
 
-See [BUILD_STATUS.md](BUILD_STATUS.md) for implemented features, prioritized next work and release gates, [PRODUCT_REQUIREMENTS.md](PRODUCT_REQUIREMENTS.md) for approved requirements, [DESIGN_SPEC.md](DESIGN_SPEC.md) for the design, and [docs/reading-pane-text-selection.md](docs/reading-pane-text-selection.md) for how HTML mail is rendered and selected.
+| Document | What it says |
+|---|---|
+| [docs/FEATURES.md](docs/FEATURES.md) | Every feature, per platform (Windows / Linux), with the files and settings involved |
+| [BUILD_STATUS.md](BUILD_STATUS.md) | Current state, tests, commands, open items |
+| [PRODUCT_REQUIREMENTS.md](PRODUCT_REQUIREMENTS.md) | What the product must do, with a conformance table |
+| [DESIGN_SPEC.md](DESIGN_SPEC.md) | The design, and (from section 11) how it was actually built |
+| [docs/accounts-setup.md](docs/accounts-setup.md) | Connecting Hotmail and Gmail, Account Settings, the Junk Cleaner tab |
+| [docs/offline-mirror-plan.md](docs/offline-mirror-plan.md) | Mailbox copies (local PST per account) |
+| [docs/native-engine-status.md](docs/native-engine-status.md) | The PST engine and how it is validated |
+| [docs/session-handoff-2026-10.md](docs/session-handoff-2026-10.md) | Working notes for resuming development (build, publish, push, gotchas) |
 
-## What it does now
+## What it does
 
-- **Reads HTML mail as the sender laid it out.** Message HTML is sanitized and then laid out by headless Chrome or Chromium, so tables, colors, typography and spacing survive; embedded (`cid:`), `data:` and remote images load automatically within size limits. Long messages are captured in consecutive tiles instead of falling back to plain text. Without Chrome or Chromium a basic native preview is used.
-- **Selects and copies text in the reading pane.** Press inside a block of text to select it, drag to extend across blocks, `Ctrl+A` for every block on the visible tile, `Ctrl+C` to copy. Copied text follows reading order taken from the layout coordinates, so table cells come out correctly. Granularity is the text block, not an arbitrary character range. The same selection works in the separate message window.
-- **Open in browser.** Writes the same sanitized document to a private file and opens it in your system browser for real selection, find-in-page and printing; scripts stay disabled and remote images stay blocked. Files go to `$TMPDIR/openoutlook-reader` (normally `/tmp/openoutlook-reader`) as a `0700` directory and `0600` file, and earlier message copies are deleted on each open.
-- **Composes with formatting preserved.** To/Cc/Bcc, subject, attachments and a visual HTML editor whose fonts, colors, links (including `mailto:`), lists, tables and pasted images survive Apply. Colors are written as hex because Outlook's Word-based engine ignores `rgba()`. Closing a changed window saves the draft first; **Discard changes** closes without saving.
-- **Opens PST archives read-only.** Browse folders, read plain text or HTML, search selected-folder headers, save supported attachments, and export messages or whole folder trees to EML. A damaged archive that cannot be opened is reported in the status bar, and a `PstException` raised while exporting one message now surfaces as a message instead of ending the run unexpectedly.
-- **Connects personal Microsoft accounts** through browser OAuth; Google sign-in is implemented but its client ID is not configured yet. The owner confirmed live Hotmail send, reply, forward, opening and sending a draft, and deleting from Inbox. Other write actions still need separate live verification.
-- **Junk cleaning is not connected to mail yet.** Portable rules plus a read-only preview of a legacy OutlookJunkCleaner `config.json` exist; nothing moves or deletes mail.
+- **PST files:** open, read, edit (flags, move, copy, delete, folders, import EML), create, check and repair Unicode PST files with the vendored C library OpenPST; read-only for ANSI and 4K/OST files. Files on mapped or network drives work.
+- **Hotmail and Gmail:** read, search folders, reply, forward, compose with attachments, flag, archive, delete, move, drag onto folders. Changes show at once and are sent to the server in the background.
+- **Mailbox copies:** each account keeps a PST copy (default `%LOCALAPPDATA%\OpenOutlook\Mail` on Windows, `~/.local/share/openoutlook/mail` on Linux, or a folder you choose in Account Settings > Data Files). Folders and message bodies are read from the copy; a status-bar indicator shows the sync state.
+- **Reading mail as sent:** HTML mail is sanitized and laid out by a bundled headless Chromium (or the platform web view), with images, selectable text, open in browser, printable PDF.
+- **Junk Cleaner (Hotmail):** keywords and rules, a preview before cleaning, optional automatic cleaning, import of the old OutlookJunkCleaner configuration.
+- **Outlook look and feel:** ribbon that squeezes as the window narrows, backstage File menu, column header menu with Importance and Flag columns, themes, folder reordering.
 
-If something goes wrong, OpenOutlook writes a rotating log (2 MB, one previous file kept) to `$XDG_DATA_HOME/OpenOutlook/logs/openoutlook.log`, normally `~/.local/share/OpenOutlook/logs/openoutlook.log`. It records startup, normal exit and failures such as a file chooser that could not open.
+What is not built yet (calendar, contacts, tasks, signatures, offline sending, full-text search across stores, ...) is listed in [docs/FEATURES.md](docs/FEATURES.md) section 12.
 
 ## Build and run
 
 ```bash
-dotnet restore OpenOutlook.sln -p:NuGetAudit=false --ignore-failed-sources
-dotnet test OpenOutlook.sln --no-restore
+dotnet build OpenOutlook.sln
+dotnet test tests/OpenOutlook.Tests
+dotnet test tests/OpenOutlook.HeadlessTests
 dotnet run --project src/OpenOutlook.Desktop/OpenOutlook.Desktop.csproj
 ```
 
-`scripts/dev-check.sh` is the faster pre-commit path: it builds and then runs the same offline suite (399 tests at the time of writing, all passing). `scripts/headless-smoke.sh` launches the real app on a private Xvfb display with a scratch HOME that is deleted afterwards; see [BUILD_STATUS.md](BUILD_STATUS.md) for what it can and cannot prove.
+The PST engine is a C library that must be built once per platform:
 
-To build a self-contained Linux x64 executable:
+- Windows: `powershell scripts/build-native.ps1` (MSVC), output `src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll`.
+- Linux: `bash scripts/build-native.sh` (CMake, Ninja, gcc), output `.../runtimes/linux-x64/native/libopenpst.so`.
 
-```bash
-./scripts/package-linux-x64.sh
-./publish/OpenOutlook.Desktop
+The bundled browser for HTML layout is downloaded with `python scripts/fetch_chromium.py` into `third_party/chromium/` (git-ignored); without it an installed Edge, Chrome or Chromium is used.
+
+### Windows build
+
+```
+dotnet publish src/OpenOutlook.Desktop -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o <folder>
+copy src\OpenOutlook.Desktop\runtimes\win-x64\native\openpst.dll <folder>
 ```
 
-The packaging script keeps the executable directly at `publish/OpenOutlook.Desktop`, in `publish/OpenOutlook-linux-x64/`, and in the locally built `publish/OpenOutlook-linux-x64.tar.gz`. The archive contains the executable, the owner’s public OAuth ID file, a short run note and the project license. Build outputs and local OAuth configuration are intentionally excluded from GitHub. The package launched headlessly on the development Ubuntu host, but has not been validated on a clean Ubuntu installation.
+`<folder>` also needs `openoutlook-oauth.json` (see account setup) and receives the `chromium` folder from the build. `openpst.dll` must sit next to the exe.
 
-## Account setup preview
+### Linux packages
 
-Open **Account setup** and choose Outlook.com/Hotmail or Gmail. The user-facing flow asks for no application ID, password or client secret; when that provider is configured in an OpenOutlook build, it opens the provider's sign-in page in the system browser, verifies the account identity, asks you to confirm it, and stores a refresh token in the persistent Linux keyring. Microsoft sign-in now requests `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send` and `Contacts.ReadWrite`. The contacts permission is reserved for the planned Microsoft address book and recipient lookup; that UI is not built yet. Calendar, files/OneDrive, tasks and mailbox settings are not requested. Gmail requests read-only access. Existing Microsoft accounts need to select the saved account and sign in again once to grant the new permissions. A working, unlocked persistent default keyring is checked before the browser opens. The app supports up to two accounts per provider and four total. You can reconnect or disconnect an account locally from the same window. A saved Microsoft account appears in the main sidebar after restart. Select any visible mail folder to load its latest 50 messages, or use **Refresh folder** to reload them. Child folders are shown under their parents; hidden folders are omitted. This is an online preview, not a complete synchronized or offline mailbox.
+Run on Linux (or in WSL with `scripts/wsl-package.sh [version]`, which builds from a copy so the Windows build folders stay untouched):
 
-The top ribbon groups commands under **File**, **Home**, **Send / Receive**, **Folder**, **View**, and **Help**, following the layout of Outlook Classic. Open or detach a PST and manage accounts under File; save a selected attachment or message, search, and preview Junk rules under Home; refresh an online folder under Send / Receive; export a selected PST folder under Folder; and change appearance under View. Some visible mail commands are placeholders and report that they are unavailable when clicked.
+```bash
+bash scripts/build-native.sh
+bash scripts/package-linux-x64.sh        # self-contained program + libopenpst.so + chromium, tar.gz
+bash scripts/build-deb.sh 0.1.13         # openoutlook_0.1.13_amd64.deb
+sudo apt install ./publish/openoutlook_0.1.13_amd64.deb
+openoutlook
+```
 
-Attached PST paths persist in `$XDG_CONFIG_HOME/OpenOutlook/attached-psts.json` (normally `~/.config/OpenOutlook/attached-psts.json`). OpenOutlook restores them read-only on startup; **Detach PST** removes a path from this file without deleting the archive. If a PST is temporarily unavailable, its path stays saved so the app can try again at the next restart. Paths attached with the previous build need to be opened once in this build to enter the saved list. Appearance and pane layout are also saved in this config directory.
+Installing the `.deb` puts the program in `/opt/openoutlook`, adds the `openoutlook` command, a menu entry and the icon, and pulls in the libraries the bundled browser needs. Sign-in tokens go to the desktop keyring (libsecret): GNOME Keyring or KWallet must be running with a persistent default keyring. Under WSL, `scripts/wsl-create-keyring.sh` and `scripts/wsl-keyring-diag.sh` help with the keyring; the launcher opens sign-in pages in the Windows browser.
 
-The main window’s size, position and maximized state, the three pane widths, and message column order and widths persist in `$XDG_CONFIG_HOME/OpenOutlook/view-layout.json`. Layout changes save shortly after you move, resize or drag a divider, and again on a normal close. If a saved position is no longer on a connected screen, the app uses the system’s default placement.
+## Accounts
 
-To export a PST folder, select it in the sidebar, open **Folder**, and click **Export folder**. Choose a parent directory; OpenOutlook creates a new named directory with EML files for the selected folder and its subfolders. Message files use stable archive IDs rather than private subjects in filenames. The export stops at 200 folders, 10,000 messages or 16 nested levels. **Cancel export** stops the run. A failed or cancelled run removes its temporary output instead of presenting an incomplete folder as finished. An existing destination is never overwritten. Only messages supported by the individual EML exporter can be included. The `job_info` folder in the supplied `rmarrash_1.pst` now exports all 16 messages; that output passed an independent MIME parse check.
-
-To save an attachment, select a message, click **Save attachment**, choose the file if the message has several, then choose a destination folder. The app creates a new file with the attachment's name; it never overwrites an existing file. Hotmail supports file attachments up to 64 MiB; reference links and attached Outlook items are not downloadable through this control. PST export supports by-value attachments up to 64 MiB. Files with unsafe names or unsupported attachment types are skipped. The destination file is private to the current Unix user. Saving does not change the message, account, or PST archive.
-
-Account labels and public application IDs persist in `$XDG_DATA_HOME/OpenOutlook/accounts.json` (normally `~/.local/share/OpenOutlook/accounts.json`), with private file permissions. Refresh tokens stay in the persistent Linux keyring, not beside the executable. Both survive rebuilding or replacing the OpenOutlook executable. The app refreshes access in memory from the saved keyring token, so a normal restart does not require browser sign-in unless the provider revokes access or the token is removed.
-
-The OpenOutlook build owner must register one public desktop application with each provider and place its public IDs in `openoutlook-oauth.json` beside the executable, using the keys shown in `src/OpenOutlook.Desktop/openoutlook-oauth.example.json`. The owner-supplied Microsoft ID is configured in the owner’s local build, while Google is pending. A fresh source checkout has no configured provider until the build owner adds the public ID file; the example file contains the expected keys. Microsoft registration must support personal accounts, public desktop clients and the `http://localhost/callback` mobile/desktop redirect; Google registration must be a **Desktop app** OAuth client. The file contains IDs only, never client secrets or tokens. Without the provider's ID, its Sign in button stays disabled and explains why. Google projects using the Gmail read-only scope may require additional consent configuration or verification before accounts outside a test-user list can authorize. See the [Microsoft redirect guidance](https://learn.microsoft.com/en-us/entra/identity-platform/reply-url), [Google installed-app guidance](https://developers.google.com/identity/protocols/oauth2/native-app), and [Google restricted-scope guidance](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification).
-
-The `NuGetAudit=false` restore option is a workaround for a local vulnerability-cache permission issue, **not** a completed security audit. Headless Xvfb in the development environment needs `-extension GLX`; details are in BUILD_STATUS.md. The local executable is a development preview, not an installer or validated release package.
+Sign-in uses the system browser (OAuth with PKCE); OpenOutlook never sees a password. The build owner supplies public client ids in `openoutlook-oauth.json` next to the program (template: `src/OpenOutlook.Desktop/openoutlook-oauth.example.json`). Setup of the Azure and Google projects: [docs/accounts-setup.md](docs/accounts-setup.md). Tokens are stored in Windows Credential Manager or the Linux keyring, never in a file.
 
 ## Safety and privacy
 
-- Never modify an original PST with this prototype. Supplied test PST archives and private message contents are excluded from Git and must not be uploaded.
-- The main reading pane renders HTML mail as Chrome-laid-out image tiles, with text selection computed over the layout coordinates (see [docs/reading-pane-text-selection.md](docs/reading-pane-text-selection.md)). All HTML mail opens in this snapshot view by default, archived messages included; **Use interactive reader** switches a message to embedded WebKitGTK, and **Use alternate reader** switches back. The embedded view does not composite into the window under Wayland — it loads the document and reports success while showing stale pixels — so it is never the default for anyone. Plain text and zoom remain available. Unavailable images show fallback text and a failure count without hiding the rest of the message. Normal reading sanitizes active content and restricts browser resources; approved HTTP/HTTPS/mailto links open through the system handler. **View original here (trusted mail)** explicitly enables the original HTML and its active content inside OpenOutlook. **Open in new window** gives the message a separate reader with the same selection; **Open interactive message** remains available if the embedded control cannot start. **Open in browser** writes the same sanitized document to a private file for the system browser. Chrome or Chromium is used for printable PDF and the screenshot layout. Remote image downloads are bounded to 8 MiB and 16 million pixels per image, at most 64 images and 48 MiB per message, with total decoded pixels per message capped at 64 megapixels; opening mail may contact image hosts named by the sender. The native print dialog and full-fidelity PST EML export of Content-ID resources remain unfinished.
-- A failed file or folder chooser returns no selection — the same result a cancelled dialog already gives callers — and is written to the log instead of escaping the handler and closing the application; on Linux pickers talk to a portal service that can be absent or fail mid-request. All eight call sites report the failure in the status bar (or the compose window's status line), so a broken chooser says so instead of looking like a cancelled dialog. The interactive message dialog's navigation guard fails closed: only the document's own load is allowed inside it, and any other target is opened in the system browser or blocked.
-- An unexpected error inside a UI action is reported in a dialog and survived: the window stays open with its messages and any draft being written, and the details go to the log (`~/.local/share/OpenOutlook/logs/openoutlook.log`) and to the clipboard via **Copy details**. Cancelling an operation is not treated as an error. Verified against the built binary with `OO_SMOKE_CRASH_GUARD=1 scripts/headless-smoke.sh`.
-- Never commit account credentials, refresh tokens, local cache, or private configuration. The owner demonstrated a live Hotmail sign-in. Saved-token refresh, folder browsing, the HTML preview and its plain-text switch passed headless checks without recording message contents.
-- Dependency vulnerability review, Google provider authorization, Windows classic Outlook interoperability, safe PST edits, and full product acceptance remain outstanding.
+- PSTs are edited in place behind a journal; the owner's private archives are never used by automated tests directly (tests work on copies) and are never committed. Never commit tokens, logs, `openoutlook-oauth.json`, `.secrets/` or message contents.
+- HTML mail is sanitized, network access is blocked in the layout browser, images are fetched by a bounded loader (public addresses only, size and count caps), and active content only runs after the explicit **View original here** choice.
+- The Junk Cleaner moves mail to Deleted Items and never deletes permanently; nothing is cleaned on an account until you turn it on for that account.
+- The log (`~/.local/share/OpenOutlook/logs/openoutlook.log`, rotating, 2 MB) records start, exit and failures; an unexpected error inside a UI action is shown in a notice and survived.
 
 ## License
 

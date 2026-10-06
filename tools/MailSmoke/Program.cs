@@ -249,6 +249,26 @@ if (step == "mirror" && mAcc is not null)
     Console.WriteLine($"{pstPath}\n   {res}\n   {watch.Elapsed.TotalSeconds:0.0}s; scan findings: {pst.Scan().Findings.Count}");
     return 0;
 }
+if (step == "timing" && mAcc is not null)
+{
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    async Task<T> Time<T>(string label, Func<Task<T>> f) { sw.Restart(); var r = await f(); Console.WriteLine($"{label}: {sw.ElapsedMilliseconds} ms"); return r; }
+    var tok = await Time("token (first)", () => mSession!.GetAccessTokenAsync());
+    await Time("token (cached)", () => mSession!.GetAccessTokenAsync());
+    var rd = new GraphInboxReader(graphHttp, mAcc.AccountId);
+    var p1 = await Time("inbox page (first call, includes connection setup)", () => rd.GetInboxAsync(tok));
+    var p2 = await Time("inbox page (warm connection)", () => rd.GetInboxAsync(tok));
+    await Time("inbox page again", () => rd.GetInboxAsync(tok));
+    var m = p2.Messages.First();
+    await Time("message body", async () => await rd.GetMessageBodyAsync(tok, m.Id));
+    await Time("message body again", async () => await rd.GetMessageBodyAsync(tok, m.Id));
+    await Time("folder tree", () => new GraphMailFolderReader(graphHttp, mAcc.AccountId).GetFoldersAsync(tok));
+    var wr = new GraphMailWriter(graphHttp, mAcc.AccountId);
+    await Time("mark read (verify + patch)", async () => { await wr.SetReadAsync(tok, m.Id, m.IsRead); return 0; });
+    Console.WriteLine($"{p2.Messages.Count} messages per page");
+    return 0;
+}
+
 if (step == "junkscan" && mAcc is not null)
 {
     // dry run: lists what the Junk Cleaner would remove from the Hotmail Junk folder; nothing is moved or saved

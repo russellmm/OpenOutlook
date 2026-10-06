@@ -12,7 +12,7 @@ What exists, per platform and per feature, is in **`docs/FEATURES.md`**. How it 
   - Windows: `F:\Claude\OpenOutlook_win\OpenOutlook.Desktop.exe` with `openpst.dll`, `openoutlook-oauth.json` and the `chromium\` folder beside it (build steps in `docs/session-handoff-2026-10.md`).
   - Linux: `publish/openoutlook_<version>_amd64.deb` (currently 0.1.12) and `publish/OpenOutlook-linux-x64.tar.gz`, built by `scripts/wsl-package.sh`.
 - **PST engine:** OpenPST (C, `native/openpst`) reads and writes Unicode PST files; SCANPST.EXE reports NO_ERRORS on the owner's files and on files created and soaked by the engine (`docs/native-engine-status.md`).
-- **Accounts:** Hotmail (Microsoft Graph) and Gmail (Gmail API) connected and used live by the owner on Windows; Linux sign-in uses libsecret and has been set up (keyring created) but the owner's result is not confirmed.
+- **Accounts:** Hotmail (Microsoft Graph) and Gmail (Gmail API) connected and used live by the owner on Windows; Linux sign-in uses libsecret; the owner connected both Hotmail and Gmail in WSL (2026-10-05).
 - **Mailbox copies:** both account types keep a local PST copy; folders, message bodies and most actions work from it (`docs/offline-mirror-plan.md`, `docs/FEATURES.md` section 4).
 - **Junk Cleaner:** built for Microsoft accounts (manual with preview, automatic, import, log).
 
@@ -34,7 +34,7 @@ Never commit private PSTs, logs, tokens, `openoutlook-oauth.json`, `.secrets/` o
 
 ## Open items before a first release
 
-1. Real sign-in and daily use on a Linux desktop (keyring, WebKitGTK reader, xdg-open helpers), and a bare-metal Linux run.
+1. A bare-metal Linux desktop run, the WebKitGTK interactive reader and the xdg-open helpers (sign-in with the keyring and popups/dialogs are confirmed in WSL).
 2. Calendar, People/contacts, Tasks, signatures, spelling, rules, undo/redo, Automatic Replies: not built (ribbon buttons say "To be implemented").
 3. Offline sending (Outbox) and queued actions for the mailbox copies; folder/label rename and delete from a copy.
 4. Cross-store full-text search (only selected-folder header search exists).

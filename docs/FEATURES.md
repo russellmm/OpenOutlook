@@ -40,8 +40,8 @@ Details and the file-format rules: `native-engine-status.md`, `OpenOutlook_Desig
 
 | Feature | Windows | Linux | Notes |
 |---|---|---|---|
-| Microsoft personal accounts (Hotmail/Outlook.com) via Microsoft Graph, OAuth PKCE in the system browser | Yes | Yes (sign-in untested by the owner on a real keyring session) | Scopes: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Contacts.ReadWrite`. Account verified against Graph `/me`. |
-| Gmail via Gmail REST API | Yes | Yes | Scopes `gmail.modify` + `gmail.compose`; permanent delete not offered (needs a broader scope). The Google consent screen is in Testing mode (refresh tokens last 7 days). |
+| Microsoft personal accounts (Hotmail/Outlook.com) via Microsoft Graph, OAuth PKCE in the system browser | Yes | Yes (owner connected Hotmail in WSL, 2026-10-05) | Scopes: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Contacts.ReadWrite`. Account verified against Graph `/me`. |
+| Gmail via Gmail REST API | Yes | Yes (owner connected Gmail in WSL, 2026-10-05) | Scopes `gmail.modify` + `gmail.compose`; permanent delete not offered (needs a broader scope). The Google consent screen is in Testing mode (refresh tokens last 7 days). |
 | Token storage | Windows Credential Manager | libsecret (persistent unlocked default keyring required) | Never a file. Under WSL the keyring is created through GNOME Keyring's password window (`scripts/wsl-create-keyring.sh`). |
 | Up to 2 accounts per provider, 4 in total; reconnect / remove | Yes | Yes | `accounts.json` holds labels and public ids, no tokens. |
 | Account Settings (File > Info): Email tab, Data Files tab, Junk Cleaner tab | Yes | Yes | Email: New, Repair, Set as Default, Remove (Change and the arrows are placeholders). |
@@ -131,7 +131,7 @@ Plan and decisions: `junk-cleaner-plan.md`.
 ## 10. Linux and WSL specifics
 
 - Mapped Windows network drives must be mounted in WSL (`/etc/fstab` drvfs lines); `WslDriveBookmarks` adds `/mnt/<letter>` drives to the GTK file dialog sidebar at start.
-- Menus, drop-downs and tooltips are drawn inside the window on Linux (`OverlayPopups`); under WSL every dialog except the main window is `Topmost` while open (WSLg does not keep transient windows above their owner).
+- Menus, drop-downs and tooltips are drawn inside the window on Linux (`OverlayPopups`); under WSL every dialog except the main window is `Topmost` while open (WSLg does not keep transient windows above their owner). Confirmed by the owner on WSLg: menus and dialogs stay in front of the main window.
 - The launcher `/usr/bin/openoutlook` hides Mesa's harmless DRI3 warnings and points `BROWSER` at the Windows browser under WSL.
 - A running Windows "Remote Desktop" helper can make the cursor vanish over WSLg windows (not an OpenOutlook bug).
 
@@ -150,7 +150,7 @@ Plan and decisions: `junk-cleaner-plan.md`.
 
 ## 12. Not built / known gaps
 
-Calendar, People/contacts UI, Tasks; signatures and spelling; undo/redo; rules; Automatic Replies; offline sending (Outbox); cross-store full-text search; native print dialog; Gmail draft editing and permanent Gmail delete; folder/label rename and delete from the mailbox copies; Junk Cleaner for Gmail; dark-mode and high-DPI verification; running on a bare-metal Linux desktop; real sign-in with a keyring on Linux (the owner's WSL keyring now exists, result not yet confirmed); the PST engine writes Unicode-512 files only; `rmarrash_*.pst` fixtures are the owner's private data and are never in the repository.
+Calendar, People/contacts UI, Tasks; signatures and spelling; undo/redo; rules; Automatic Replies; offline sending (Outbox); cross-store full-text search; native print dialog; Gmail draft editing and permanent Gmail delete; folder/label rename and delete from the mailbox copies; Junk Cleaner for Gmail; dark-mode and high-DPI verification; running on a bare-metal Linux desktop; a bare-metal Linux run (sign-in with the keyring is confirmed in WSL); the PST engine writes Unicode-512 files only; `rmarrash_*.pst` fixtures are the owner's private data and are never in the repository.
 
 ## 13. Tests
 

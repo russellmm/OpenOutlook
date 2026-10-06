@@ -41,7 +41,7 @@ cp src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll /f/Claude/OpenOut
 4. PST engine: the 3 broken tables of `test-archive.pst` are not rebuilt by any rule; ANSI/4K files are read-only; the soak harness does not cover folder rename/move; Python fixer lacks R10.
 5. Offline mailbox mirror (PST per account, user-chosen location): see `offline-mirror-plan.md`.
 6. Plan backlog (section 11): Calendar/People/Tasks, categories, undo/redo, address book, rules, Graph write for archive-to-mailbox, packaging for Linux, fuzzing/ASAN CI, 1 GB perf pass.
-6. Linux: packages, CI and the WSL checks exist (see the Linux sections below and `FEATURES.md`); a real sign-in on a Linux desktop with the keyring has not been confirmed by the owner yet.
+6. Linux: packages, CI and the WSL checks exist (see the Linux sections below and `FEATURES.md`); the owner has signed in to Hotmail and Gmail in WSL (keyring works) and confirmed that menus and dialogs now stay in front of the main window; a bare-metal Linux desktop run is still open.
 
 ## In progress: Gmail compose / reply / forward / attachments + new compose window (2026-10-05)
 Done and committed (builds; 450 .NET tests pass, 13 headless pass):

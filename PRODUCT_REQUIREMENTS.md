@@ -11,7 +11,7 @@ Legend: **Met** = built and used; **Partly** = built with the limits stated; **N
 
 | Requirement | Status | Notes |
 |---|---|---|
-| System-browser OAuth (PKCE) for personal Microsoft and Google accounts; no passwords; reconnect and remove | **Met** (W, L) | Linux sign-in uses the keyring; the owner's first real Linux sign-in is not confirmed. Google consent screen still in Testing mode. |
+| System-browser OAuth (PKCE) for personal Microsoft and Google accounts; no passwords; reconnect and remove | **Met** (W, L) | Linux sign-in uses the keyring; the owner connected Hotmail and Gmail in WSL. Google consent screen still in Testing mode. |
 | Guided sign-in with OpenOutlook-owned client ids; Account Settings add/remove | **Met** | Account Settings dialog (Email tab). Removing an account does not yet offer to delete its mailbox copy. |
 | Read, compose, reply, reply all, forward, drafts, delete, read/unread, flag/star, folder/label organisation, attachments | **Met** (Microsoft, Gmail) | Gmail cannot edit a saved draft. Permanent Gmail delete is not offered. |
 | Per-account signature (plain and HTML) | **Not met** | |

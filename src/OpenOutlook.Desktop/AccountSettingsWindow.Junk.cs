@@ -17,6 +17,7 @@ public sealed partial class AccountSettingsWindow
     private readonly TextBox _junkKeywords = new() { AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, MinHeight = 150, FontSize = 13 };
     private readonly CheckBox _junkHigh = new() { Content = "Also remove junk marked High importance (any sender)" };
     private readonly CheckBox _junkNoTo = new() { Content = "Also remove junk with no To address" };
+    private readonly CheckBox _junkFlagged = new() { Content = "Also remove junk that is flagged" };
     private readonly CheckBox _junkBehalf = new() { Content = "Also remove junk sent \"on behalf of\" someone else" };
     private readonly TextBox _junkLog = new() { IsReadOnly = true, AcceptsReturn = true, FontSize = 12, MinHeight = 110, TextWrapping = TextWrapping.NoWrap };
     private bool _junkLoading;
@@ -47,6 +48,7 @@ public sealed partial class AccountSettingsWindow
         _junkHigh.IsCheckedChanged += (_, _) => SaveJunk();
         _junkNoTo.IsCheckedChanged += (_, _) => SaveJunk();
         _junkBehalf.IsCheckedChanged += (_, _) => SaveJunk();
+        _junkFlagged.IsCheckedChanged += (_, _) => SaveJunk();
         _junkInterval.ValueChanged += (_, _) => SaveJunk();
         _junkKeywords.LostFocus += (_, _) => SaveJunk();
         TextBlock Label(string t) => new() { Text = t, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 10, 0, 4), Foreground = Themed.Brush("OlText", Brushes.Black) };
@@ -69,7 +71,7 @@ public sealed partial class AccountSettingsWindow
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0), Children = { new TextBlock { Text = "Account", VerticalAlignment = VerticalAlignment.Center, FontSize = 13 }, _junkAccount } },
                 _junkEnabled, _junkAuto, interval,
                 Label("Remove junk whose From line contains (one keyword per line)"), _junkKeywords,
-                Label("Other rules"), _junkHigh, _junkNoTo, _junkBehalf,
+                Label("Other rules"), _junkHigh, _junkNoTo, _junkBehalf, _junkFlagged,
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 8, 0, 0), Children = { clean, import } },
                 Label("What was removed (newest first)"), _junkLog
             }
@@ -101,7 +103,7 @@ public sealed partial class AccountSettingsWindow
         try
         {
             var account = SelectedJunkAccount();
-            foreach (var c in new Control[] { _junkEnabled, _junkAuto, _junkInterval, _junkKeywords, _junkHigh, _junkNoTo, _junkBehalf }) c.IsEnabled = account is not null;
+            foreach (var c in new Control[] { _junkEnabled, _junkAuto, _junkInterval, _junkKeywords, _junkHigh, _junkNoTo, _junkBehalf, _junkFlagged }) c.IsEnabled = account is not null;
             var s = account is null ? null : _host.JunkSettings(account.AccountId);
             _junkEnabled.IsChecked = s?.Enabled == true;
             _junkAuto.IsChecked = s?.AutoClean == true;
@@ -110,6 +112,7 @@ public sealed partial class AccountSettingsWindow
             _junkHigh.IsChecked = s?.Rules.DeleteHighImportance == true;
             _junkNoTo.IsChecked = s?.Rules.DeleteMissingTo == true;
             _junkBehalf.IsChecked = s?.Rules.DeleteOnBehalfOf == true;
+            _junkFlagged.IsChecked = s?.Rules.DeleteFlagged == true;
         }
         finally { _junkLoading = false; }
         RefreshJunkLog();
@@ -123,7 +126,7 @@ public sealed partial class AccountSettingsWindow
         {
             AccountId = a.AccountId, Enabled = _junkEnabled.IsChecked == true, AutoClean = _junkAuto.IsChecked == true,
             IntervalMinutes = Math.Clamp((int)(_junkInterval.Value ?? 15), 1, 60), Keywords = keywords,
-            Rules = new JunkRuleOptions(_junkHigh.IsChecked == true, _junkNoTo.IsChecked == true, _junkBehalf.IsChecked == true)
+            Rules = new JunkRuleOptions(_junkHigh.IsChecked == true, _junkNoTo.IsChecked == true, _junkBehalf.IsChecked == true, _junkFlagged.IsChecked == true)
         });
     }
 

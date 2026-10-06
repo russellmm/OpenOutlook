@@ -10,7 +10,7 @@ public sealed class GraphJunkMailReader
     private const string Origin = "https://graph.microsoft.com";
     private const string Root = "/v1.0";
     private const int MaxResponseBytes = 4 * 1024 * 1024;
-    private const string MessageSelect = "id,subject,from,sender,toRecipients,ccRecipients,importance,internetMessageHeaders";
+    private const string MessageSelect = "id,subject,from,sender,toRecipients,ccRecipients,importance,flag,internetMessageHeaders";
     private readonly HttpClient _http;
     private readonly Func<CancellationToken, ValueTask<string>> _accessToken;
     private readonly string _expectedGraphUserId;
@@ -76,7 +76,7 @@ public sealed class GraphJunkMailReader
                     RequiredString(item, "id"), OptionalString(item, "subject"),
                     Address(item, "from"), Address(item, "sender"),
                     Addresses(item, "toRecipients"), Addresses(item, "ccRecipients"),
-                    OptionalString(item, "importance"), Headers(item), HasToRecipients(item)));
+                    OptionalString(item, "importance"), Headers(item), HasToRecipients(item), IsFlagged(item)));
             }
             if (result.Count == maxMessages || !json.RootElement.TryGetProperty("@odata.nextLink", out var link)
                 || link.ValueKind == JsonValueKind.Null) break;
@@ -207,6 +207,11 @@ public sealed class GraphJunkMailReader
         return true;
     }
 
+    // Graph says flagStatus notFlagged / flagged / complete; a missing field is unknown, not unflagged.
+    private static bool? IsFlagged(JsonElement obj) =>
+        obj.TryGetProperty("flag", out var flag) && flag.ValueKind == JsonValueKind.Object && OptionalString(flag, "flagStatus") is { } status
+            ? string.Equals(status, "flagged", StringComparison.OrdinalIgnoreCase) : null;
+
     private static IReadOnlyList<string> Addresses(JsonElement obj, string key)
     {
         if (!obj.TryGetProperty(key, out var array) || array.ValueKind != JsonValueKind.Array) return Array.Empty<string>();
@@ -229,7 +234,7 @@ public sealed record GraphMailFolder(string Id, string? DisplayName);
 public sealed record GraphInternetHeader(string Name, string Value);
 public sealed record GraphJunkMessage(string Id, string? Subject, string? From, string? Sender,
     IReadOnlyList<string> ToRecipients, IReadOnlyList<string> CcRecipients, string? Importance,
-    IReadOnlyList<GraphInternetHeader> InternetMessageHeaders, bool? HasToRecipients = null);
+    IReadOnlyList<GraphInternetHeader> InternetMessageHeaders, bool? HasToRecipients = null, bool? IsFlagged = null);
 
 public sealed class GraphMailException : Exception
 {

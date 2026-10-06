@@ -13,7 +13,8 @@ public readonly record struct FromFields(
 public readonly record struct JunkRuleOptions(
     bool DeleteHighImportance = false,
     bool DeleteMissingTo = false,
-    bool DeleteOnBehalfOf = false);
+    bool DeleteOnBehalfOf = false,
+    bool DeleteFlagged = false);
 
 public static class JunkMatcher
 {
@@ -25,7 +26,7 @@ public static class JunkMatcher
 
     public static IReadOnlyList<string> MatchReasons(
         FromFields fields, IReadOnlyList<string> keywords, int? importance,
-        bool? hasToAddress, JunkRuleOptions options)
+        bool? hasToAddress, JunkRuleOptions options, bool? isFlagged = null)
     {
         var reasons = new List<string>();
         var haystack = BuildHaystack(fields);
@@ -42,6 +43,8 @@ public static class JunkMatcher
             reasons.Add("No To address");
         if (options.DeleteOnBehalfOf && LooksLikeOnBehalfOf(fields))
             reasons.Add("On behalf of");
+        if (options.DeleteFlagged && isFlagged == true)
+            reasons.Add("Flagged");
         return reasons;
     }
 

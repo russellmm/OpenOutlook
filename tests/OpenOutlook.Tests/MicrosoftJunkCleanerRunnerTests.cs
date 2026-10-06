@@ -98,4 +98,16 @@ public sealed class MicrosoftJunkCleanerRunnerTests
         Assert.Equal(3, moves.Count);
         Assert.True(result.CapReached);
     }
+
+    [Fact]
+    public void The_flagged_rule_matches_only_flagged_mail_and_only_when_turned_on()
+    {
+        var flagged = new GraphJunkMessage("f", "s", "a@x.org", "a@x.org", ["me@x.org"], [], "normal", [], true, true);
+        var plain = flagged with { Id = "p", IsFlagged = false };
+        var unknown = flagged with { Id = "u", IsFlagged = null };
+        var on = new JunkCleanerAccountSettings { AccountId = "acct", Enabled = true, Rules = new JunkRuleOptions(DeleteFlagged: true) };
+        var matcher = new MicrosoftJunkPreviewMatcher("acct");
+        Assert.Equal(["f"], matcher.Preview("acct", on, [flagged, plain, unknown]).Matches.Select(m => m.MessageId));
+        Assert.Empty(matcher.Preview("acct", on with { Rules = new JunkRuleOptions() }, [flagged]).Matches);
+    }
 }

@@ -1,3 +1,4 @@
+using Avalonia.Styling;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -14,6 +15,10 @@ public sealed partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // WSLg does not honour "this dialog belongs to that window", and the main window paints over its own dialogs: dialogs stay on top while they are open.
+        if (WslDriveBookmarks.IsWsl())
+            Styles.Add(new Avalonia.Styling.Style(x => x.OfType<Avalonia.Controls.Window>().Not(n => n.OfType<MainWindow>()))
+            { Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Window.TopmostProperty, true) } });
         if (Program.SecondInstance)
         {
             // A first window already owns this profile; tell the user plainly instead of opening a

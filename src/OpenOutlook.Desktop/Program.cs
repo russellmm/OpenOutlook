@@ -34,5 +34,11 @@ internal static class Program
     internal static bool SecondInstance;
 
     public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont().LogToTrace();
+        AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont().LogToTrace().With(LinuxOptions());
+
+    /// <summary>
+    /// Linux: menus, drop-downs and tooltips are drawn inside the window instead of as extra X windows. Under WSLg (and some other compositors) those extra windows
+    /// end up behind the main window, so a menu opened in OpenOutlook was painted over by the window itself.
+    /// </summary>
+    private static X11PlatformOptions LinuxOptions() => new() { OverlayPopups = true };
 }

@@ -1778,7 +1778,8 @@ public sealed partial class MainWindow : Window
 
     private void RestoreWindowPlacement(ViewLayoutSettings settings)
     {
-        if (settings.WindowX is { } x && settings.WindowY is { } y &&
+        if (!WslDriveBookmarks.IsWsl() &&                      // under WSLg the program cannot read its window position (it reports about 0,0), and Windows places the window better itself
+            settings.WindowX is { } x && settings.WindowY is { } y &&
             Screens.All.Any(screen => screen.WorkingArea.Contains(new PixelPoint(x + 40, y + 20))))
             Position = new PixelPoint(x, y);
         _normalWindowPosition = Position;

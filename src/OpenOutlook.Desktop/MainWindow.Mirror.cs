@@ -89,6 +89,13 @@ public partial class MainWindow
         catch (Exception) { return []; }
     }
 
+    private bool IsMirrorCopy(string path)
+    {
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        try { return MirrorAccounts().Any(a => string.Equals(MirrorPathFor(a), path, comparison)); }
+        catch (Exception e) when (e is IOException or ArgumentException) { return false; }
+    }
+
     private string MirrorPathFor(ConnectedAccount account) => MirrorLocations.PstPathFor(_mirrorSettings.Load(), account.AccountId, account.DisplayAddress);
 
     private async Task SyncAllMirrorsAsync(bool manual)

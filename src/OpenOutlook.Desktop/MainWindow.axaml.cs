@@ -559,7 +559,9 @@ public sealed partial class MainWindow : Window
         var roots = PstFolderPresentation.VisibleRoots(store.Root);
         var countVisited = new HashSet<uint>();
         var unread = roots.Sum(folder => CountUnread(folder, countVisited));
-        var root = new TreeViewItem { Header = FolderHeader(store.DisplayName, unread), Tag = path, IsExpanded = true };
+        // A mailbox copy is the storage behind a connected account (its folders are shown under the account), not a second mailbox: it stays out of the folder list
+        // (it is still listed in Account Settings > Data Files).
+        var root = new TreeViewItem { Header = FolderHeader(store.DisplayName, unread), Tag = path, IsExpanded = true, IsVisible = !IsMirrorCopy(path) };
         EnableFolderReordering(root);
         var visited = new HashSet<uint>();
         foreach (var folder in roots)

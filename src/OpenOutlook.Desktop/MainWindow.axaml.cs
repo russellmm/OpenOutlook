@@ -273,6 +273,11 @@ public sealed partial class MainWindow : Window
             ? MessageList.SelectedItems.OfType<GraphMessageListRow>()
                 .Select(row => row.Message).DistinctBy(message => message.Id).ToArray()
             : [];
+        if (actionFolder is not null && _activeMicrosoftFolder == actionFolder && CanActAtOnce(action, actionFolder))
+        {
+            ActAtOnce(account, actionFolder, action, action == "delete" && selectedForDelete.Length > 0 ? selectedForDelete : [selected]);
+            return;
+        }
         _mailActionBusy = true;
         try
         {

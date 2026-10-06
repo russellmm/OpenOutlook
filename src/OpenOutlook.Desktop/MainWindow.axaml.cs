@@ -98,6 +98,7 @@ public sealed partial class MainWindow : Window
         ApplyAppearance();
         var layout = _viewLayoutStore.Load();
         ApplyViewLayout(layout);
+        if (WslTarget() is { } early) Position = early;          // asked for before the window is shown, so WSLg opens it there
         InitializeFolderOrder();
         InitializeReadingState();
         InitializeReadingOptions();
@@ -1776,16 +1777,40 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>Under WSLg: where the window should open (24 pixels inside the primary monitor's upper left corner), or null elsewhere.</summary>
+    private PixelPoint? WslTarget()
+    {
+        if (!WslDriveBookmarks.IsWsl() || WslWindowPlacement.PrimaryOrigin() is not { } primary) return null;
+        var target = new PixelPoint(primary.X + 24, primary.Y + 24);
+        try { if (!Screens.All.Any(screen => screen.Bounds.Contains(target))) return null; }
+        catch (Exception e) when (e is InvalidOperationException or NullReferenceException) { /* the screen list is not ready yet: trust the log */ }
+        return target;
+    }
+
     private void RestoreWindowPlacement(ViewLayoutSettings settings)
     {
         if (!WslDriveBookmarks.IsWsl() &&                      // under WSLg the program cannot read its window position (it reports about 0,0), and Windows places the window better itself
             settings.WindowX is { } x && settings.WindowY is { } y &&
             Screens.All.Any(screen => screen.WorkingArea.Contains(new PixelPoint(x + 40, y + 20))))
             Position = new PixelPoint(x, y);
-        if (WslDriveBookmarks.IsWsl() && WslWindowPlacement.PrimaryOrigin() is { } primary)       // under WSLg: the upper left of the monitor Windows has as primary
+        if (WslTarget() is { } wanted)                          // under WSLg: the upper left of the monitor Windows has as primary
         {
-            var target = new PixelPoint(primary.X + 24, primary.Y + 24);
-            if (Screens.All.Any(screen => screen.Bounds.Contains(target))) Position = target;
+            Position = wanted;
+            // WSLg sometimes places the window itself after it appeared (where depends on the moment): ask again a few times in the first seconds
+            var tries = 0;
+            var again = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+            again.Tick += (_, _) =>
+            {
+                tries++;
+                var off = Math.Abs(Position.X - wanted.X) > 120 || Math.Abs(Position.Y - wanted.Y) > 120;
+                if (off && tries <= 8 && WindowState == WindowState.Normal) Position = wanted;
+                if (!off || tries >= 8)
+                {
+                    again.Stop();
+                    AppLog.Note("placement", $"window position {Position.X},{Position.Y} (wanted {wanted.X},{wanted.Y}), size {Bounds.Width:0}x{Bounds.Height:0}, asked again {Math.Max(0, tries - (off ? 0 : 1))} time(s)");
+                }
+            };
+            again.Start();
         }
         _normalWindowPosition = Position;
         if (settings.WindowMaximized) WindowState = WindowState.Maximized;

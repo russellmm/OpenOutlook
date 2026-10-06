@@ -85,7 +85,8 @@ if (step == "renderlive" && mAcc is not null)
         }
         var withImages = SafeHtmlDocument.Build(body.Content, loaded);
         Console.WriteLine($"document with {loaded.Count} pictures: {withImages.Length:N0} chars, pictures {loaded.Values.Sum(v => (long)v.Length):N0} bytes");
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        if (args.Length > 1 && args[1] == "cache") GraphAccountVerification.CacheEnabled = true;
+    var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var rr = await BrowserHtmlRenderer.RenderDocumentAsync(withImages, 800, CancellationToken.None, trustedOriginal: false);

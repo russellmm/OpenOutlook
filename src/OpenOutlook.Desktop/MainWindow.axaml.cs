@@ -188,6 +188,7 @@ public sealed partial class MainWindow : Window
                 await OpenArchiveAsync(Path.GetFullPath(path));
             _ = Task.Run(() => { var n = BrowserProcessTracker.KillLeftovers(); if (n > 0) AppLog.Note("reader", $"closed {n} layout browser(s) left behind by an earlier run"); });
             StartMirrorScheduler();                                  // the local copies of connected mailboxes
+            _ = WarmUpMicrosoftAsync();                             // token and connection ready before the first click
             StartJunkScheduler();                                   // silent Junk Cleaner runs
             if (Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_HTML") == "1") _ = RunHtmlSelfTestAsync();      // diagnostics: renders a sample message and logs the outcome
             var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path));
@@ -744,8 +745,10 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Re-reads the unread counts of an account's folders and redraws the folder list headers (after a delete, move or read change).</summary>
-    private async Task RefreshMicrosoftFolderCountsAsync(ConnectedAccount account, CancellationToken cancellationToken)
+    private async Task RefreshMicrosoftFolderCountsAsync(ConnectedAccount account, CancellationToken cancellationToken, bool force = false)
     {
+        if (!force && _countsRefreshed.TryGetValue(account.AccountId, out var last) && DateTime.UtcNow - last < TimeSpan.FromSeconds(60)) return;      // the folder tree is only re-read about once a minute
+        _countsRefreshed[account.AccountId] = DateTime.UtcNow;
         try
         {
             var token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
@@ -759,21 +762,31 @@ public sealed partial class MainWindow : Window
                 foreach (var c in f.Children) Collect(c);
             }
             foreach (var f in folders) Collect(f);
-            void Walk(IEnumerable<object?> items)
-            {
-                foreach (var node in items.OfType<TreeViewItem>())
-                {
-                    if (node.Tag is MicrosoftFolderSelection sel && sel.Account.AccountId == account.AccountId && counts.TryGetValue(sel.Id, out var n))
-                    {
-                        _msUnread[account.AccountId + "|" + sel.Id] = n;
-                        node.Header = FolderHeader(sel.Name, n);
-                    }
-                    Walk(node.Items.Cast<object?>());
-                }
-            }
-            Walk(FolderTree.Items.Cast<object?>());
+            ApplyFolderCounts(account, counts);
         }
         catch (Exception) { }                                                         // the counts are cosmetic; the next refresh tries again
+    }
+
+    private readonly Dictionary<string, GraphInboxPage> _graphPageCache = new(StringComparer.Ordinal);      // accountId|folderId -> the last list shown
+    private readonly Dictionary<string, DateTime> _countsRefreshed = new(StringComparer.Ordinal);
+
+    /// <summary>Redraws the unread numbers of the given folders (by id) in the folder list.</summary>
+    private void ApplyFolderCounts(ConnectedAccount account, IReadOnlyDictionary<string, int> counts)
+    {
+        void Walk(IEnumerable<object?> items)
+        {
+            foreach (var node in items.OfType<TreeViewItem>())
+            {
+                if (node.Tag is MicrosoftFolderSelection sel && sel.Account.AccountId == account.AccountId && counts.TryGetValue(sel.Id, out var n)
+                    && (!_msUnread.TryGetValue(account.AccountId + "|" + sel.Id, out var old) || old != n))
+                {
+                    _msUnread[account.AccountId + "|" + sel.Id] = n;
+                    node.Header = FolderHeader(sel.Name, n);
+                }
+                Walk(node.Items.Cast<object?>());
+            }
+        }
+        Walk(FolderTree.Items.Cast<object?>());
     }
 
     private TreeViewItem BuildMicrosoftFolderNode(ConnectedAccount account, GraphMailboxFolder folder)
@@ -826,17 +839,27 @@ public sealed partial class MainWindow : Window
         StatusText.Text = $"Loading {selection.Name}…";
         try
         {
+            var cacheKey = account.AccountId + "|" + selection.Id;
+            if (_graphRows is null && _graphPageCache.TryGetValue(cacheKey, out var cached))      // a folder seen before shows at once; the fresh list replaces it below
+            {
+                _currentGraphMessages = cached.Messages;
+                ShowGraphMessages(cached.Messages);
+                StatusText.Text = $"{cached.Messages.Count} newest of {cached.TotalCount:N0} {cached.FolderName} items · refreshing…";
+            }
             var token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
             var reader = new GraphInboxReader(_graphHttp, account.AccountId);
             var page = selection.Id == "inbox"
                 ? await reader.GetInboxAsync(token, cancellationToken)
                 : await reader.GetFolderAsync(token, selection.Id, cancellationToken);
             if (version != _folderVersion || cancellationToken.IsCancellationRequested) return;
+            if (_graphPageCache.Count > 40) _graphPageCache.Clear();
+            _graphPageCache[cacheKey] = page;
             _currentGraphMessages = page.Messages;
             if (_graphRows is null) ShowGraphMessages(page.Messages);
             else ReconcileGraphMessages(page.Messages);
             StatusText.Text = $"{page.Messages.Count} newest of {page.TotalCount:N0} {page.FolderName} items · " +
                 $"{page.UnreadCount:N0} unread · {account.DisplayAddress}";
+            ApplyFolderCounts(account, new Dictionary<string, int> { [selection.Id] = page.UnreadCount });      // the page already says how many are unread
             _ = RefreshMicrosoftFolderCountsAsync(account, cancellationToken);
         }
         catch (OperationCanceledException) { }

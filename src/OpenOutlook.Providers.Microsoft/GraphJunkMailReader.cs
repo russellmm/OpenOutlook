@@ -101,9 +101,11 @@ public sealed class GraphJunkMailReader
 
     private async Task VerifyAccountAsync(string token, CancellationToken ct)
     {
+        if (GraphAccountVerification.IsVerified(_expectedGraphUserId, token)) return;
         using var json = await GetJsonAsync(new Uri(Origin + Root + "/me?$select=id"), token, ct).ConfigureAwait(false);
         if (!string.Equals(RequiredString(json.RootElement, "id"), _expectedGraphUserId, StringComparison.Ordinal))
             throw new GraphMailException("Graph token belongs to a different account.");
+        GraphAccountVerification.Mark(_expectedGraphUserId, token);
     }
 
     private async Task<GraphMailFolder> GetJunkFolderForVerifiedAccountAsync(string token, CancellationToken ct)

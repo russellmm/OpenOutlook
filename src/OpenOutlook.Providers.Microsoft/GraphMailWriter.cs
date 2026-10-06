@@ -320,12 +320,14 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
 
     private async Task VerifyAsync(string token, CancellationToken ct)
     {
+        if (GraphAccountVerification.IsVerified(expectedAccountId, token)) return;
         if (string.IsNullOrWhiteSpace(expectedAccountId) || expectedAccountId.Length > 256 ||
             expectedAccountId.Any(char.IsControl)) throw new GraphMailException("Invalid account identity.");
         using var result = await RequestJsonAsync(HttpMethod.Get, Origin + "/me?$select=id", token,
             null, HttpStatusCode.OK, ct).ConfigureAwait(false);
         if (RequiredId(result.RootElement) != expectedAccountId)
             throw new GraphMailException("Graph token belongs to a different account.");
+        GraphAccountVerification.Mark(expectedAccountId, token);
     }
 
     private async Task<JsonDocument> RequestJsonAsync(HttpMethod method, string path, string token,

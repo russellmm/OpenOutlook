@@ -29,7 +29,11 @@ public sealed class GraphInboxReader
     }
 
     /// <summary>The caller must use this transport, or another with redirects disabled.</summary>
-    public static HttpClient CreateSecureHttpClient() => new(new HttpClientHandler { AllowAutoRedirect = false });
+    public static HttpClient CreateSecureHttpClient() => new(new HttpClientHandler { AllowAutoRedirect = false })
+    {
+        DefaultRequestVersion = System.Net.HttpVersion.Version20,                 // one multiplexed connection instead of several handshakes
+        DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
+    };
 
     public Task<GraphInboxPage> GetInboxAsync(string accessToken, CancellationToken cancellationToken = default) =>
         GetFolderCoreAsync(accessToken, "inbox", null, cancellationToken);
@@ -46,18 +50,28 @@ public sealed class GraphInboxReader
         string? expectedFolderId, CancellationToken cancellationToken)
     {
         await VerifyAccountAsync(accessToken, cancellationToken).ConfigureAwait(false);
-        using var folder = await GetJsonAsync(new Uri(Origin + "/me/mailFolders/" + pathId +
+        // the folder's details and its newest messages are independent: ask for both at once
+        var folderTask = GetJsonAsync(new Uri(Origin + "/me/mailFolders/" + pathId +
             "?$select=id,displayName,totalItemCount,unreadItemCount"),
-            accessToken, cancellationToken).ConfigureAwait(false);
+            accessToken, cancellationToken);
+        var pageTask = GetJsonAsync(new Uri(Origin + "/me/mailFolders/" + pathId + "/messages?$top=50&$orderby=receivedDateTime%20desc&" +
+            "$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview,flag,isDraft"),
+            accessToken, cancellationToken);
+        try { await Task.WhenAll(folderTask, pageTask).ConfigureAwait(false); }
+        catch
+        {
+            if (folderTask.IsCompletedSuccessfully) folderTask.Result.Dispose();
+            if (pageTask.IsCompletedSuccessfully) pageTask.Result.Dispose();
+            throw;
+        }
+        using var page = pageTask.Result;
+        using var folder = folderTask.Result;
         if (expectedFolderId is not null &&
             !string.Equals(RequiredString(folder.RootElement, "id", 2048), expectedFolderId, StringComparison.Ordinal))
             throw new GraphMailException("Graph returned a different mail folder.");
         var folderName = OptionalString(folder.RootElement, "displayName", 256) ?? "Inbox";
         var total = NonnegativeInt(folder.RootElement, "totalItemCount");
         var unread = NonnegativeInt(folder.RootElement, "unreadItemCount");
-        var uri = new Uri(Origin + "/me/mailFolders/" + pathId + "/messages?$top=50&$orderby=receivedDateTime%20desc&" +
-            "$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview,flag,isDraft");
-        using var page = await GetJsonAsync(uri, accessToken, cancellationToken).ConfigureAwait(false);
         if (!page.RootElement.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Array ||
             value.GetArrayLength() > 50)
             throw new GraphMailException("Graph returned an invalid inbox page.");
@@ -159,10 +173,12 @@ public sealed class GraphInboxReader
 
     private async Task VerifyAccountAsync(string token, CancellationToken cancellationToken)
     {
+        if (GraphAccountVerification.IsVerified(_expectedAccountId, token)) return;
         using var json = await GetJsonAsync(new Uri(Origin + "/me?$select=id"), token, cancellationToken)
             .ConfigureAwait(false);
         if (!string.Equals(RequiredString(json.RootElement, "id", 256), _expectedAccountId, StringComparison.Ordinal))
             throw new GraphMailException("Graph token belongs to a different account.");
+        GraphAccountVerification.Mark(_expectedAccountId, token);
     }
 
     private async Task<JsonDocument> GetJsonAsync(Uri uri, string token, CancellationToken cancellationToken,

@@ -111,6 +111,7 @@ public sealed class GraphAttachmentReader(HttpClient httpClient, string expected
 
     private async Task VerifyAccountAsync(string token, CancellationToken cancellationToken)
     {
+        if (GraphAccountVerification.IsVerified(expectedAccountId, token)) return;
         if (string.IsNullOrWhiteSpace(expectedAccountId) || expectedAccountId.Length > 256)
             throw new GraphMailException("A verified account ID is required.");
         using var json = await GetJsonAsync(new Uri(Origin + "/me?$select=id"), token,
@@ -118,6 +119,7 @@ public sealed class GraphAttachmentReader(HttpClient httpClient, string expected
         if (!string.Equals(RequiredString(json.RootElement, "id", 256), expectedAccountId,
             StringComparison.Ordinal))
             throw new GraphMailException("Graph token belongs to a different account.");
+        GraphAccountVerification.Mark(expectedAccountId, token);
     }
 
     private async Task<JsonDocument> GetJsonAsync(Uri uri, string token, CancellationToken cancellationToken)

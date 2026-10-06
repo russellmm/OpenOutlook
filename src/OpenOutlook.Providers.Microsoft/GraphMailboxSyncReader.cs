@@ -81,10 +81,12 @@ public sealed class GraphMailboxSyncReader(HttpClient httpClient, string expecte
 
     private async Task VerifyAsync(string token, CancellationToken ct)
     {
+        if (GraphAccountVerification.IsVerified(expectedAccountId, token)) return;
         if (string.IsNullOrWhiteSpace(expectedAccountId) || expectedAccountId.Length > 256 || string.IsNullOrWhiteSpace(token) || token.Any(char.IsControl))
             throw new GraphMailException("A verified account and access token are required.");
         using var me = await GetJsonAsync(new Uri(Origin + "/v1.0/me?$select=id"), token, ct).ConfigureAwait(false);
         if (!me.RootElement.TryGetProperty("id", out var id) || id.GetString() != expectedAccountId) throw new GraphMailException("Graph token belongs to a different account.");
+        GraphAccountVerification.Mark(expectedAccountId, token);
     }
 
     private async Task<JsonDocument> GetJsonAsync(Uri uri, string token, CancellationToken ct)

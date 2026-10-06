@@ -61,3 +61,7 @@ The reading pane lays HTML out with a headless browser. Edge 154 stopped startin
 - Sync indicator in the status bar (`SyncIndicatorModel.cs`, `MainWindow.Mirror.cs`): worst state wins; click opens Account Settings > Data Files.
 - Account Settings / Data Files themed like the app (`AccountSettingsWindow.cs`, `ListBox.olList` in `Assets/OutlookStyles.axaml`): icon toolbar, drawn default check mark, status dots.
 - Next: other look-and-feel items (compose icons, reading pane buttons, folder icons, dark mode), then the Linux side.
+
+## Performance (2026-10-05)
+Measured live (MailSmoke `timing [cache]`): a Graph request is about 150-300 ms. Done: account check (/me) remembered per token (`GraphAccountVerification`, enabled at app start-up only), folder details and message list fetched in parallel, HTTP/2 preferred, folder list shown from the last-seen page while the fresh one loads, unread numbers taken from the page itself and the folder tree re-read at most once a minute, token + connection warm-up at start-up.
+Next (bigger): serve live folders and messages from the local mailbox copy (PST), optimistic UI for read/flag/delete, body prefetch.

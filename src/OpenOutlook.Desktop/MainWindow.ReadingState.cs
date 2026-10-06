@@ -145,7 +145,7 @@ public partial class MainWindow
             await Task.Run(persist);
             _readOverrides.Remove(key);
             PersistReadState();
-            if (mailbox is not null) await RefreshMicrosoftFolderCountsAsync(mailbox, CancellationToken.None);    // the folder's unread number follows
+            if (mailbox is not null) await RefreshMicrosoftFolderCountsAsync(mailbox, CancellationToken.None, force: true);    // the folder's unread number follows
             return;
         }
         catch (Exception exception) when (exception is PstCore.PstException or IOException or ObjectDisposedException or InvalidOperationException or GraphMailException or System.Net.Http.HttpRequestException)

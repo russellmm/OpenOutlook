@@ -144,6 +144,22 @@ public partial class MainWindow
 
     // ---- scheduled run ---------------------------------------------------------------------------------------------------------------------------
 
+    /// <summary>At start-up: remember account checks between calls, and get a token and an open connection for each Microsoft account so the first folder click is not the slow one.</summary>
+    private async Task WarmUpMicrosoftAsync()
+    {
+        if (Environment.GetEnvironmentVariable("OPENOUTLOOK_NO_MIRROR") == "1") return;
+        GraphAccountVerification.CacheEnabled = true;
+        foreach (var account in MirrorAccounts().Where(a => a.Provider == OAuthProvider.MicrosoftConsumers))
+        {
+            try
+            {
+                var token = await GetMicrosoftSession(account).GetAccessTokenAsync();
+                await GraphAccountVerification.WarmUpAsync(_graphHttp, account.AccountId, token);
+            }
+            catch (Exception) { }                                                      // warming up is optional
+        }
+    }
+
     private void StartJunkScheduler()
     {
         if (Environment.GetEnvironmentVariable("OPENOUTLOOK_NO_MIRROR") == "1") return;     // tests must not touch real mailboxes

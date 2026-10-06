@@ -11,6 +11,66 @@ const string HotmailAddress = "rmarrash@hotmail.com";
 var stamp = DateTime.Now.ToString("HHmmss");
 var step = args.Length > 0 ? args[0] : "all";
 
+if (step == "mkbigrecips")
+{
+    // creates small PSTs, each with one message that has N recipients (long display-to), to find what SCANPST objects to: MailSmoke mkbigrecips <dir> [n n n ...]
+    var outDir = args[1];
+    Directory.CreateDirectory(outDir);
+    var specs = args.Length > 2 ? args.Skip(2).ToArray() : new[] { "1", "60", "100", "130", "200" };       // "1:soloL" = one recipient whose name is L characters, "N" = N ordinary recipients, "N:short" = N tiny names, "N:fat" = N recipients with 120-character names
+    var t0 = new DateTime(2026, 2, 13, 13, 0, 0, DateTimeKind.Utc);
+    foreach (var spec in specs)
+    {
+        var parts = spec.Split(':');
+        var n = int.Parse(parts[0]);
+        var style = parts.Length > 1 ? parts[1] : "normal";
+        var file = Path.Combine(outDir, $"recips_{spec.Replace(':', '_')}.pst");
+        if (File.Exists(file)) File.Delete(file);
+        using var e = OpenOutlook.PstNative.PstEngineFactory.Create(file, "probe " + n);
+        var topNid = e.AllFolders().First(f => f.Name == "Deleted Items").ParentNid;       // the mailbox top folder
+        var inbox = e.CreateFolder(topNid, "Inbox");
+        PstCore.MailImport Msg(string subject, int recips)
+        {
+            var m = new PstCore.MailImport { Subject = subject, SenderName = "Sam Sender", SenderEmail = "sam@example.test", BodyText = "hello body", Sent = t0, Received = t0, MessageId = $"<{subject}@example.test>" };
+            if (style.StartsWith("cc") || style.StartsWith("bcc"))          // one ordinary To recipient plus one Cc / Bcc recipient whose name is N characters
+            {
+                m.Recipients.Add(new PstCore.ImportRecipient("Plain Person", "plain@example.test", PstCore.RecipientKind.To));
+                m.Recipients.Add(new PstCore.ImportRecipient(new string('n', int.Parse(style.TrimStart('b', 'c'))), "long@example.test", style.StartsWith("bcc") ? PstCore.RecipientKind.Bcc : PstCore.RecipientKind.Cc));
+                return m;
+            }
+            for (var i = 0; i < recips; i++)
+                m.Recipients.Add(style.StartsWith("solo") ? new PstCore.ImportRecipient(new string('n', int.Parse(style[4..])), "solo@example.test", PstCore.RecipientKind.To)
+                    : style == "short" ? new PstCore.ImportRecipient("R" + i, $"r{i}@x.test", PstCore.RecipientKind.To)
+                    : style == "fat" ? new PstCore.ImportRecipient("Recipient " + i + " " + new string('n', 110), $"recipient{i}@example.test", PstCore.RecipientKind.To)
+                    : new PstCore.ImportRecipient("Recipient Number " + i, $"recipient{i}.mailbox@example-domain{i}.test", PstCore.RecipientKind.To));
+            return m;
+        }
+        var res = e.ImportMessages(inbox, new List<PstCore.MailImport> { Msg("normal before", 2), Msg("many recipients", n), Msg("normal after", 2) });
+        var shown = e.GetMessages(inbox).First(x => x.Subject == "many recipients");
+        Console.WriteLine($"{file}: recipients {n} ({style}), display-to {shown.To.Length} chars ({shown.To.Length * 2} bytes UTF-16)");
+    }
+    return 0;
+}
+
+if (step == "mkmulti")
+{
+    // one PST with one message per given display-to length (one To recipient whose name has that many characters): MailSmoke mkmulti <file> L L L ...
+    var file = args[1];
+    if (File.Exists(file)) File.Delete(file);
+    using var e = OpenOutlook.PstNative.PstEngineFactory.Create(file, "multi");
+    var inbox = e.CreateFolder(e.AllFolders().First(f => f.Name == "Deleted Items").ParentNid, "Inbox");
+    var t0 = new DateTime(2026, 2, 13, 13, 0, 0, DateTimeKind.Utc);
+    var list = new List<PstCore.MailImport>();
+    foreach (var l in args.Skip(2).Select(int.Parse))
+    {
+        var m = new PstCore.MailImport { Subject = "to-length " + l, SenderName = "Sam Sender", SenderEmail = "sam@example.test", BodyText = "hello body", Sent = t0.AddMinutes(-l), Received = t0.AddMinutes(-l), MessageId = $"<len{l}@example.test>" };
+        m.Recipients.Add(new PstCore.ImportRecipient(new string('n', l), "r@example.test", PstCore.RecipientKind.To));
+        list.Add(m);
+    }
+    e.ImportMessages(inbox, list);
+    foreach (var x in e.GetMessages(inbox)) Console.WriteLine($"0x{x.Nid:X}	{x.Subject}	display-to {x.To.Length} chars");
+    return 0;
+}
+
 if (step == "openeditable")
 {
     // the way the application opens a data file (editable when it can be, else read-only with a reason); no accounts needed: MailSmoke openeditable <file>

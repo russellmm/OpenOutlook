@@ -88,3 +88,12 @@ Run a soak: `PstSoak clean.pst --second clean2.pst --seed 1 --ops 300 --keep out
 Accounts and setup: see `accounts-setup.md`. Handoff for the next session: see `session-handoff-2026-10.md`.
 
 Known limits (at the time; Gmail compose, reply, forward and attachment saving were added later on the same day, see `session-handoff-2026-10.md`): Hotmail unread counts in the picker come from the folder list; the Google consent screen shows the project's name ("Home Assistant 13") because the OpenOutlook client shares a Google Cloud project with another app (cosmetic; fix by renaming the consent screen or using a separate project).
+
+## SCANPST "minor" on mirror PSTs (2026-10-06) - root cause narrowed, not cured
+
+Both the Windows and Linux hotmail mirror PSTs scan as MINOR with a single invisible finding (the log has no flagged lines; repair is optional).
+- **Trigger (reproduced with synthetic files, `MailSmoke mkmulti`):** SCANPST re-creates the contents-table row of any message whose PidTagDisplayTo is 1024 characters or longer (2048 bytes). Rows at 1023 characters or fewer are untouched. The repair only gives the row a fresh low PidTagLtpRowVer; the rest of the file is unchanged.
+- **Ruled out:** heap or subnode storage of the cell, a 1024-byte PC/cell threshold (tried), row-matrix in heap vs subnode, row version value, dwUnique, recipient count. Outlook-authored files contain rows with display-to of 1000-1776 characters (cells in subnodes, same as ours) and scan clean, so the length alone is not the fault; what differs from Outlook is still unknown.
+- **Truncating display-to to 1023 characters makes things worse:** SCANPST regenerates PidTagDisplayTo from the recipient table, so a truncated value gives "Contents Table row doesn't match sub-object" (ERRORS). Do not truncate.
+- Separate real bug: messages with Bcc recipients give ERRORS (see earlier notes).
+- Tools: `MailSmoke mkmulti|mkbigrecips|openpath|openeditable`; analysis scripts live in the session scratchpad only.

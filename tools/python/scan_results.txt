@@ -247,3 +247,627 @@ Items found in this file: 1140
 Folders found in this file: 18
 Items found in this file: 61
  | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:18:02  F:\Claude\OpenOutlook\.local\scan\windows\rmarrash@hotmail.com.pst MINOR     folders=19 items=1202 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\windows\rmarrash@hotmail.com.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 19
+Items found in this file: 1202
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:18:24  F:\Claude\OpenOutlook\.local\scan\windows\rmarrash@hotmail.com.pst MINOR+REPAIRED folders=19 items=1202 log:45 lines, 0 flagged (!!/??)
+    dialog: OK | Repair complete
+2026-10-06 08:20:17  F:\Claude\OpenOutlook\.local\scan\windows\rmarrash@hotmail.com.pst ERRORS    folders=19 items=1202 log:41 lines, 1 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\windows\rmarrash@hotmail.com.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 19
+Items found in this file: 1202
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:21:15  F:\Claude\OpenOutlook\.local\scan\linux\rmarrash@hotmail.com.pst MINOR     folders=19 items=1203 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\linux\rmarrash@hotmail.com.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 19
+Items found in this file: 1203
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:23:50  F:\Claude\OpenOutlook\.local\scan\recips\recips_1.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:23:59  F:\Claude\OpenOutlook\.local\scan\recips\recips_40.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_40.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:24:06  F:\Claude\OpenOutlook\.local\scan\recips\recips_60.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_60.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:24:16  F:\Claude\OpenOutlook\.local\scan\recips\recips_80.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_80.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:24:26  F:\Claude\OpenOutlook\.local\scan\recips\recips_100.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_100.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:24:36  F:\Claude\OpenOutlook\.local\scan\recips\recips_130.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_130.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:24:46  F:\Claude\OpenOutlook\.local\scan\recips\recips_200.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_200.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:25:14  F:\Claude\OpenOutlook\.local\scan\recips\recips_10_fat.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_10_fat.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:25:24  F:\Claude\OpenOutlook\.local\scan\recips\recips_120_short.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_120_short.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:25:32  F:\Claude\OpenOutlook\.local\scan\recips\recips_20_fat.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_20_fat.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:25:42  F:\Claude\OpenOutlook\.local\scan\recips\recips_300_short.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_300_short.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:25:52  F:\Claude\OpenOutlook\.local\scan\recips\recips_45.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_45.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:26:00  F:\Claude\OpenOutlook\.local\scan\recips\recips_50.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_50.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:26:09  F:\Claude\OpenOutlook\.local\scan\recips\recips_55.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_55.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:26:19  F:\Claude\OpenOutlook\.local\scan\recips\recips_60_short.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_60_short.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:26:45  F:\Claude\OpenOutlook\.local\scan\recips\recips_50.pst MINOR+REPAIRED folders=6 items=3 log:45 lines, 0 flagged (!!/??)
+    dialog: OK | Repair complete
+2026-10-06 08:29:00  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1000.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1000.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:29:10  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1020.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1020.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:29:20  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1023.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1023.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:29:30  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1024.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1024.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:29:40  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1025.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1025.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:29:50  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1040.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1040.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:30:00  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1500.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo1500.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:30:19  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo300.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo300.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:30:27  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo600.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo600.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:30:37  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo800.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo800.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:30:47  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo900.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo900.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:30:57  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo940.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo940.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:31:07  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo960.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo960.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:31:17  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo980.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo980.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:33:17  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo600.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo600.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:33:27  F:\Claude\OpenOutlook\.local\scan\recips\p1_solo600_ver6.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\p1_solo600_ver6.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:33:37  F:\Claude\OpenOutlook\.local\scan\recips\p2_solo600_ver1000.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\p2_solo600_ver1000.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:33:47  F:\Claude\OpenOutlook\.local\scan\recips\p3_solo600_ver270.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\p3_solo600_ver270.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:34:25  F:\Claude\OpenOutlook\.local\scan\recips\s600_repaired.pst MINOR+REPAIRED folders=6 items=3 log:45 lines, 0 flagged (!!/??)
+    dialog: OK | Repair complete
+2026-10-06 08:35:45  F:\Claude\OpenOutlook\.local\scan\recips\e1_cell300.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\e1_cell300.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:35:55  F:\Claude\OpenOutlook\.local\scan\recips\e2_cellnone.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\e2_cellnone.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:36:21  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_bcc1500.pst ERRORS    folders=6 items=3 log:50 lines, 4 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_bcc1500.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:36:31  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_bcc700.pst ERRORS    folders=6 items=3 log:50 lines, 4 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_bcc700.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:36:41  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_cc300.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_cc300.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:36:49  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_cc700.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_cc700.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:37:24  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo350.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo350.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:37:32  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo400.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo400.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:37:40  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo450.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo450.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:37:48  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo500.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo500.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:37:56  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo510.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo510.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:38:03  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo520.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo520.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:38:13  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo560.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo560.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:38:45  F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo200.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo200.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:38:53  F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo300.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo300.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:39:01  F:\Claude\OpenOutlook\.local\scan\recips\recips_3_solo300.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_3_solo300.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:39:09  F:\Claude\OpenOutlook\.local\scan\recips\recips_49.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_49.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:39:17  F:\Claude\OpenOutlook\.local\scan\recips\recips_4_solo300.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_4_solo300.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:39:27  F:\Claude\OpenOutlook\.local\scan\recips\recips_6_solo100.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_6_solo100.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:41:07  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo520.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo520.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:41:17  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo600.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo600.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:41:27  F:\Claude\OpenOutlook\.local\scan\recips\recips_200.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_200.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:41:37  F:\Claude\OpenOutlook\.local\scan\recips\recips_45.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_45.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:41:45  F:\Claude\OpenOutlook\.local\scan\recips\recips_4_solo300.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_4_solo300.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:41:55  F:\Claude\OpenOutlook\.local\scan\recips\recips_50.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_50.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:42:05  F:\Claude\OpenOutlook\.local\scan\recips\recips_80.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_80.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:44:56  F:\Claude\OpenOutlook\.local\scan\wx_dest.pst MINOR     folders=6 items=5 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\wx_dest.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 5
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:45:24  F:\Claude\OpenOutlook\.local\scan\wx_ctrl.pst NO_ERRORS folders=6 items=5 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\wx_ctrl.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 5
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:46:19  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo500.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo500.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:46:27  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo510.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo510.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:46:35  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo511.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo511.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:46:45  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo512.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo512.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:46:55  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo513.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo513.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:47:05  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo520.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo520.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:47:32  F:\Claude\OpenOutlook\.local\scan\orig\rmarrash_1.pst ERRORS    folders=22 items=2793 log:260 lines, 215 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\orig\rmarrash_1.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 22
+Items found in this file: 2793
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:49:39  F:\Claude\OpenOutlook\.local\scan\recips\recips_1.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:49:47  F:\Claude\OpenOutlook\.local\scan\recips\recips_120_short.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_120_short.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:49:55  F:\Claude\OpenOutlook\.local\scan\recips\recips_150_short.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_150_short.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:50:03  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo300.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo300.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:50:11  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo450.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo450.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:50:19  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo510.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo510.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:50:27  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo511.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo511.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:50:36  F:\Claude\OpenOutlook\.local\scan\recips\recips_20.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_20.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:50:44  F:\Claude\OpenOutlook\.local\scan\recips\recips_200_short.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_200_short.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:50:54  F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo300.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo300.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:51:02  F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo400.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo400.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:51:10  F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo500.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_2_solo500.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:51:18  F:\Claude\OpenOutlook\.local\scan\recips\recips_300_short.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_300_short.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:51:28  F:\Claude\OpenOutlook\.local\scan\recips\recips_3_solo300.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_3_solo300.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:51:36  F:\Claude\OpenOutlook\.local\scan\recips\recips_40.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_40.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:51:44  F:\Claude\OpenOutlook\.local\scan\recips\recips_45.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_45.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:51:52  F:\Claude\OpenOutlook\.local\scan\recips\recips_49.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_49.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:52:00  F:\Claude\OpenOutlook\.local\scan\recips\recips_4_solo300.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_4_solo300.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:52:10  F:\Claude\OpenOutlook\.local\scan\recips\recips_50.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_50.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:52:20  F:\Claude\OpenOutlook\.local\scan\recips\recips_60_short.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_60_short.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 08:52:55  F:\Claude\OpenOutlook\.local\scan\h_after.pst MINOR+REPAIRED folders=6 items=3 log:45 lines, 0 flagged (!!/??)
+    dialog: OK | Repair complete
+2026-10-06 08:54:08  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo600.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo600.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:54:18  F:\Claude\OpenOutlook\.local\scan\recips\q1.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\q1.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:54:28  F:\Claude\OpenOutlook\.local\scan\recips\q2.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\q2.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:54:38  F:\Claude\OpenOutlook\.local\scan\recips\q3.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\q3.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:55:51  F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo511.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\recips_1_solo511.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:56:01  F:\Claude\OpenOutlook\.local\scan\recips\t2.pst MINOR     folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\recips\t2.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:57:51  F:\Claude\OpenOutlook\.local\scan\recips\r511_after.pst MINOR+REPAIRED folders=6 items=3 log:45 lines, 0 flagged (!!/??)
+    dialog: OK | Repair complete
+2026-10-06 08:58:34  F:\Claude\OpenOutlook\.local\scan\multi.pst MINOR     folders=6 items=18 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\multi.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 18
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:59:07  F:\Claude\OpenOutlook\.local\scan\multi_after.pst ERRORS    folders=6 items=18 log:41 lines, 1 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\multi_after.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 18
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 08:59:33  F:\Claude\OpenOutlook\.local\scan\orig\rmarrash_1_clean.pst NO_ERRORS folders=22 items=2793 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\orig\rmarrash_1_clean.pst | No errors were found in this file.
+
+Folders found in this file: 22
+Items found in this file: 2793
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-06 09:02:43  F:\Claude\OpenOutlook\.local\scan\multi_big.pst MINOR     folders=6 items=42 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\multi_big.pst | Only minor inconsistencies were found in this file. Repairing the file is optional. To repair it, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 42
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 09:03:36  F:\Claude\OpenOutlook\.local\scan\multi_cap.pst ERRORS    folders=6 items=4 log:44 lines, 2 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\multi_cap.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 6
+Items found in this file: 4
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-06 09:04:12  F:\Claude\OpenOutlook\.local\scan\multi_cap.pst ERRORS+REPAIRED folders=6 items=4 log:50 lines, 2 flagged (!!/??)
+    dialog: OK | Repair complete

@@ -96,6 +96,7 @@ Both hotmail mirror PSTs (Windows and Linux) scanned MINOR with one invisible fi
 - Fix (`op_edit2.c`): `tcbig_put` looks up the message whose NID is the row id, and when its property subnode holds exactly the cell's value it references that data tree (`opw_add_ref`) instead of writing a copy. It happens in every table rewrite (import, flag/read, move, delete), so the sharing survives edits.
 - Threshold (`OP_BIGDISPLAY`, op_wr.h): display-to / display-cc over 2,047 bytes are subnodes in the message and in the row (before: 3,000 / 3,580), because SCANPST flags the row from 2,048 bytes up and our heap values between 2,048 and 3,000 bytes had no shared tree.
 - Verified with SCANPST: 60/90/94/95/100/200/400 recipients and `mkmulti` display-to lengths 100..3000 chars all NO_ERRORS; also after flag/read/un-flag and a move to Deleted Items; `pstcheck refs` clean. A 5,000-character single recipient NAME still errors (SCANPST rebuilds display-to from a recipient name that long; not a real-world case).
+- Result on the owner's PC: a hotmail mirror rebuilt with the published build scans NO_ERRORS in SCANPST.
 - Not done: a checker/fixer rule that detects and shares the trees in existing files (a mirror made before this change must be recreated), and a Linux run of the matrix.
 - A truncation of display-to is NOT a fix: SCANPST regenerates it from the recipient table ("row doesn't match sub-object").
 - Separate real bug: messages with Bcc recipients give ERRORS.

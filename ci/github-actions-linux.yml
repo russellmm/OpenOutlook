@@ -1,0 +1,60 @@
+name: Linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential xvfb libsecret-1-0 xdg-utils libicu74
+
+      # The PST test fixtures are private mail and are not in the repository: the tests that need one skip themselves here,
+      # everything else (engine, mirror, Gmail/Graph with fake servers, UI) runs.
+      - name: Native library (OpenPST) build and tests
+        run: bash scripts/build-native.sh
+
+      - name: Unit tests
+        run: dotnet test tests/OpenOutlook.Tests --nologo
+
+      - name: UI tests (Avalonia headless)
+        run: xvfb-run -a dotnet test tests/OpenOutlook.HeadlessTests --nologo
+
+      - name: Bundled browser
+        run: python3 scripts/fetch_chromium.py linux64
+
+      - name: Portable archive and .deb
+        run: |
+          bash scripts/package-linux-x64.sh
+          bash scripts/build-deb.sh 0.1.${{ github.run_number }}
+
+      - name: Start the packaged program and render a message
+        run: bash scripts/wsl-deb-smoke.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openoutlook-linux
+          path: |
+            publish/openoutlook_*_amd64.deb
+            publish/OpenOutlook-linux-x64.tar.gz
+          retention-days: 14

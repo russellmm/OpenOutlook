@@ -2,6 +2,7 @@
 # Unpacks the built .deb into a scratch folder (nothing is installed) and starts the program under a virtual display for a few seconds:
 # it must stay running, find libopenpst and the bundled browser, and render the self-test HTML message through that browser.
 set -u
+fail=0
 root="$(cd "$(dirname "$0")/.." && pwd)"
 deb=$(ls -t "$root"/publish/openoutlook_*_amd64.deb | head -1)
 echo "package: $deb"
@@ -16,10 +17,13 @@ mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
 timeout 25 xvfb-run -a "$exe" > ~/deb-smoke/run.log 2>&1 &
 pid=$!
 sleep 18
-if kill -0 $pid 2>/dev/null; then echo "program still running after 18 s: OK"; else echo "program exited early:"; tail -15 ~/deb-smoke/run.log; fi
+if kill -0 $pid 2>/dev/null; then echo "program still running after 18 s: OK"; else echo "program exited early:"; tail -15 ~/deb-smoke/run.log; fail=1; fi
 wait $pid 2>/dev/null
 echo "--- log files ---"
 find ~/deb-smoke -name "*.log" -not -name run.log | head
 for f in $(find ~/deb-smoke -name "*.log" -not -name run.log | head -3); do echo "## $f"; grep -iE "reader|browser|chrom|self-test|selftest" "$f" | tail -8; done
 echo "--- stdout/stderr tail ---"; tail -5 ~/deb-smoke/run.log
-pkill -f chrome-headless-shell 2>/dev/null; true
+if ! grep -rqs "\[selftest\]" ~/deb-smoke/data; then echo "FAIL: the HTML self-test did not run through the bundled browser"; fail=1; fi
+[ -x ~/deb-smoke/opt/openoutlook/chromium/chrome-headless-shell ] || { echo "FAIL: bundled browser missing from the package"; fail=1; }
+pkill -f chrome-headless-shell 2>/dev/null
+exit $fail

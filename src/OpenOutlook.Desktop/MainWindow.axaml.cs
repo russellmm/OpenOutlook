@@ -186,7 +186,13 @@ public sealed partial class MainWindow : Window
             // Explicit command-line archives enable repeatable headless UI smoke tests.
             foreach (var path in Environment.GetCommandLineArgs().Skip(1).Where(File.Exists))
                 await OpenArchiveAsync(Path.GetFullPath(path));
-            _ = Task.Run(() => { var n = BrowserProcessTracker.KillLeftovers(); if (n > 0) AppLog.Note("reader", $"closed {n} layout browser(s) left behind by an earlier run"); });
+            _ = Task.Run(() =>
+            {
+                var n = BrowserProcessTracker.KillLeftovers();
+                if (n > 0) AppLog.Note("reader", $"closed {n} layout browser(s) left behind by an earlier run");
+                var folders = BrowserProcessTracker.DeleteStaleProfiles();
+                if (folders > 0) AppLog.Note("reader", $"removed {folders} browser profile folder(s) left behind by an earlier run");
+            });
             StartMirrorScheduler();                                  // the local copies of connected mailboxes
             _ = WarmUpMicrosoftAsync();                             // token and connection ready before the first click
             StartJunkScheduler();                                   // silent Junk Cleaner runs

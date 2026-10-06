@@ -89,6 +89,27 @@ public static class BrowserProcessTracker
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception) { /* tracking is best effort */ }
     }
 
+    /// <summary>
+    /// Removes browser profile folders that killed runs left in the temp folder (Puppeteer makes one per launch, about 170 MB each, and only deletes it when the
+    /// browser is closed normally). Only folders named like .NET's random names that hold a Chromium profile and were last written over an hour ago are touched.
+    /// </summary>
+    public static int DeleteStaleProfiles(string? tempRoot = null)
+    {
+        var removed = 0;
+        try
+        {
+            foreach (var dir in new DirectoryInfo(tempRoot ?? Path.GetTempPath()).EnumerateDirectories())
+            {
+                if (!System.Text.RegularExpressions.Regex.IsMatch(dir.Name, @"^[a-z0-9]{8}\.[a-z0-9]{3}$")) continue;
+                if (!File.Exists(Path.Combine(dir.FullName, "Local State")) || DateTime.UtcNow - dir.LastWriteTimeUtc < TimeSpan.FromHours(1)) continue;
+                try { dir.Delete(true); removed++; }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* still in use: next start */ }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* nothing to clean */ }
+        return removed;
+    }
+
     /// <summary>Closes browsers that earlier runs left behind. Call once at start-up (OpenOutlook runs once per user, so none of them belongs to a live reading pane).</summary>
     public static int KillLeftovers()
     {

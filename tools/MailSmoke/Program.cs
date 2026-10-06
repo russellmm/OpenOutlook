@@ -71,6 +71,25 @@ if (step == "mkmulti")
     return 0;
 }
 
+if (step == "touchall")
+{
+    // rewrites the contents tables the way the application's actions do: flags and un-flags every message of the file, marks it read and unread again: MailSmoke touchall <file>
+    using var e = OpenOutlook.PstNative.PstEngineFactory.OpenEditable(Path.GetFullPath(args[1]), out var reason);
+    int n = 0;
+    foreach (var f in e.AllFolders())
+        foreach (var m in e.GetMessages(f).ToList())
+        {
+            e.SetFlagged(m, true); e.SetFlagged(m, false);
+            e.SetReadState(m, !m.IsRead); e.SetReadState(m, m.IsRead);
+            n++;
+        }
+    var dl = e.DeletedItemsFolder()!;
+    foreach (var f in e.AllFolders().Where(x => x.Name == "Inbox").ToList())
+        foreach (var m in e.GetMessages(f).ToList()) e.MoveMessage(m, dl);          // the junk cleaner's move: rows are rebuilt in another table
+    Console.WriteLine($"touched {n} messages");
+    return 0;
+}
+
 if (step == "openeditable")
 {
     // the way the application opens a data file (editable when it can be, else read-only with a reason); no accounts needed: MailSmoke openeditable <file>

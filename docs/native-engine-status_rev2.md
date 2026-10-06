@@ -89,14 +89,13 @@ Accounts and setup: see `accounts-setup.md`. Handoff for the next session: see `
 
 Known limits (at the time; Gmail compose, reply, forward and attachment saving were added later on the same day, see `session-handoff-2026-10.md`): Hotmail unread counts in the picker come from the folder list; the Google consent screen shows the project's name ("Home Assistant 13") because the OpenOutlook client shares a Google Cloud project with another app (cosmetic; fix by renaming the consent screen or using a separate project).
 
-## SCANPST "minor" on mirror PSTs (2026-10-06) - root cause found and fixed
+## SCANPST "minor" on mirror PSTs (2026-10-06) - root cause narrowed, not cured
 
-Both hotmail mirror PSTs (Windows and Linux) scanned MINOR with one invisible finding. Root cause (first found by another agent, see `docs/scanpst-hotmail-root-cause-2026-10-06.md`, confirmed here on the supplied files and on an Outlook-authored PST):
-**Outlook stores a long PidTagDisplayTo / DisplayCc in ONE data tree that is referenced by both the message's property subnode and the contents-table cell subnode (BBT cRef 3).** We wrote two independent copies with identical bytes; SCANPST then re-creates the row (new low PidTagLtpRowVer). The block checker cannot see it (both layouts are structurally valid).
-- Fix (`op_edit2.c`): `tcbig_put` looks up the message whose NID is the row id, and when its property subnode holds exactly the cell's value it references that data tree (`opw_add_ref`) instead of writing a copy. It happens in every table rewrite (import, flag/read, move, delete), so the sharing survives edits.
-- Threshold (`OP_BIGDISPLAY`, op_wr.h): display-to / display-cc over 2,047 bytes are subnodes in the message and in the row (before: 3,000 / 3,580), because SCANPST flags the row from 2,048 bytes up and our heap values between 2,048 and 3,000 bytes had no shared tree.
-- Verified with SCANPST: 60/90/94/95/100/200/400 recipients and `mkmulti` display-to lengths 100..3000 chars all NO_ERRORS; also after flag/read/un-flag and a move to Deleted Items; `pstcheck refs` clean. A 5,000-character single recipient NAME still errors (SCANPST rebuilds display-to from a recipient name that long; not a real-world case).
-- Not done: a checker/fixer rule that detects and shares the trees in existing files (a mirror made before this change must be recreated), and a Linux run of the matrix.
-- A truncation of display-to is NOT a fix: SCANPST regenerates it from the recipient table ("row doesn't match sub-object").
-- Separate real bug: messages with Bcc recipients give ERRORS.
-- Tools: `MailSmoke mkmulti|mkbigrecips|touchall|openpath|openeditable`.
+**Update later on 2026-10-06:** the cause in `rmarrash_hm.pst` is now confirmed by reversible isolation tests: the long DisplayTo cell must share its message property's data tree. The low row version is a repair side effect. Three ScanPST repair passes leave this archive NO_ERRORS (19 folders, 1,202 items). The native writer is not changed yet. See [the investigation, experiments and writer follow-up](scanpst-hotmail-root-cause-2026-10-06.md). The notes below describe the earlier investigation.
+
+Both the Windows and Linux hotmail mirror PSTs scan as MINOR with a single invisible finding (the log has no flagged lines; repair is optional).
+- **Trigger (reproduced with synthetic files, `MailSmoke mkmulti`):** SCANPST re-creates the contents-table row of any message whose PidTagDisplayTo is 1024 characters or longer (2048 bytes). Rows at 1023 characters or fewer are untouched. The repair only gives the row a fresh low PidTagLtpRowVer; the rest of the file is unchanged.
+- **Ruled out:** heap or subnode storage of the cell, a 1024-byte PC/cell threshold (tried), row-matrix in heap vs subnode, row version value, dwUnique, recipient count. Outlook-authored files contain rows with display-to of 1000-1776 characters (cells in subnodes, same as ours) and scan clean, so the length alone is not the fault; what differs from Outlook is still unknown.
+- **Truncating display-to to 1023 characters makes things worse:** SCANPST regenerates PidTagDisplayTo from the recipient table, so a truncated value gives "Contents Table row doesn't match sub-object" (ERRORS). Do not truncate.
+- Separate real bug: messages with Bcc recipients give ERRORS (see earlier notes).
+- Tools: `MailSmoke mkmulti|mkbigrecips|openpath|openeditable`; analysis scripts live in the session scratchpad only.

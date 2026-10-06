@@ -15,6 +15,7 @@
 #define OPW_DLIST_IB     0x4200u
 #define OP_BLOCKMAX      8176u
 #define OP_MAXALLOC      3580u
+#define OP_BIGDISPLAY    2047u                          /* display-to / display-cc (0x0E04 / 0x0E03) over this many bytes: a subnode in the message AND the contents-table cell, one shared data tree (SCANPST re-creates the row of such a message otherwise: it has been seen from 2,048 bytes up) */
 
 /* ---- growable byte buffer -------------------------------------------------------------------------------------------- */
 typedef struct { uint8_t *p; size_t n, cap; int bad; } bbuf;
@@ -178,7 +179,7 @@ int  tc_set_cell(tctx *t, size_t row, int col, const uint8_t *d, size_t n);
 int  tc_copy_row(tctx *dst, const tctx *src, size_t srow, uint32_t newid);           /* cells matched by property id */
 int  tc_build(const tctx *t, hblocks *heap, hblocks *rowblocks, uint32_t *rows_nid);
 /* a cell value too large for the heap (more than OP_MAXALLOC bytes) lives in a subnode of the table node; tc_build_ex allocates the local NID and hands the data back */
-typedef struct { uint32_t nid; uint8_t *p; size_t n; } tcbig;
+typedef struct { uint32_t nid; uint8_t *p; size_t n; uint32_t rowid; uint16_t pid; } tcbig;     /* rowid / pid: the cell's row and property, to find the message property that holds the same value */
 int  tc_build_ex(const tctx *t, opw *w, hblocks *heap, hblocks *rowblocks, uint32_t *rows_nid, tcbig **big, size_t *nbig);   /* w and big may be NULL: large cells are then an error */
 void tcbig_free(tcbig *b, size_t n);
 int  tcbig_put(opw *w, const tcbig *b, size_t n, wsub *out);                  /* stores the data trees; out[i] = {nid, top, 0} */

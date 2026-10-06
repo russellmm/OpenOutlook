@@ -92,7 +92,7 @@ static int p_ext(opw *w, sublist *subs, pcprops *p, unsigned pid, unsigned ptype
 static int p_str_big(opw *w, sublist *subs, pcprops *p, unsigned pid, const char *utf8) {
     bbuf b = {0};
     int rc = u8_to_u16(utf8, &b);
-    if (!rc) rc = b.n > BIG_VALUE ? p_ext(w, subs, p, pid, 0x1F, b.p, b.n) : pset(p, pid, 0x1F, b.p, b.n);
+    if (!rc) rc = b.n > ((pid == 0x0E03 || pid == 0x0E04) ? OP_BIGDISPLAY : BIG_VALUE) ? p_ext(w, subs, p, pid, 0x1F, b.p, b.n) : pset(p, pid, 0x1F, b.p, b.n);
     bb_free(&b);
     return rc;
 }

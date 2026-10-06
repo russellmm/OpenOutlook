@@ -167,8 +167,51 @@ static int cmp_recsort(const void *a, const void *b) {
 
 void tcbig_free(tcbig *b, size_t n) { for (size_t i = 0; i < n; i++) free(b[i].p); free(b); }
 
+/* Outlook stores the large value of a contents-table cell (display-to / display-cc ...) in the SAME data tree as the message's own property: the row id is the message's NID and
+   both subnodes point at one block (reference count 3). SCANPST re-creates the row when they are independent copies (found 2026-10-06 on a mirror with a 4,782-character display-to).
+   Returns the message's data tree when it holds exactly this value, else 0. */
+static uint64_t msg_shared_tree(opw *w, const tcbig *b) {
+    nbt_e e;
+    if (!b->rowid || opw_node(w, b->rowid, &e) != 0 || !e.bs || !e.bd) return 0;
+    pcprops pc = {0};
+    uint64_t found = 0;
+    if (pcprops_get_ex(w, b->rowid, &pc, 2) == 0) {
+        pcprop *pp = pcprops_find(&pc, b->pid);
+        if (pp && pp->ext_nid) {
+            wsubs subs;
+            if (opw_subnodes(w, e.bs, &subs) == 0) {
+                for (size_t i = 0; i < subs.n && !found; i++) {
+                    if (subs.e[i].nid != pp->ext_nid) continue;
+                    hblocks hb;
+                    if (opw_leaf_blocks(w, subs.e[i].bd, &hb) == 0) {
+                        size_t total = 0;
+                        for (size_t k = 0; k < hb.n; k++) total += hb.b[k].n;
+                        if (total == b->n) {
+                            size_t at = 0;
+                            int same = 1;
+                            for (size_t k = 0; k < hb.n && same; k++) { same = memcmp(hb.b[k].p, b->p + at, hb.b[k].n) == 0; at += hb.b[k].n; }
+                            if (same) found = subs.e[i].bd;
+                        }
+                        hb_free(&hb);
+                    }
+                }
+                wsubs_free(&subs);
+            }
+        }
+    }
+    pcprops_free(&pc);
+    return found;
+}
+
 int tcbig_put(opw *w, const tcbig *b, size_t n, wsub *out) {
     for (size_t i = 0; i < n; i++) {
+        uint64_t shared = msg_shared_tree(w, &b[i]);
+        if (shared) {
+            int rc = opw_add_ref(w, shared);
+            if (rc) return rc;
+            out[i].nid = b[i].nid; out[i].bd = shared; out[i].bs = 0;
+            continue;
+        }
         size_t nb = (b[i].n + OP_BLOCKMAX - 1) / OP_BLOCKMAX;
         opbuf *bl = (opbuf *)calloc(nb ? nb : 1, sizeof *bl);
         if (!bl) return OPST_E_NOMEM;
@@ -217,7 +260,7 @@ int tc_build_ex(const tctx *t, opw *w, hblocks *heap, hblocks *rowblocks, uint32
             if (fixed_size(col->ptype)) {
                 size_t m = v->n < col->cbd ? v->n : col->cbd;
                 if (m) memcpy(row + col->ibd, v->p, m);
-            } else if (v->n > OP_MAXALLOC && w && bigs && nbigs) {            /* too large for the heap: a subnode of the table node */
+            } else if (v->n > ((col->pid == 0x0E03 || col->pid == 0x0E04) ? OP_BIGDISPLAY : OP_MAXALLOC) && w && bigs && nbigs) {            /* too large for the heap: a subnode of the table node */
                 uint32_t idx = op_u32(w->hdr + 44 + 4 * 0x1F) + 1;
                 wr32(w->hdr + 44 + 4 * 0x1F, idx);
                 if (*nbigs == capbig) {
@@ -227,7 +270,7 @@ int tc_build_ex(const tctx *t, opw *w, hblocks *heap, hblocks *rowblocks, uint32
                     *bigs = nb;
                 }
                 tcbig *bg = &(*bigs)[(*nbigs)++];
-                bg->nid = (idx << 5) | 0x1F; bg->n = v->n;
+                bg->nid = (idx << 5) | 0x1F; bg->n = v->n; bg->rowid = t->rows[r].rowid; bg->pid = col->pid;
                 bg->p = (uint8_t *)malloc(v->n);
                 if (!bg->p) { rc = OPST_E_NOMEM; break; }
                 memcpy(bg->p, v->p, v->n);

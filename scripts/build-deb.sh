@@ -23,7 +23,17 @@ install -m 644 src/OpenOutlook.Desktop/Assets/openoutlook-512.png "$stage/usr/sh
 install -m 644 src/OpenOutlook.Desktop/Assets/openoutlook.png "$stage/usr/share/icons/hicolor/256x256/apps/openoutlook.png"
 install -m 644 packaging/openoutlook.desktop "$stage/usr/share/applications/openoutlook.desktop"
 # EGL_LOG_LEVEL=fatal: WSLg and some VMs have no DRI3, and Mesa then prints two harmless warnings on every start
-printf '#!/bin/sh\nexport EGL_LOG_LEVEL=fatal\nexec /opt/openoutlook/OpenOutlook.Desktop "$@"\n' > "$stage/usr/bin/openoutlook"
+cat > "$stage/usr/bin/openoutlook" <<'LAUNCHER'
+#!/bin/sh
+export EGL_LOG_LEVEL=fatal
+# Under WSL there is no Linux browser: sign-in pages and links open in the default Windows browser
+if [ -z "$BROWSER" ] && grep -qi microsoft /proc/version 2>/dev/null && command -v explorer.exe >/dev/null 2>&1; then
+  export BROWSER=/opt/openoutlook/wsl-open
+fi
+exec /opt/openoutlook/OpenOutlook.Desktop "$@"
+LAUNCHER
+printf '#!/bin/sh\n# opens a link in the default Windows browser (WSL)\nexec explorer.exe "$1"\n' > "$stage/opt/openoutlook/wsl-open"
+chmod 755 "$stage/opt/openoutlook/wsl-open"
 chmod 755 "$stage/usr/bin/openoutlook"
 
 # Depends: what the bundled browser needs (its own list, from Chrome for Testing) plus the keyring and file-opening helpers

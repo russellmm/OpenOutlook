@@ -1782,6 +1782,11 @@ public sealed partial class MainWindow : Window
             settings.WindowX is { } x && settings.WindowY is { } y &&
             Screens.All.Any(screen => screen.WorkingArea.Contains(new PixelPoint(x + 40, y + 20))))
             Position = new PixelPoint(x, y);
+        if (WslDriveBookmarks.IsWsl() && WslWindowPlacement.PrimaryOrigin() is { } primary)       // under WSLg: the upper left of the monitor Windows has as primary
+        {
+            var target = new PixelPoint(primary.X + 24, primary.Y + 24);
+            if (Screens.All.Any(screen => screen.Bounds.Contains(target))) Position = target;
+        }
         _normalWindowPosition = Position;
         if (settings.WindowMaximized) WindowState = WindowState.Maximized;
         _layoutReady = true;

@@ -64,4 +64,19 @@ public sealed class BundledBrowserTests
         }
         finally { Directory.Delete(root, true); }
     }
+
+    [Fact]
+    public void The_primary_monitor_origin_comes_from_the_newest_monitor_list_of_the_WSLg_log()
+    {
+        string[] log =
+        [
+            "[22:38:47.859] 	rdpMonitor[0]: x:0, y:0, width:3840, height:2160, is_primary:1",          // an older session with one monitor
+            "[22:42:47.124] 	rdpMonitor[0]: x:-3840, y:0, width:3840, height:2160, is_primary:0",
+            "[22:42:47.124] 	rdpMonitor[1]: x:0, y:0, width:3840, height:2160, is_primary:1",
+            "[22:42:47.207] 	app_list_monitor_thread: something else"
+        ];
+        Assert.Equal((3840, 0), OpenOutlook.Desktop.WslWindowPlacement.PrimaryOrigin(log));            // the right-hand primary starts 3840 pixels into the X display
+        Assert.Equal((0, 0), OpenOutlook.Desktop.WslWindowPlacement.PrimaryOrigin(new[] { log[0] }));
+        Assert.Null(OpenOutlook.Desktop.WslWindowPlacement.PrimaryOrigin(new[] { "nothing here" }));
+    }
 }

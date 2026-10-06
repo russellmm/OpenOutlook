@@ -194,6 +194,7 @@ public sealed partial class MainWindow : Window
                 if (folders > 0) AppLog.Note("reader", $"removed {folders} browser profile folder(s) left behind by an earlier run");
             });
             if (IsElevated()) WarnAboutElevation();
+            if (WslDriveBookmarks.IsWsl()) _ = Task.Run(() => WslDriveBookmarks.Ensure());          // the Windows drives in the file dialog's sidebar
             StartMirrorScheduler();                                  // the local copies of connected mailboxes
             _ = WarmUpMicrosoftAsync();                             // token and connection ready before the first click
             StartJunkScheduler();                                   // silent Junk Cleaner runs

@@ -42,4 +42,26 @@ public sealed class BundledBrowserTests
         }
         finally { Directory.Delete(root, true); }
     }
+
+    [Fact]
+    public void WSL_drives_are_added_to_the_file_dialog_sidebar_once_and_other_bookmarks_stay()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "oo-bookmarks-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var mnt = Directory.CreateDirectory(Path.Combine(root, "mnt")).FullName;
+            foreach (var name in new[] { "c", "x", "wsl", "wslg" }) Directory.CreateDirectory(Path.Combine(mnt, name));
+            var cfg = Path.Combine(root, "config");
+            Directory.CreateDirectory(Path.Combine(cfg, "gtk-3.0"));
+            File.WriteAllText(Path.Combine(cfg, "gtk-3.0", "bookmarks"), string.Join((char)10, "file:///home/me/Documents Docs", "file:///mnt/c My C") + (char)10);
+            Assert.Equal(3, OpenOutlook.Desktop.WslDriveBookmarks.Ensure(mnt, cfg));            // x for gtk-3.0, c and x for gtk-4.0
+            var lines = File.ReadAllLines(Path.Combine(cfg, "gtk-3.0", "bookmarks"));
+            Assert.Contains("file:///home/me/Documents Docs", lines);
+            Assert.Contains("file:///mnt/c My C", lines);                                      // the owner's own name is kept
+            Assert.Single(lines, l => l.StartsWith("file:///mnt/x"));
+            Assert.DoesNotContain(lines, l => l.Contains("/mnt/wsl"));                         // only single-letter drives
+            Assert.Equal(0, OpenOutlook.Desktop.WslDriveBookmarks.Ensure(mnt, cfg));            // a second start adds nothing
+        }
+        finally { Directory.Delete(root, true); }
+    }
 }

@@ -23,7 +23,8 @@ install -m 644 src/OpenOutlook.Desktop/Assets/openoutlook-512.png "$stage/usr/sh
 install -m 644 src/OpenOutlook.Desktop/Assets/openoutlook.png "$stage/usr/share/icons/hicolor/256x256/apps/openoutlook.png"
 install -m 644 packaging/openoutlook.desktop "$stage/usr/share/applications/openoutlook.desktop"
 # EGL_LOG_LEVEL=fatal: WSLg and some VMs have no DRI3, and Mesa then prints two harmless warnings on every start
-printf '#!/bin/sh\nexport EGL_LOG_LEVEL=fatal\nexec /opt/openoutlook/OpenOutlook.Desktop "$@"\n' > "$stage/usr/bin/openoutlook"
+# XCURSOR_*: under WSLg the default X cursor is tiny and nearly invisible on a high-resolution screen; a larger Adwaita cursor (override with your own XCURSOR_SIZE / XCURSOR_THEME)
+printf '#!/bin/sh\nexport EGL_LOG_LEVEL=fatal\nexport XCURSOR_THEME="${XCURSOR_THEME:-Adwaita}"\nexport XCURSOR_SIZE="${XCURSOR_SIZE:-48}"\nexec /opt/openoutlook/OpenOutlook.Desktop "$@"\n' > "$stage/usr/bin/openoutlook"
 chmod 755 "$stage/usr/bin/openoutlook"
 
 # Depends: what the bundled browser needs (its own list, from Chrome for Testing) plus the keyring and file-opening helpers

@@ -242,7 +242,7 @@ public partial class MainWindow
                     StatusText.Text = "Deleted Items is already empty.";
                     return;
                 }
-                if (!await ConfirmPstDeleteAsync(messages.Count, Path.GetFileName(sel.Path))) return;
+                if (!await ConfirmEmptyDeletedItemsAsync(messages.Count, Path.GetFileName(sel.Path))) return;
                 foreach (var message in messages)
                 {
                     try { store.DeleteMessage(message); done++; }

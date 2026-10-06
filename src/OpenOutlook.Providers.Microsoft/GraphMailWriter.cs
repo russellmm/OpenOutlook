@@ -101,6 +101,47 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         return (id, shown.Length > 0 ? shown : name);
     }
 
+    /// <summary>Counts the messages in the Deleted Items folder, after checking that <paramref name="folderId"/> really is that folder.</summary>
+    public async Task<int> CountDeletedItemsAsync(string token, string folderId, CancellationToken ct = default)
+    {
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        using var folder = await RequestJsonAsync(HttpMethod.Get, Origin + "/me/mailFolders/deleteditems?$select=id,totalItemCount",
+            token, null, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        if (!string.Equals(RequiredId(folder.RootElement), folderId, StringComparison.Ordinal))
+            throw new GraphMailException("Only the Deleted Items folder can be emptied.");
+        return folder.RootElement.TryGetProperty("totalItemCount", out var count) && count.ValueKind == JsonValueKind.Number &&
+               count.TryGetInt32(out var total) && total >= 0 ? total : 0;
+    }
+
+    /// <summary>Permanently deletes every message in Deleted Items, 50 at a time, until the folder is empty. Returns the number deleted;
+    /// a failure part-way stops there (the messages already deleted stay deleted, <paramref name="progress"/> has reported them).</summary>
+    public async Task<int> EmptyDeletedItemsAsync(string token, string folderId, Action<int>? progress = null, CancellationToken ct = default)
+    {
+        await CountDeletedItemsAsync(token, folderId, ct).ConfigureAwait(false);   // verifies the folder identity once
+        var deleted = 0;
+        for (var round = 0; round < 1000; round++)
+        {
+            ct.ThrowIfCancellationRequested();
+            List<string> ids = [];
+            using (var page = await RequestJsonAsync(HttpMethod.Get, Origin + "/me/mailFolders/deleteditems/messages?$select=id&$top=50",
+                token, null, HttpStatusCode.OK, ct).ConfigureAwait(false))
+            {
+                if (!page.RootElement.TryGetProperty("value", out var values) || values.ValueKind != JsonValueKind.Array || values.GetArrayLength() > 50)
+                    throw new GraphMailException("Graph returned an invalid message page.");
+                foreach (var item in values.EnumerateArray()) ids.Add(RequiredId(item));
+            }
+            if (ids.Count == 0) return deleted;
+            foreach (var id in ids)
+            {
+                ct.ThrowIfCancellationRequested();
+                await RequestEmptyAsync(HttpMethod.Post, Origin + "/users/" + Uri.EscapeDataString(expectedAccountId) +
+                    "/messages/" + Uri.EscapeDataString(id) + "/permanentDelete", token, null, HttpStatusCode.NoContent, ct).ConfigureAwait(false);
+                progress?.Invoke(++deleted);
+            }
+        }
+        throw new GraphMailException("Deleted Items did not empty; stopped after the safety limit.");
+    }
+
     public async Task DeletePermanentlyAsync(string token, string messageId, CancellationToken ct = default)
     {
         if (!await IsInDeletedItemsAsync(token, messageId, ct).ConfigureAwait(false))

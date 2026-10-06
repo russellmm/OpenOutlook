@@ -167,6 +167,14 @@ public partial class MainWindow
             items.Add(new Separator());
             items.Add(purge);
         }
+        if (item.Tag is MicrosoftFolderSelection msSel &&
+            msSel.Name.Equals("Deleted Items", StringComparison.OrdinalIgnoreCase))
+        {
+            var purgeMs = new MenuItem { Header = "Empty Deleted Items" };
+            purgeMs.Click += (_, _) => _ = EmptyMicrosoftDeletedItemsAsync(msSel);
+            items.Add(new Separator());
+            items.Add(purgeMs);
+        }
         var menu = new MenuFlyout();
         foreach (var entry in items) menu.Items.Add(entry);
         menu.Opening += (_, _) =>

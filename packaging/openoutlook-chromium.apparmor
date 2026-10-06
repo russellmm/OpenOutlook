@@ -1,0 +1,13 @@
+# Lets the bundled headless browser create the user namespace its sandbox needs.
+# Ubuntu 23.10+ (kernel.apparmor_restrict_unprivileged_userns=1) otherwise strips
+# CAP_SYS_ADMIN inside it and the browser dies with SIGTRAP. Same pattern as /etc/apparmor.d/chrome.
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile openoutlook-chromium /opt/openoutlook/chromium/chrome-headless-shell flags=(unconfined) {
+  userns,
+  @{exec_path} mr,
+
+  include if exists <local/openoutlook-chromium>
+}

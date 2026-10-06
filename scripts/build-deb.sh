@@ -6,7 +6,7 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 version=${1:-0.1.0}
 build="$root/publish/linux-x64"
-stage="$root/publish/deb-stage"
+stage="${OO_DEB_STAGE:-$root/publish/deb-stage}"   # set OO_DEB_STAGE to a native Linux path when the repo sits on NTFS (dpkg-deb rejects 777 control dir)
 [[ -x "$build/OpenOutlook.Desktop" ]] || { echo "Run scripts/package-linux-x64.sh first."; exit 1; }
 
 rm -rf "$stage"
@@ -22,6 +22,26 @@ install -m 644 LICENSE "$stage/opt/openoutlook/LICENSE"
 install -m 644 src/OpenOutlook.Desktop/Assets/openoutlook-512.png "$stage/usr/share/icons/hicolor/512x512/apps/openoutlook.png"
 install -m 644 src/OpenOutlook.Desktop/Assets/openoutlook.png "$stage/usr/share/icons/hicolor/256x256/apps/openoutlook.png"
 install -m 644 packaging/openoutlook.desktop "$stage/usr/share/applications/openoutlook.desktop"
+# Ubuntu 23.10+ blocks unprivileged user namespaces unless AppArmor allows them; without this the bundled browser crashes (SIGTRAP)
+install -d "$stage/etc/apparmor.d"
+install -m 644 packaging/openoutlook-chromium.apparmor "$stage/etc/apparmor.d/openoutlook-chromium"
+cat > "$stage/DEBIAN/postinst" <<'POSTINST'
+#!/bin/sh
+set -e
+if [ -f /etc/apparmor.d/openoutlook-chromium ] && command -v apparmor_parser >/dev/null 2>&1; then
+  apparmor_parser -r /etc/apparmor.d/openoutlook-chromium 2>/dev/null || true
+fi
+exit 0
+POSTINST
+cat > "$stage/DEBIAN/postrm" <<'POSTRM'
+#!/bin/sh
+set -e
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+  command -v apparmor_parser >/dev/null 2>&1 && apparmor_parser -R /etc/apparmor.d/openoutlook-chromium 2>/dev/null || true
+fi
+exit 0
+POSTRM
+chmod 755 "$stage/DEBIAN/postinst" "$stage/DEBIAN/postrm"
 # EGL_LOG_LEVEL=fatal: WSLg and some VMs have no DRI3, and Mesa then prints two harmless warnings on every start
 cat > "$stage/usr/bin/openoutlook" <<'LAUNCHER'
 #!/bin/sh

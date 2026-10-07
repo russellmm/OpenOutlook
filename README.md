@@ -58,8 +58,8 @@ Run on Linux (or in WSL with `scripts/wsl-package.sh [version]`, which builds fr
 ```bash
 bash scripts/build-native.sh
 bash scripts/package-linux-x64.sh        # self-contained program + libopenpst.so + chromium, tar.gz
-bash scripts/build-deb.sh 0.1.13         # openoutlook_0.1.13_amd64.deb
-sudo apt install ./publish/openoutlook_0.1.13_amd64.deb
+bash scripts/build-deb.sh 0.1.22         # openoutlook_0.1.22_amd64.deb (repo on NTFS? OO_DEB_STAGE=/tmp/deb-stage bash scripts/build-deb.sh 0.1.22)
+sudo apt install ./publish/openoutlook_0.1.22_amd64.deb   # also installs an AppArmor profile so the bundled browser can start on Ubuntu 23.10+
 openoutlook
 ```
 

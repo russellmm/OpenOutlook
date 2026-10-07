@@ -1,9 +1,9 @@
 # OpenOutlook: feature inventory and status
 
-Status date: **2026-10-05**. This is the single place that says what OpenOutlook does today, on which platform, where the code is and which file holds the setting. The requirements are in `PRODUCT_REQUIREMENTS.md`, the design in `DESIGN_SPEC.md` (section 11 onwards describes what was built after the original baseline), the build state in `BUILD_STATUS.md`, and the history in `docs/history/` and `docs/session-handoff-2026-10.md`.
+Status date: **2026-10-06**. This is the single place that says what OpenOutlook does today, on which platform, where the code is and which file holds the setting. The requirements are in `PRODUCT_REQUIREMENTS.md`, the design in `DESIGN_SPEC.md` (section 11 onwards describes what was built after the original baseline), the build state in `BUILD_STATUS.md`, and the history in `docs/history/` and `docs/session-handoff-2026-10.md`.
 
 Legend: **Yes** = built and used; **Partly** = built with the stated limits; **No** = not built (a ribbon button for it, if any, says "To be implemented"); **n/a** = does not apply.
-Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). **Linux** = the `.deb` / tar.gz, tested on Ubuntu 26.04 in WSL2 with WSLg and under Xvfb in CI; it has not been run on a bare-metal Linux desktop yet.
+Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). **Linux** = the `.deb` / tar.gz, tested on Ubuntu 26.04 in WSL2 with WSLg, under Xvfb in CI, and (2026-10-06) built, installed and smoke-tested on a bare-metal Ubuntu 26.04 GNOME/Wayland desktop; the hands-on checklist in `docs/handoff-linux-bare-metal-2026-10-06.md` is still to be walked through.
 
 ## 1. Application and platforms
 
@@ -13,7 +13,7 @@ Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). *
 | Native PST engine (OpenPST, C library) loaded by `OpenOutlook.PstNative` | Yes (`openpst.dll` beside the exe) | Yes (`libopenpst.so` beside the program) | The library must sit beside the program: the loader does not find it inside the single-file bundle. |
 | Bundled headless browser for HTML layout (Chrome for Testing chrome-headless-shell, pinned in `scripts/chromium-version.txt`) | Yes (`chromium\` beside the exe, about 270 MB) | Yes (`chromium/`) | Fetched by `scripts/fetch_chromium.py`; kept outside the single-file exe (`ExcludeFromSingleFile`). Installed Edge/Chrome/Chromium is the fallback. |
 | Application icon (blue rounded square, envelope, open amber ring) | Yes (exe + main window) | Yes (`.deb` icons, window) | `scripts/generate_icon.py` draws `Assets/openoutlook.ico/.png/-512.png`. Compose and dialog windows do not set it yet. |
-| Packaging | published folder `F:\Claude\OpenOutlook_win` (exe, `openpst.dll`, `openoutlook-oauth.json`, `chromium\`) | `.deb` (installs to `/opt/openoutlook`, `openoutlook` command, desktop entry, icons) and portable tar.gz | `scripts/wsl-package.sh [version]` builds the Linux packages in WSL. |
+| Packaging | published folder `F:\Claude\OpenOutlook_win` (exe, `openpst.dll`, `openoutlook-oauth.json`, `chromium\`) | `.deb` (installs to `/opt/openoutlook`, `openoutlook` command, desktop entry, icons, AppArmor profile for the bundled browser) and portable tar.gz | `scripts/wsl-package.sh [version]` builds the Linux packages in WSL. |
 | Continuous integration | n/a | Yes | `.github/workflows/linux.yml`: native build + tests, unit tests, headless UI tests, packages, smoke start of the `.deb`, artifacts. Private PST fixtures are not in the repository, so tests needing one skip themselves in CI. |
 | Logging | Yes | Yes | Rotating 2 MB `openoutlook.log` (`AppLog`); unhandled UI exceptions are survived and shown in a notice (`CrashNotice`). |
 
@@ -26,7 +26,7 @@ Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). *
 | Open / detach, saved list restored at start | Yes | Yes | `attached-psts.json`. Detach never deletes the file. |
 | Add by file dialog, or by typed path (mapped drive, `\\server\share`) | Yes | Yes | Account Settings > Data Files > Add… / Add by path…. Failure reasons are shown there and logged (`[pst-open]`). Network paths work; elevated programs do not see mapped drives (status bar says so). |
 | Read mail: HTML / Rich Text / Plain Text / Headers views | Yes | Yes | RTF converted to HTML. |
-| Read/unread, flag, move, copy, delete (to Deleted Items), permanent delete, empty Deleted Items | Yes | Yes | Drag and drop and the Move/Copy picker. |
+| Read/unread, flag, move, copy, delete (to Deleted Items), permanent delete, empty Deleted Items | Yes | Yes | Drag and drop and the Move/Copy picker. Right-click Deleted Items > Empty Deleted Items asks "Permanently delete all N items?" (shared dialog, `ConfirmEmptyDeletedItemsAsync`). |
 | Folder create / rename / move / delete, purge | Yes | Yes | Special folders are refused. |
 | Import messages (EML files and folders, drag and drop), copy/move between archives | Yes | Yes | |
 | Create a new empty PST (`opst_create`) | Yes | Yes | SCANPST-clean; used for the mailbox copies. |
@@ -71,7 +71,7 @@ A connected account keeps a local copy: a PST (`<address>.pst`) plus a SQLite st
 
 | Feature | Windows | Linux | Notes |
 |---|---|---|---|
-| Microsoft: read/unread, flag, archive, delete, move/copy to folder, create folder | Yes | Yes | The list changes at once; Graph is told in the background, in order; a refusal restores the list. Deleting inside Deleted Items asks and waits (permanent). |
+| Microsoft: read/unread, flag, archive, delete, move/copy to folder, create folder | Yes | Yes | The list changes at once; Graph is told in the background, in order; a refusal restores the list. Deleting inside Deleted Items asks and waits (permanent). Empty Deleted Items (Graph `permanentDelete`, 50 at a time, folder identity checked) clears the list at once, then syncs the mailbox copy before refreshing so the stale copy cannot bring the messages back; the Junk Cleaner re-reads the folder counts and drops moved messages from the list at once (`SyncMirrorWhenIdleAsync` waits for a running sync). |
 | Gmail: read/unread, star, archive, trash, move/add label, create label | Yes | Yes | Same at-once behaviour; label counts adjusted locally, re-read 8 s after the last action. |
 | Drag messages onto folders (left = move, right = Move Here / Copy Here) | Yes | Yes | |
 | Delete key and configurable shortcuts (View > Shortcuts) | Yes | Yes | `shortcuts.json`. |
@@ -108,6 +108,10 @@ A connected account keeps a local copy: a PST (`<address>.pst`) plus a SQLite st
 | Ribbon squeezes into drop-downs as the window narrows | Yes | Yes | `RibbonResponsiveLayout`. |
 | Message list: sortable / movable / resizable columns; date sections; sorting by Received keeps the sections | Yes | Yes | `view-layout.json` persists columns (including hidden ones) and pane widths. |
 | Column header right-click menu (Arrange By, Reverse Sort, Field Chooser, Remove This Column, Group By This Field) | Yes | Yes | Group by Box and View Settings are placeholders. |
+| "By date ▾" chip above the list = Arrange By menu (Date, From, Subject, Size, Importance, Attachments, Flag; Reverse Sort; Show in Groups) | Yes | Yes | `MainWindow.ColumnMenu.cs` (`ArrangeByClicked`, `ArrangeMessageListBy`). Groups and orders by the field; Size is only ordered. The label follows the arrangement. Before 2026-10-06 the chip was a plain date-sections checkbox. |
+| The chosen sort survives opening another folder, returning, and reloads after a delete or move | Yes | Yes | `MainWindow.SelectNext.cs` (`RememberListSort`, `CarrySortInto`). Session only; not saved in `view-layout.json`. Arrange By / Group By This Field start the field in its own order. |
+| After deleting, archiving or moving the highlighted message, the next one in the list is highlighted and opened | Yes | Yes | `NoteRowLeaving` / `SelectDisplayedRow`: Microsoft, Gmail, PST deletes, PST drag-moves, server-side removals in a refresh. A batch highlights once, after the whole batch. |
+| Search icon and status-bar zoom slider fit their boxes | Yes | Yes | Search icon is a 32px template inside a Viewbox; the slider (`Slider.statusZoom` in `OutlookStyles.axaml`) pulls the theme's 15px tick-mark rows out of the 26px bar. The ribbon Zoom button has the same cropping problem (not fixed). |
 | Importance and Flag columns (start hidden; Field Chooser or header menu) | Yes | Yes | Importance from Graph, the PST and the copy; Gmail shows normal. |
 | Folder pane: reorder by menu or drag, per-parent order saved | Yes | Yes | `folder-order.json`. |
 | Move Items picker, right-click menus for every folder type | Yes | Yes | |

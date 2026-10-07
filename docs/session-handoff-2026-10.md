@@ -6,7 +6,7 @@ Read this first when resuming. Longer background: `native-engine-status.md` (wha
 
 ## State
 - Repo `github.com/russellmm/OpenOutlook`, work branch `native-engine-phase0`, merged to `main` after every step (both point at the same commit). The app (Avalonia 11.2.3, .NET 8) reads and writes PST files through the vendored C library `native/openpst`, and has Hotmail (Microsoft Graph) and Gmail accounts.
-- Everything below is done and pushed (latest commit: `git log -1`; the last code change is `387c608`, docs `cfdc5e8`). Three build outputs exist: the published Windows build `F:\Claude\OpenOutlook_win\OpenOutlook.Desktop.exe` (+ `openpst.dll`, `chromium\`, `openoutlook-oauth.json`), republished 2026-10-06 18:17 by cross-publishing from Linux and **not yet started on Windows**; the Linux `.deb` 0.1.22 (installed on the bare-metal Ubuntu 26.04 desktop) and the portable tar.gz in `publish/` (git-ignored).
+- Everything below is done and pushed (latest commit: `git log -1`; the last code change is `387c608`, docs `cfdc5e8`). Three build outputs exist: the published Windows build `F:\Claude\OpenOutlook_win\OpenOutlook.Desktop.exe` (+ `openpst.dll`, `chromium\`, `openoutlook-oauth.json`), republished 2026-10-06 18:17 by cross-publishing from Linux and **not yet started on Windows**; the Linux `.deb` 0.1.23 (built in WSL on 2026-10-06 evening, contains the display-to and heap-bitmap engine fixes and the junk keyword export/import; the bare-metal desktop still has 0.1.22 installed) and the portable tar.gz in `publish/` (git-ignored).
 - Two machines share this repo through the NTFS drive (`F:` on Windows, `/mnt/SOLIDIGM` on the Linux box). The Linux side is documented in `docs/handoff-linux-bare-metal-2026-10-06.md`.
 
 ## Build, test, publish, push
@@ -116,3 +116,5 @@ Settings are per machine: `junk-cleaner.json` sits in `~/.config/OpenOutlook` (W
 
 ## Hotmail sync error "heap needs a block kind" (2026-10-06, evening)
 The mirror sync failed on one message (status bar: Sync problem, 3 problems). Cause: the message index node 0xE01 outgrew 8 heap blocks and the engine could not add the HN bitmap block (design rule 28). Fixed in `op_edit.c` `heap_append_item`; MailSmoke `mkmany <file> N` reproduces it (6,000 messages failed before, 22,000 pass with SCANPST NO_ERRORS after). Windows build republished.
+
+Linux packaging after the bare-metal session (2026-10-06, evening): `scripts/wsl-package.sh 0.1.23` built `publish/openoutlook_0.1.23_amd64.deb` and the tar.gz from the current source (WSL: 537/537 unit tests; a 6,000-message PST written by the Linux engine scanned NO_ERRORS in SCANPST, see `scripts/wsl-share-matrix.sh` and MailSmoke `mkmany`). To update the Linux box: `sudo apt install /mnt/SOLIDIGM/Claude/OpenOutlook/publish/openoutlook_0.1.23_amd64.deb` (or pull and rebuild there). Windows build republished at 22:07 with the same engine.

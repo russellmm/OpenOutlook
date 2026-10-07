@@ -71,6 +71,30 @@ if (step == "mkmulti")
     return 0;
 }
 
+if (step == "mkmany")
+{
+    // one PST with N messages, every one with its own subject (conversation topic), so the message index (node 0xE01) grows: MailSmoke mkmany <file> N
+    var file = args[1];
+    int count = int.Parse(args[2]);
+    if (File.Exists(file)) File.Delete(file);
+    using var e = OpenOutlook.PstNative.PstEngineFactory.Create(file, "many");
+    var inbox = e.CreateFolder(e.AllFolders().First(f => f.Name == "Deleted Items").ParentNid, "Inbox");
+    var t0 = new DateTime(2026, 2, 13, 13, 0, 0, DateTimeKind.Utc);
+    for (int from = 0; from < count; from += 200)
+    {
+        var list = new List<PstCore.MailImport>();
+        for (int i = from; i < Math.Min(count, from + 200); i++)
+        {
+            var m = new PstCore.MailImport { Subject = $"Message number {i} about topic {i * 7919 % 100003}", SenderName = "Sam Sender", SenderEmail = "sam@example.test", BodyText = "hello body " + i, Sent = t0.AddMinutes(-i), Received = t0.AddMinutes(-i), MessageId = $"<many{i}@example.test>" };
+            m.Recipients.Add(new PstCore.ImportRecipient("Rae Receiver", "r@example.test", PstCore.RecipientKind.To));
+            list.Add(m);
+        }
+        e.ImportMessages(inbox, list);
+    }
+    Console.WriteLine($"{e.GetMessages(inbox).Count()} messages");
+    return 0;
+}
+
 if (step == "touchall")
 {
     // rewrites the contents tables the way the application's actions do: flags and un-flags every message of the file, marks it read and unread again: MailSmoke touchall <file>

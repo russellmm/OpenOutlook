@@ -212,7 +212,9 @@ int heap_append_item(hblocks *h, const uint8_t *data, size_t n, uint32_t *hid) {
     }
     bb_free(&body);
     size_t nb = L + 1;
-    if (nb > 0xFFFF || (nb >= 8 && (nb - 8) % 128 == 0)) return op_err(OPST_E_UNSUPPORTED, "the heap needs a block kind that is not supported yet");
+    if (nb > 0xFFFF) return op_err(OPST_E_UNSUPPORTED, "the heap has too many blocks");
+    /* block 8, 136, 264 ... start with an HNBITMAPHDR: ibHnpm (2 bytes) + the fill levels of the next 128 blocks (64 bytes); the first item begins at 66 */
+    size_t hdr = (nb >= 8 && (nb - 8) % 128 == 0) ? 66 : 2;
     if (h->b[L].n < OP_BLOCKMAX) {                         /* a non-final block must be full */
         uint8_t *t = (uint8_t *)realloc(h->b[L].p, OP_BLOCKMAX);
         if (!t) return NOMEM;
@@ -220,11 +222,11 @@ int heap_append_item(hblocks *h, const uint8_t *data, size_t n, uint32_t *hid) {
         h->b[L].p = t; h->b[L].n = OP_BLOCKMAX;
     }
     bbuf nbk = {0};
-    bb_zero(&nbk, 2);
+    bb_zero(&nbk, hdr);
     bb_put(&nbk, data, n);
     if (nbk.n & 1) bb_u8(&nbk, 0);
     size_t npm = nbk.n;
-    bb_u16(&nbk, 1); bb_u16(&nbk, 0); bb_u16(&nbk, 2); bb_u16(&nbk, (unsigned)(2 + n));
+    bb_u16(&nbk, 1); bb_u16(&nbk, 0); bb_u16(&nbk, (unsigned)hdr); bb_u16(&nbk, (unsigned)(hdr + n));
     if (nbk.bad) { bb_free(&nbk); return NOMEM; }
     wr16(nbk.p, (unsigned)npm);
     unsigned fill = heap_fill_level(OP_BLOCKMAX - nbk.n);

@@ -194,6 +194,29 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Deleting_the_highlighted_message_highlights_the_one_that_takes_its_place()
+    {
+        var fixture = Fixture();
+        if (fixture is null) return;
+        var (window, copy) = await OpenFixtureAsync(fixture);
+        try
+        {
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            var rows = MailRows(list);
+            Assert.True(rows.Count >= 3, "the fixture folder needs at least three messages");
+            var doomed = rows[1];
+            var expected = rows[2];                                                             // the next message down
+            list.SelectedItem = doomed;
+            Dispatcher.UIThread.RunJobs();
+            await window.ExecuteMailActionAsync("delete");
+            await WaitUntil(() => !MailRows(list).Contains(doomed) && list.SelectedItem is not null);
+            Assert.DoesNotContain(doomed, MailRows(list));
+            Assert.Equal(((MessageListRow)expected).Summary.Nid, ((MessageListRow)list.SelectedItem!).Summary.Nid);
+        }
+        finally { window.Close(); Cleanup(copy); }
+    }
+
+    [AvaloniaFact]
     public async Task Space_bar_pages_the_message_then_moves_to_the_next_one()
     {
         var fixture = Fixture();

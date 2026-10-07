@@ -247,7 +247,7 @@ public sealed partial class MainWindow : Window
         await ExecuteMailActionAsync(action);
     }
 
-    private async Task ExecuteMailActionAsync(string action)
+    internal async Task ExecuteMailActionAsync(string action)
     {
         if (await TryHandlePstFlagActionAsync(action)) return;
         if (await TryHandlePstDeleteAsync(action)) return;
@@ -373,6 +373,7 @@ public sealed partial class MainWindow : Window
         if ((_activeGmailFolder?.Account ?? _activeMicrosoftAccount) is { } changedAccount) NoteLocalChange(changedAccount, selected.Id, action);
         if (action is "delete" or "archive")
         {
+            NoteRowLeaving(row);
             if (ReferenceEquals(MessageList.SelectedItem, row))
             {
                 MessageList.SelectedItem = null;
@@ -939,6 +940,7 @@ public sealed partial class MainWindow : Window
         for (var index = _graphRows.Count - 1; index >= 0; index--)
         {
             if (incoming.Contains(_graphRows[index].Message.Id)) continue;
+            NoteRowLeaving(_graphRows[index]);
             if (ReferenceEquals(MessageList.SelectedItem, _graphRows[index]))
             {
                 MessageList.SelectedItem = null;

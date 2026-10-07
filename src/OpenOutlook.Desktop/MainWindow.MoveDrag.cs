@@ -295,6 +295,7 @@ public partial class MainWindow
         }
         var moved = 0;
         string? firstError = null;
+        var nextIndex = copy ? -1 : FirstDisplayedIndexOf(DisplayedRows().OfType<MessageListRow>().Where(r => nids.Contains(r.Summary.Nid)));   // a move leaves the source list: highlight what takes its place
         foreach (var nid in nids)
         {
             var summary = sourceMessages.FirstOrDefault(m => m.Nid == nid);
@@ -303,7 +304,7 @@ public partial class MainWindow
             catch (Exception ex) when (ex is PstException or IOException) { firstError ??= ex.Message; }
         }
         if (_activePath == path && _activeFolder?.Nid == sourceFolderNid)
-            _ = RefreshActivePstFolderAsync(path);
+            _ = RefreshActivePstFolderAsync(path, nextIndex);
         InvalidateFolderCache(path); // badges/counts refresh on next folder render
         if (moved > 0 && !await VerifyOperationAsync(path)) return;
         StatusText.Text = moved > 0

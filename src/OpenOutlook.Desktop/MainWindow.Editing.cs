@@ -59,7 +59,7 @@ public partial class MainWindow
 
     /// <summary>Re-renders the visible folder from the store that is current for its path, using the
     /// same gate/version discipline as a fresh folder selection.</summary>
-    private async Task RefreshActivePstFolderAsync(string archivePath)
+    private async Task RefreshActivePstFolderAsync(string archivePath, int selectAfter = -1)
     {
         if (_activePath != archivePath || _activeFolder is not { } folder) return;
         if (!_stores.TryGetValue(archivePath, out var store)) return;
@@ -77,6 +77,7 @@ public partial class MainWindow
             if (version != _folderVersion) return;
             CacheFolder((archivePath, folder.Nid), messages);
             ShowMessages(messages);
+            SelectDisplayedRow(selectAfter);                                   // the message that took the place of a deleted or moved one
         }
         catch (Exception ex) when (ex is PstException or IOException or ObjectDisposedException or InvalidOperationException)
         {
@@ -144,6 +145,7 @@ public partial class MainWindow
             .Concat(MessageList.SelectedItem is MessageListRow single ? [single] : Array.Empty<MessageListRow>())
             .Distinct().ToList();
         if (rows.Count == 0) return false;
+        var nextIndex = FirstDisplayedIndexOf(rows);                                // where the highlight goes once these are gone
         if (_activePath is not { } path)
         {
             StatusText.Text = "The archive for this selection is no longer open.";
@@ -171,7 +173,7 @@ public partial class MainWindow
                 try { store.MoveMessage(row.Summary, trash); moved++; }
                 catch (Exception ex) when (ex is PstException or IOException) { moveError ??= ex.Message; }
             }
-            _ = RefreshActivePstFolderAsync(path);
+            _ = RefreshActivePstFolderAsync(path, nextIndex);
             if (moved > 0 && !await VerifyOperationAsync(path)) return true;
             StatusText.Text = moved > 0
                 ? $"Moved {moved} message{(moved == 1 ? "" : "s")} to Deleted Items in {Path.GetFileName(path)}" +
@@ -187,7 +189,7 @@ public partial class MainWindow
             try { store.DeleteMessage(row.Summary); done++; }
             catch (Exception ex) when (ex is PstException or IOException) { firstError ??= ex.Message; }
         }
-        _ = RefreshActivePstFolderAsync(path);
+        _ = RefreshActivePstFolderAsync(path, nextIndex);
         if (done > 0 && !await VerifyOperationAsync(path)) return true;
         StatusText.Text = done > 0
             ? $"Deleted {done} message{(done == 1 ? "" : "s")} from {Path.GetFileName(path)}" +

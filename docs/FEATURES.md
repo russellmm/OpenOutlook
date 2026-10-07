@@ -126,6 +126,7 @@ A connected account keeps a local copy: a PST (`<address>.pst`) plus a SQLite st
 |---|---|---|---|
 | Per-account on/off, keywords (From line contains), rules: high importance, no To address, sent on behalf, flagged | Yes | Yes | Account Settings > Junk Cleaner tab; `junk-cleaner.json`. Matches go to Deleted Items, never a permanent delete; at most 500 per run. |
 | Clean Junk Now with a tick-box preview | Yes | Yes | Ribbon Junk group and the tab. |
+| Export keywords / Import keywords (buttons on the tab) | Yes | Yes | Export saves the account's keywords, interval and rules (incl. flagged) to a JSON file with no account id; Import (also reads the old OutlookJunkCleaner `config.json`) merges the keywords and turns the cleaner on for the account. Settings are per machine (`junk-cleaner.json` in `~/.config/OpenOutlook`), so this is how the list moves between Windows and Linux. |
 | Automatic cleaning every 1-60 minutes while the app runs, silent | Yes | Yes | Off by default; log in `junk-cleaner.log`. |
 | Import of the old OutlookJunkCleaner `config.json` | Yes | Yes | Turns the cleaner on, leaves automatic cleaning as it was. |
 | Gmail Spam, PST Junk folders | No | No | |

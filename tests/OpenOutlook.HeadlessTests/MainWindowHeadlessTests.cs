@@ -217,6 +217,33 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task The_chosen_sort_survives_opening_another_folder_and_coming_back()
+    {
+        var fixture = Fixture();
+        if (fixture is null) return;
+        var (window, copy) = await OpenFixtureAsync(fixture);
+        try
+        {
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            var tree = window.FindControl<TreeView>("FolderTree")!;
+            var folders = tree.GetLogicalDescendants().OfType<TreeViewItem>().Where(i => i.Tag?.GetType().Name == "FolderSelection").ToList();
+            var current = folders.First(i => ReferenceEquals(i, tree.SelectedItem));
+            var other = folders.First(i => !ReferenceEquals(i, current));
+            window.ArrangeMessageListBy(1);                                                     // From
+            window.SortMessageList(1, ascending: false);                                        // ... descending
+            Dispatcher.UIThread.RunJobs();
+            tree.SelectedItem = other;
+            await Task.Delay(400); Dispatcher.UIThread.RunJobs();
+            tree.SelectedItem = current;
+            await WaitUntil(() => list.CollectionView?.Cast<object>().Any() == true);
+            var view = (Avalonia.Collections.DataGridCollectionView)list.ItemsSource!;
+            Assert.Equal("FromSort", view.SortDescriptions[0].PropertyPath);
+            Assert.Equal(System.ComponentModel.ListSortDirection.Descending, view.SortDescriptions[0].Direction);
+        }
+        finally { window.Close(); Cleanup(copy); }
+    }
+
+    [AvaloniaFact]
     public async Task Space_bar_pages_the_message_then_moves_to_the_next_one()
     {
         var fixture = Fixture();

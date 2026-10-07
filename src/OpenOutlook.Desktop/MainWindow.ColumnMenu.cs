@@ -74,6 +74,7 @@ public partial class MainWindow
         view.SortDescriptions.Clear();
         view.SortDescriptions.Add(DataGridSortDescription.FromPath(path, ascending ? ListSortDirection.Ascending : ListSortDirection.Descending));
         StatusText.Text = $"Arranged by {ColumnNames[column]}, {(ascending ? "ascending" : "descending")}.";
+        RememberListSort();
         UpdateArrangeChip();
     }
 
@@ -124,6 +125,7 @@ public partial class MainWindow
     {
         if (GroupPaths[column] is not { } path) return;
         _groupPath = path == "DateGroup" ? null : path;
+        _freshSortOnNextShow = true;
         _suppressGroupToggle = true;
         try { GroupByDateCheck.IsChecked = path == "DateGroup"; }
         finally { _suppressGroupToggle = false; }
@@ -193,6 +195,7 @@ public partial class MainWindow
         else
         {
             _groupPath = null;
+            _freshSortOnNextShow = true;
             _suppressGroupToggle = true;
             try { GroupByDateCheck.IsChecked = false; }
             finally { _suppressGroupToggle = false; }

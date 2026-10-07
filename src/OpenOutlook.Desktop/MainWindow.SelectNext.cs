@@ -52,4 +52,23 @@ public partial class MainWindow
         var indexes = rows.Select(r => shown.IndexOf(r)).Where(i => i >= 0).ToList();
         return indexes.Count == 0 ? -1 : indexes.Min();
     }
+
+    /// <summary>Opening another folder (or reloading this one) builds a fresh list; the order the user chose with a column header or Arrange By goes with them.</summary>
+    private bool _freshSortOnNextShow;                  // set by Arrange By / Group By This Field: their new list starts in that field's own order
+    private List<(string Path, System.ComponentModel.ListSortDirection Direction)>? _listSort;     // the order chosen in the list, kept while folders come and go
+
+    /// <summary>Remembers the order the list is in now (call after a sort is applied).</summary>
+    private void RememberListSort()
+    {
+        if (MessageList.ItemsSource is not DataGridCollectionView view) return;
+        _listSort = view.SortDescriptions.Where(d => d.PropertyPath is { Length: > 0 }).Select(d => (d.PropertyPath!, d.Direction)).ToList() is { Count: > 0 } kept ? kept : null;
+    }
+
+    private void CarrySortInto(DataGridCollectionView next)
+    {
+        if (_freshSortOnNextShow) { _freshSortOnNextShow = false; _listSort = null; return; }
+        if (MessageList.ItemsSource is DataGridCollectionView { SortDescriptions.Count: > 0 } current && !ReferenceEquals(current, next)) RememberListSort();
+        if (_listSort is null) return;
+        foreach (var (path, direction) in _listSort) next.SortDescriptions.Add(DataGridSortDescription.FromPath(path, direction));
+    }
 }

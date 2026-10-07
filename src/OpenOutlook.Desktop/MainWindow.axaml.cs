@@ -926,6 +926,7 @@ public sealed partial class MainWindow : Window
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(nameof(GraphMessageListRow.DateGroup)));
         else if (_groupPath is not null)
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(_groupPath));
+        CarrySortInto(view);
         _updatingMessageList = true;
         try { MessageList.ItemsSource = view; RefreshItemCount(); MessageList.SelectedItem = null; }
         finally { _updatingMessageList = false; }
@@ -1060,6 +1061,7 @@ public sealed partial class MainWindow : Window
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(nameof(MessageListRow.DateGroup)));
         else if (_groupPath is not null)
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(_groupPath));
+        CarrySortInto(view);
         _updatingMessageList = true;
         try
         {
@@ -1085,7 +1087,7 @@ public sealed partial class MainWindow : Window
 
     private void MessageListSorting(object? sender, DataGridColumnEventArgs e)
     {
-        Dispatcher.UIThread.Post(UpdateArrangeChip);                                         // after the grid has applied the sort
+        Dispatcher.UIThread.Post(() => { RememberListSort(); UpdateArrangeChip(); });         // after the grid has applied the sort
         // Sorting by Received keeps the date sections: the order flips inside them and the sections themselves follow (oldest first when ascending).
         if (e.Column is DataGridColumn { SortMemberPath: "ReceivedSort" } && _groupPath is null) return;
         if (_groupPath is not null && MessageList.ItemsSource is DataGridCollectionView fieldView)

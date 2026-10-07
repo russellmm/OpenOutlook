@@ -2,6 +2,8 @@
 
 Everything below is committed on `native-engine-phase0` and `main` (same commit). Until now Linux has only been run under **WSL2 / WSLg** on the owner's Windows PC (Ubuntu), never on a real Linux desktop. This list is what is known, what is untested, and how to build, run, log and report.
 
+> **Update (2026-10-06, evening):** the first bare-metal session has happened. Sections 1-7 are the original handoff and are still accurate (current package: `openoutlook_0.1.22_amd64.deb`); **section 8 at the end is the result of that session** (fixes, gotchas, what is still untested, known issues). Start there.
+
 ## 1. What to install
 
 Packages are built by `scripts/wsl-package.sh <version>` into `F:\Claude\OpenOutlook\publish\`:

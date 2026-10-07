@@ -94,7 +94,15 @@ public partial class MainWindow
     {
         if (result.Moved.Count == 0) return;
         StatusText.Text = Summary(result);
-        if (Environment.GetEnvironmentVariable("OPENOUTLOOK_NO_MIRROR") != "1") await SyncMirrorAsync(account, manual: false);
+        _ = RefreshMicrosoftFolderCountsAsync(account, CancellationToken.None, force: true);      // Junk and Deleted Items numbers in the folder list, without waiting for a folder to be opened
+        if (_activeMicrosoftFolder?.Account.AccountId == account.AccountId && _currentGraphMessages is { } shown)    // the list drops them at once; the copy catches up below
+        {
+            var moved = result.Moved.Select(hit => hit.MessageId).ToHashSet(StringComparer.Ordinal);
+            _currentGraphMessages = shown.Where(message => !moved.Contains(message.Id)).ToList();
+            ReconcileGraphMessages(_currentGraphMessages);
+            RefreshItemCount();
+        }
+        if (Environment.GetEnvironmentVariable("OPENOUTLOOK_NO_MIRROR") != "1") await SyncMirrorWhenIdleAsync(account, manual: false);
         if (_activeMicrosoftFolder?.Account.AccountId == account.AccountId) await RefreshMicrosoftFolderAsync();
     }
 

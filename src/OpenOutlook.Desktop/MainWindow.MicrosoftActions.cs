@@ -85,11 +85,19 @@ public partial class MainWindow
             if (count == 0) { StatusText.Text = "Deleted Items is already empty."; return; }
             if (!await ConfirmEmptyDeletedItemsAsync(count, account.DisplayAddress)) { StatusText.Text = "Empty Deleted Items canceled."; return; }
             var deleted = 0;
+            string? summary = null;
             try
             {
                 await writer.EmptyDeletedItemsAsync(await GetMicrosoftSession(account).GetAccessTokenAsync(), folder.Id,
                     n => Dispatcher.UIThread.Post(() => StatusText.Text = $"Permanently deleting\u2026 {deleted = n} of {count}"));
-                StatusText.Text = $"Deleted Items emptied: {deleted} message{(deleted == 1 ? "" : "s")} permanently deleted.";
+                summary = $"Deleted Items emptied: {deleted} message{(deleted == 1 ? "" : "s")} permanently deleted.";
+                StatusText.Text = summary;
+                if (_activeMicrosoftFolder == folder)                          // the list shows it at once; the local copy catches up below
+                {
+                    _currentGraphMessages = [];
+                    ReconcileGraphMessages([]);
+                    RefreshItemCount();
+                }
             }
             catch (Exception error) when (error is GraphMailException or HttpRequestException or ArgumentException)
             {
@@ -98,7 +106,10 @@ public partial class MainWindow
                         ? "Microsoft declined mail access. Use Account setup to sign in again, then retry." : error.Message);
             }
             _ = RefreshMicrosoftFolderCountsAsync(account, CancellationToken.None, force: true);
+            // Folders open from the local mailbox copy, which still holds the deleted messages until it syncs: bring it up to date first, or the refresh would put them back.
+            await SyncMirrorWhenIdleAsync(account, manual: true);
             if (_activeMicrosoftFolder == folder) await RefreshMicrosoftFolderAsync();
+            if (summary is not null) StatusText.Text = summary;
         }
         catch (Exception error) when (error is GraphMailException or HttpRequestException or ArgumentException)
         { StatusText.Text = error is GraphMailException ? error.Message : "Could not reach Microsoft. Check the connection and retry."; }

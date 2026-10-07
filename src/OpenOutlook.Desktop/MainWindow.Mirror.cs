@@ -104,6 +104,14 @@ public partial class MainWindow
     }
 
     /// <summary>Brings one account's mailbox copy up to date. Never throws: problems become the status shown in Data Files and the status bar.</summary>
+    /// <summary>Runs a sync of the copy after any one already in progress has finished. A change made on the server (an emptied folder, junk moved out)
+    /// is only in the copy once a sync that started after it completes; skipping because one is running would leave the old messages in the folder list.</summary>
+    private async Task SyncMirrorWhenIdleAsync(ConnectedAccount account, bool manual)
+    {
+        for (var wait = 0; _mirrorBusy && wait < 120; wait++) await Task.Delay(500);
+        await SyncMirrorAsync(account, manual);
+    }
+
     private async Task SyncMirrorAsync(ConnectedAccount account, bool manual)
     {
         if (_mirrorBusy) { if (manual) StatusText.Text = "A mailbox copy is already being updated."; return; }

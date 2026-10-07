@@ -35,6 +35,7 @@ public interface IAccountSettingsHost
     void SaveJunkSettings(JunkCleanerAccountSettings settings);
     Task<string?> CleanJunkNowAsync(string accountId, Window owner);
     Task<string?> ImportJunkConfigAsync(string accountId, Window owner);
+    Task<string?> ExportJunkConfigAsync(string accountId, Window owner);
     IReadOnlyList<string> JunkLog();
 }
 

@@ -124,6 +124,27 @@ public sealed class JunkCleanerSettingsTests
         Assert.False(preview.ImportForAccount("account").Enabled);
     }
 
+    [Fact]
+    public void Exported_keywords_and_rules_read_back_through_the_import()
+    {
+        using var fixture = new TemporaryDirectory();
+        var path = Path.Combine(fixture.Path, "keywords.json");
+        Directory.CreateDirectory(fixture.Path);
+        var account = new JunkCleanerAccountSettings
+        {
+            AccountId = "account-1", Enabled = true, AutoClean = true, IntervalMinutes = 20,
+            Keywords = ["Red", "red", "Blue Co", "Ünïcode"], Rules = new JunkRuleOptions(true, false, true, true)
+        };
+        JunkCleanerSettingsStore.ExportPortable(path, account);
+        var preview = JunkCleanerSettingsStore.PreviewLegacyConfig(path);
+        Assert.Equal(["Red", "Blue Co", "Ünïcode"], preview.Keywords);
+        Assert.Equal(20, preview.IntervalMinutes);
+        Assert.Equal(new JunkRuleOptions(true, false, true), preview.Rules);
+        Assert.True(preview.DeleteFlagged);
+        Assert.False(preview.ImportForAccount("other").Enabled);          // an import never opts an account in by itself
+        Assert.DoesNotContain("account-1", File.ReadAllText(path));        // no account id or token travels with the file
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(),

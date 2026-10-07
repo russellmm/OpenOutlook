@@ -53,6 +53,22 @@ public sealed class JunkCleanerSettingsStore
         }
     }
 
+    /// <summary>Writes the portable part of one account's settings (keywords, interval, rules) in the shape the import reads, so a list can be moved between machines.</summary>
+    public static void ExportPortable(string path, JunkCleanerAccountSettings settings)
+    {
+        if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A target path is required.", nameof(path));
+        var dto = new Dictionary<string, object?>
+        {
+            ["keywords"] = NormalizeKeywords(settings.Keywords),
+            ["intervalMinutes"] = settings.IntervalMinutes,
+            ["deleteHighImportance"] = settings.Rules.DeleteHighImportance,
+            ["deleteMissingTo"] = settings.Rules.DeleteMissingTo,
+            ["deleteOnBehalfOf"] = settings.Rules.DeleteOnBehalfOf,
+            ["deleteFlagged"] = settings.Rules.DeleteFlagged
+        };
+        File.WriteAllText(path, JsonSerializer.Serialize(dto, JsonOptions));
+    }
+
     /// <summary>Only an explicitly supplied legacy file is read; preview has no persistence side effects.</summary>
     public static LegacyJunkCleanerPreview PreviewLegacyConfig(string legacyConfigPath)
     {
@@ -67,7 +83,8 @@ public sealed class JunkCleanerSettingsStore
             AlwaysClean = source.AlwaysClean,
             IntervalMinutes = Math.Clamp(source.IntervalMinutes.GetValueOrDefault(5), 1, 60),
             Rules = new JunkRuleOptions(source.DeleteHighImportance, source.DeleteMissingTo,
-                source.DeleteOnBehalfOf)
+                source.DeleteOnBehalfOf),
+            DeleteFlagged = source.DeleteFlagged
         };
     }
 

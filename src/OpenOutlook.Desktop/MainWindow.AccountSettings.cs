@@ -288,6 +288,7 @@ public partial class MainWindow
         public Task<string?> CleanJunkNowAsync(string accountId, Window owner) =>
             w.JunkAccounts().FirstOrDefault(a => a.AccountId == accountId) is { } a ? w.CleanJunkNowAsync(a, owner) : Task.FromResult<string?>("That account is not connected.");
         public Task<string?> ImportJunkConfigAsync(string accountId, Window owner) => w.ImportJunkConfigAsync(accountId, owner);
+        public Task<string?> ExportJunkConfigAsync(string accountId, Window owner) => w.ExportJunkConfigAsync(accountId, owner);
         public IReadOnlyList<string> JunkLog() => w._junkLog.Recent();
     }
 }

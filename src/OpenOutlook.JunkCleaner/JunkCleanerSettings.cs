@@ -23,6 +23,7 @@ public sealed record LegacyJunkCleanerPreview
     public bool AlwaysClean { get; init; }
     public int IntervalMinutes { get; init; } = 15;
     public JunkRuleOptions Rules { get; init; } = new();
+    public bool? DeleteFlagged { get; init; }     // null: the file does not say (an old OutlookJunkCleaner config)
 
     /// <summary>Apply portable fields to an account without opting it in to cleaning.</summary>
     public JunkCleanerAccountSettings ImportForAccount(string accountId) =>
@@ -45,6 +46,7 @@ internal sealed class LegacyJunkCleanerDto
     public bool DeleteHighImportance { get; set; }
     public bool DeleteMissingTo { get; set; }
     public bool DeleteOnBehalfOf { get; set; }
+    public bool? DeleteFlagged { get; set; }      // only in files written by OpenOutlook's own export
 
     // Windows-only startup/tray fields are intentionally not modeled or imported.
 }

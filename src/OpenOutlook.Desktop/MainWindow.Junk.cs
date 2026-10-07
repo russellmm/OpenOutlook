@@ -124,13 +124,42 @@ public partial class MainWindow
             {
                 Keywords = JunkCleanerSettingsStore.NormalizeKeywords(current.Keywords.Concat(imported.Keywords)),
                 Rules = new JunkRuleOptions(current.Rules.DeleteHighImportance || imported.Rules.DeleteHighImportance,
-                    current.Rules.DeleteMissingTo || imported.Rules.DeleteMissingTo, current.Rules.DeleteOnBehalfOf || imported.Rules.DeleteOnBehalfOf, current.Rules.DeleteFlagged),
+                    current.Rules.DeleteMissingTo || imported.Rules.DeleteMissingTo, current.Rules.DeleteOnBehalfOf || imported.Rules.DeleteOnBehalfOf, preview.DeleteFlagged ?? current.Rules.DeleteFlagged),
                 IntervalMinutes = imported.IntervalMinutes, Enabled = true            // automatic cleaning stays as it was; turn it on deliberately
             });
             return $"Imported {preview.Keywords.Count} keywords. The Junk Cleaner is on for this account; automatic cleaning is unchanged.";
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         { return "Could not read that configuration file."; }
+    }
+
+    /// <summary>Saves the keyword list and rules of an account to a file that Import reads (move the list between machines or keep a backup).</summary>
+    private async Task<string?> ExportJunkConfigAsync(string accountId, Window owner)
+    {
+        IStorageFile? file;
+        try
+        {
+            file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Export the Junk Cleaner keywords", SuggestedFileName = "junk-cleaner-keywords.json", DefaultExtension = "json",
+                FileTypeChoices = [new FilePickerFileType("JSON configuration") { Patterns = ["*.json"] }]
+            });
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            AppLog.Error("picker", e, "save picker failed");
+            return "Could not open the save dialog: " + e.Message;
+        }
+        var path = file?.TryGetLocalPath();
+        if (path is null) return null;
+        try
+        {
+            var s = JunkSettingsFor(accountId);
+            await Task.Run(() => JunkCleanerSettingsStore.ExportPortable(path, s));
+            return $"Exported {s.Keywords.Count} keywords and the rules to {path}.";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { return "Could not write that file: " + e.Message; }
     }
 
     // ---- ribbon ----------------------------------------------------------------------------------------------------------------------------------

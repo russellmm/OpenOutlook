@@ -814,6 +814,7 @@ public sealed class MainWindowHeadlessTests
         public void SaveJunkSettings(OpenOutlook.JunkCleaner.JunkCleanerAccountSettings settings) => JunkSaved.Add(settings);
         public Task<string?> CleanJunkNowAsync(string accountId, Window owner) { Log.Add("cleanjunk " + accountId); return Task.FromResult<string?>("Moved 2"); }
         public Task<string?> ImportJunkConfigAsync(string accountId, Window owner) { Log.Add("importjunk " + accountId); return Task.FromResult<string?>(null); }
+        public Task<string?> ExportJunkConfigAsync(string accountId, Window owner) { Log.Add("exportjunk " + accountId); return Task.FromResult<string?>(null); }
         public IReadOnlyList<string> JunkLog() => ["2026-10-05 10:00  me@hotmail.test  moved \"win\" from promo@temu.example [From keyword]"];
     }
 

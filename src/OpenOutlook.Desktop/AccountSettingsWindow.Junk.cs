@@ -26,7 +26,8 @@ public sealed partial class AccountSettingsWindow
     {
         var gray = Themed.Brush("OlTextSecondary", Brushes.Gray);
         var clean = Tool("Clean now…", "OlIconRemoveJunk", "Look through the Junk folder now and remove matching messages");
-        var import = Tool("Import from OutlookJunkCleaner…", "OlIconOpenArchive", "Read the keywords and options from the old OutlookJunkCleaner config.json");
+        var import = Tool("Import keywords…", "OlIconOpenArchive", "Add the keywords and options from a file: one saved with Export, or the old OutlookJunkCleaner config.json");
+        var export = Tool("Export keywords…", "OlIconSave", "Save the keywords and rules of this account to a file (to carry them to another computer or keep a backup)");
         clean.Click += async (_, _) =>
         {
             if (SelectedJunkAccount() is not { } a) { _note.Text = "Select an account first."; return; }
@@ -41,6 +42,13 @@ public sealed partial class AccountSettingsWindow
             var note = await _host.ImportJunkConfigAsync(a.AccountId, this);
             if (note is not null) _note.Text = note;
             LoadJunk();
+        };
+        export.Click += async (_, _) =>
+        {
+            if (SelectedJunkAccount() is not { } a) { _note.Text = "Select an account first."; return; }
+            SaveJunk();
+            var note = await _host.ExportJunkConfigAsync(a.AccountId, this);
+            if (note is not null) _note.Text = note;
         };
         _junkAccount.SelectionChanged += (_, _) => LoadJunk();
         _junkEnabled.IsCheckedChanged += (_, _) => SaveJunk();
@@ -72,7 +80,7 @@ public sealed partial class AccountSettingsWindow
                 _junkEnabled, _junkAuto, interval,
                 Label("Remove junk whose From line contains (one keyword per line)"), _junkKeywords,
                 Label("Other rules"), _junkHigh, _junkNoTo, _junkBehalf, _junkFlagged,
-                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 8, 0, 0), Children = { clean, import } },
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 8, 0, 0), Children = { clean, import, export } },
                 Label("What was removed (newest first)"), _junkLog
             }
         };

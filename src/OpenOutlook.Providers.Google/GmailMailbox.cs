@@ -348,6 +348,24 @@ public sealed class GmailMailbox
         return OptionalString(json.RootElement, "id") ?? throw new GmailReadException("Gmail did not confirm the message.");
     }
 
+    /// <summary>
+    /// Files a finished message in the mailbox without sending it (users.messages.import: no delivery, the Date header is kept, spam classification is skipped).
+    /// <paramref name="labelIds"/> are the labels it receives (for example a user label, or INBOX); UNREAD is added when <paramref name="read"/> is false.
+    /// Needs gmail.modify (or gmail.insert). Returns the new message id.
+    /// </summary>
+    public async Task<string> ImportAsync(byte[] mime, IReadOnlyList<string> labelIds, bool read, CancellationToken cancellationToken = default)
+    {
+        if (mime is null || mime.Length == 0) throw new ArgumentException("There is no message to import.", nameof(mime));
+        var labels = labelIds.Where(l => l != UnreadLabel).Distinct(StringComparer.Ordinal).ToList();
+        if (labels.Any(l => !ValidLabelId(l))) throw new ArgumentException("An invalid Gmail label was supplied.", nameof(labelIds));
+        if (!read) labels.Add(UnreadLabel);
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var json = await SendJsonAsync(HttpMethod.Post, "/messages/import?internalDateSource=dateHeader&neverMarkSpam=true",
+            new { raw = GmailMimeBuilder.ToBase64Url(mime), labelIds = labels }, token, cancellationToken,
+            "Gmail did not allow adding mail. Sign in again from Account setup to allow organizing mail.").ConfigureAwait(false);
+        return OptionalString(json.RootElement, "id") ?? throw new GmailReadException("Gmail did not confirm the message.");
+    }
+
     /// <summary>Creates (draftId null) or replaces a draft; returns the draft id.</summary>
     public async Task<string> SaveDraftAsync(string? draftId, byte[] mime, string? threadId = null, CancellationToken cancellationToken = default)
     {
@@ -374,7 +392,7 @@ public sealed class GmailMailbox
         return threadId is null ? new { raw } : new { raw, threadId };
     }
 
-    private async Task<JsonDocument> SendJsonAsync(HttpMethod method, string relativePath, object body, string token, CancellationToken ct)
+    private async Task<JsonDocument> SendJsonAsync(HttpMethod method, string relativePath, object body, string token, CancellationToken ct, string? forbiddenText = null)
     {
         ct.ThrowIfCancellationRequested();
         using var request = new HttpRequestMessage(method, Root + relativePath);
@@ -384,7 +402,7 @@ public sealed class GmailMailbox
         if (response.RequestMessage?.RequestUri != request.RequestUri) throw new GmailReadException("Gmail redirected the request.");
         if (!response.IsSuccessStatusCode)
             throw new GmailReadException(response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized
-                ? "Gmail did not allow sending. Sign in again from Account setup to allow sending mail."
+                ? forbiddenText ?? "Gmail did not allow sending. Sign in again from Account setup to allow sending mail."
                 : response.StatusCode == System.Net.HttpStatusCode.BadRequest ? "Gmail rejected the message (check the recipients and attachments)."
                 : $"Gmail could not complete the request (HTTP {(int)response.StatusCode}).", response.StatusCode);
         var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);

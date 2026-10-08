@@ -86,6 +86,25 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         RequiredId(result.RootElement);
     }
 
+    private sealed record MimePayload(byte[] Bytes);
+
+    /// <summary>
+    /// Files a complete MIME message in a folder (an id or a well-known name) without sending it: POST /me/mailFolders/{id}/messages with the base64 MIME as text/plain.
+    /// The copy keeps its headers, dates, body and attachments; <paramref name="read"/> sets the read state afterwards. Returns the new message id.
+    /// </summary>
+    public async Task<string> ImportMimeAsync(string token, string folderId, byte[] mime, bool read, CancellationToken ct = default)
+    {
+        ValidateId(folderId);
+        if (mime is null || mime.Length == 0) throw new ArgumentException("There is no message to import.", nameof(mime));
+        if (mime.Length > 35 * 1024 * 1024) throw new ArgumentException("The message is too large to import.", nameof(mime));
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        using var result = await RequestJsonAsync(HttpMethod.Post, Origin + "/me/mailFolders/" + Uri.EscapeDataString(folderId) + "/messages", token,
+            new MimePayload(mime), HttpStatusCode.Created, ct).ConfigureAwait(false);
+        var id = RequiredId(result.RootElement);
+        if (read) await SetReadAsync(token, id, true, ct).ConfigureAwait(false);
+        return id;
+    }
+
     /// <summary>Creates a mail folder at the top of the mailbox (parentFolderId null) or under another folder; returns its id and name.</summary>
     public async Task<(string Id, string Name)> CreateFolderAsync(string token, string? parentFolderId, string name, CancellationToken ct = default)
     {
@@ -413,7 +432,9 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         using var request = new HttpRequestMessage(method, uri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         if (preferText) request.Headers.TryAddWithoutValidation("Prefer", "outlook.body-content-type=\"text\"");
-        if (payload is not null)
+        if (payload is MimePayload mime)                                     // a whole MIME message: Graph takes it as base64 text/plain
+            request.Content = new StringContent(Convert.ToBase64String(mime.Bytes), Encoding.ASCII, "text/plain");
+        else if (payload is not null)
             request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (response.RequestMessage?.RequestUri != uri || (int)response.StatusCode is >= 300 and < 400)

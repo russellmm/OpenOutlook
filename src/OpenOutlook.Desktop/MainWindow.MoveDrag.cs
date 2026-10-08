@@ -72,15 +72,12 @@ public partial class MainWindow
         moveItem.Click += async (_, _) => await MoveViaDialogAsync(copy: false);
         var copyItem = new MenuItem { Header = "Copy to Folder\u2026" };
         copyItem.Click += async (_, _) => await MoveViaDialogAsync(copy: true);
-        var archiveItem = new MenuItem { Header = "Copy to Archive Folder\u2026" };
-        archiveItem.Click += async (_, _) => await CopyToArchiveViaDialogAsync();
         var flyout = new MenuFlyout();
         foreach (var entry in new[] { Action("Mark as Read", "read"), Action("Mark as Unread", "unread"), Action("Flag", "flag"), Action("Clear Flag", "unflag") })
             flyout.Items.Add(entry);
         flyout.Items.Add(new Separator());
         flyout.Items.Add(moveItem);
         flyout.Items.Add(copyItem);
-        flyout.Items.Add(archiveItem);
         flyout.Items.Add(new Separator());
         flyout.Items.Add(Action("Delete", "delete"));
         flyout.Opening += (_, _) =>
@@ -91,63 +88,15 @@ public partial class MainWindow
             moveItem.IsEnabled = online || pst;
             copyItem.IsEnabled = online || pst;
             copyItem.Header = gmail ? "Add Label\u2026" : "Copy to Folder\u2026";
-            archiveItem.IsVisible = pst;
         };
         MessageList.ContextFlyout = flyout;
     }
 
+    /// <summary>Move / Copy to Folder...: one picker over every data file and mailbox (MainWindow.Transfer.cs).</summary>
     private async Task MoveViaDialogAsync(bool copy)
     {
         InitMessageContextMenu();
-        if (_activeGmailFolder is not null) { await MoveGmailViaDialogAsync(copy); return; }
-        if (_activeMicrosoftFolder is not null) { await MoveMicrosoftViaDialogAsync(copy); return; }
-        if (_activePath is not { } path || _activeFolder is not { } folder)
-        {
-            StatusText.Text = "Select a message in an archive first.";
-            return;
-        }
-        var store = EnsureWritableStore(path);
-        if (store is null) return;
-        var nids = MessageList.SelectedItems.OfType<MessageListRow>().Select(r => r.Summary.Nid).ToArray();
-        if (nids.Length == 0) return;
-        // Only folders the user can actually see (same filter as the folder tree) - never the MAPI
-        // system folders like Search Root or IPM_COMMON_VIEWS.
-        FolderPickItem Pick(MailFolder f)
-        {
-            var item = new FolderPickItem(f.Name, f, f.UnreadCount, selectable: f.Nid != folder.Nid);
-            foreach (var child in f.Children) item.Children.Add(Pick(child));
-            return item;
-        }
-        var archiveRoot = new FolderPickItem(store.DisplayName, null, selectable: false);
-        foreach (var rootFolder in PstFolderPresentation.VisibleRoots(store.Root)) archiveRoot.Children.Add(Pick(rootFolder));
-        if (archiveRoot.Children.Count == 0) { StatusText.Text = "This archive has no other folder to move into."; return; }
-
-        var noun = nids.Length == 1 ? "item" : "items";
-        var dialog = new FolderPickerWindow(copy ? "Copy Items" : "Move Items", $"{(copy ? "Copy" : "Move")} the selected {noun} to:", [archiveRoot], async parent =>
-        {
-            var parentFolder = parent?.Tag as MailFolder ?? store.Root.Children.FirstOrDefault(c =>
-                c.Name.Equals("Top of Outlook data file", StringComparison.OrdinalIgnoreCase)) ?? store.Root;
-            var name = await PromptForFolderNameAsync(parentFolder.Name);
-            if (string.IsNullOrWhiteSpace(name)) return null;
-            try
-            {
-                var created = await Task.Run(() => store.CreateFolder(parentFolder.Nid, name));
-                InvalidateFolderCache(path);
-                var parentNode = parent?.Tag is MailFolder pf ? FindFolderNode(FolderTree.Items.OfType<object>(), pf.Nid)
-                    : FolderTree.Items.OfType<TreeViewItem>().FirstOrDefault(n => n.Tag is string p && p == path);
-                if (parentNode is not null) { AddChildren(parentNode, created, path, new HashSet<uint>()); ApplyFolderOrder(parentNode); parentNode.IsExpanded = true; }
-                StatusText.Text = $"Folder \"{created.Name}\" created.";
-                return new FolderPickItem(created.Name, created);
-            }
-            catch (Exception ex) when (ex is PstException or IOException)
-            {
-                StatusText.Text = $"Could not create folder: {ex.Message}";
-                return null;
-            }
-        });
-        await dialog.ShowDialog(this);
-        if (dialog.Result?.Tag is MailFolder dest)
-            await MoveRowsToFolderAsync(path, folder.Nid, nids, dest, copy);
+        await TransferViaDialogAsync(copy);
     }
 
     private void MessageListDragPressed(object? sender, PointerPressedEventArgs e)
@@ -201,7 +150,12 @@ public partial class MainWindow
         DragDrop.SetAllowDrop(item, true);
         item.AddHandler(DragDrop.DragOverEvent, (_, e) =>
         {
-            if (item.Tag is FolderSelection sel && CanAcceptMovePayload(e.Data, sel))
+            if (IsCrossStoreDrop(e.Data, item.Tag))                                         // messages of a mailbox, or from another kind of store
+            {
+                e.DragEffects = DragDropEffects.Move;
+                e.Handled = true;
+            }
+            else if (item.Tag is FolderSelection sel && CanAcceptMovePayload(e.Data, sel))
             {
                 e.DragEffects = DragDropEffects.Move;
                 e.Handled = true;
@@ -217,6 +171,13 @@ public partial class MainWindow
         item.AddHandler(DragDrop.DropEvent, async (_, e) =>
         {
             if (item.Tag is not FolderSelection sel) return;
+            if (IsCrossStoreDrop(e.Data, item.Tag))
+            {
+                e.DragEffects = DragDropEffects.Move;
+                e.Handled = true;
+                await DropAcrossStoresAsync(e.Data, item.Tag, item);
+                return;
+            }
             if (CanAcceptFileDrop(e.Data, sel.Path))
             {
                 e.DragEffects = DragDropEffects.Copy;

@@ -73,12 +73,21 @@ public partial class MainWindow
         item.AddHandler(DragDrop.DragOverEvent, (_, e) =>
         {
             if (item.Tag is not (GmailFolderSelection or MicrosoftFolderSelection)) return;
-            if (CanDrop(e.Data)) { e.DragEffects = DragDropEffects.Move; e.Handled = true; }
+            if (IsCrossStoreDrop(e.Data, item.Tag)) { e.DragEffects = DragDropEffects.Move; e.Handled = true; }   // another account, or messages of a data file
+            else if (CanDrop(e.Data)) { e.DragEffects = DragDropEffects.Move; e.Handled = true; }
             else if (!e.Data.Contains(FolderDragFormat)) { e.DragEffects = DragDropEffects.None; e.Handled = true; }   // another account, the same folder, a file...: say "not allowed"
         });
         item.AddHandler(DragDrop.DropEvent, async (_, e) =>
         {
-            if (item.Tag is not (GmailFolderSelection or MicrosoftFolderSelection) || !CanDrop(e.Data)) return;
+            if (item.Tag is not (GmailFolderSelection or MicrosoftFolderSelection)) return;
+            if (IsCrossStoreDrop(e.Data, item.Tag))
+            {
+                e.DragEffects = DragDropEffects.Move;
+                e.Handled = true;
+                await DropAcrossStoresAsync(e.Data, item.Tag, item);
+                return;
+            }
+            if (!CanDrop(e.Data)) return;
             var payload = ParseOnlineDragPayload(e.Data.GetText())!.Value;
             e.DragEffects = DragDropEffects.Move;
             e.Handled = true;
@@ -151,59 +160,6 @@ public partial class MainWindow
             finally { _mailActionBusy = false; }
             if (_activeMicrosoftFolder == msSource) await RefreshMicrosoftFolderAsync();
         }
-    }
-
-    /// <summary>"Move Items" for a Microsoft mailbox: the same Outlook-style picker as for archives, over the account's folder tree.</summary>
-    private async Task MoveMicrosoftViaDialogAsync(bool copy)
-    {
-        if (_activeMicrosoftFolder is not { } source) return;
-        var account = source.Account;
-        if (!account.CanWriteMicrosoftMail)
-        {
-            await ExplainMailActionAsync("This saved Microsoft sign-in has read-only mail access. Sign in again to allow organizing mail.", account);
-            return;
-        }
-        var ids = MessageList.SelectedItems.OfType<GraphMessageListRow>().Select(r => r.Message.Id).Distinct().ToArray();
-        if (ids.Length == 0) { StatusText.Text = "Select a Microsoft message first."; return; }
-        var rootNode = FolderTree.Items.OfType<TreeViewItem>().FirstOrDefault(i => i.Tag is ConnectedAccount a && a.AccountId == account.AccountId);
-        if (rootNode is null) return;
-
-        FolderPickItem Pick(TreeViewItem node)
-        {
-            var sel = (MicrosoftFolderSelection)node.Tag!;
-            var item = new FolderPickItem(sel.Name, sel, _msUnread.TryGetValue(account.AccountId + "|" + sel.Id, out var n) ? n : 0, selectable: sel.Id != source.Id);
-            foreach (var child in node.Items.OfType<TreeViewItem>().Where(c => c.Tag is MicrosoftFolderSelection)) item.Children.Add(Pick(child));
-            return item;
-        }
-        var root = new FolderPickItem(account.DisplayAddress, null, selectable: false);
-        foreach (var node in rootNode.Items.OfType<TreeViewItem>().Where(c => c.Tag is MicrosoftFolderSelection)) root.Children.Add(Pick(node));
-        if (root.Children.Count == 0) { StatusText.Text = "There is no other folder to move into."; return; }
-
-        var noun = ids.Length == 1 ? "item" : "items";
-        var dialog = new FolderPickerWindow(copy ? "Copy Items" : "Move Items", $"{(copy ? "Copy" : "Move")} the selected {noun} to:", [root], async parent =>
-        {
-            var parentSel = parent?.Tag as MicrosoftFolderSelection;
-            var name = await PromptForFolderNameAsync(parentSel?.Name ?? account.DisplayAddress);
-            if (string.IsNullOrWhiteSpace(name)) return null;
-            try
-            {
-                var writer = new GraphMailWriter(_graphHttp, account.AccountId);
-                var created = await writer.CreateFolderAsync(await GetMicrosoftSession(account).GetAccessTokenAsync(), parentSel?.Id, name.Trim());
-                var newSel = new MicrosoftFolderSelection(account, created.Id, created.Name);
-                var node = new TreeViewItem { Header = created.Name, Tag = newSel };
-                EnableFolderReordering(node);
-                var parentNode = parentSel is null ? rootNode : FindMicrosoftNode(rootNode, parentSel.Id) ?? rootNode;
-                parentNode.Items.Add(node);
-                parentNode.IsExpanded = true;
-                StatusText.Text = $"Folder \"{created.Name}\" created.";
-                return new FolderPickItem(created.Name, newSel);
-            }
-            catch (GraphMailException error) { StatusText.Text = error.Message; return null; }
-            catch (ArgumentException) { StatusText.Text = "That is not a valid folder name."; return null; }
-            catch (Exception) { StatusText.Text = "Could not create the folder. Check the connection and retry."; return null; }
-        });
-        await dialog.ShowDialog(this);
-        if (dialog.Result?.Tag is MicrosoftFolderSelection dest) await MoveOnlineAsync(ids, dest, copy);
     }
 
     private static TreeViewItem? FindMicrosoftNode(TreeViewItem from, string folderId)

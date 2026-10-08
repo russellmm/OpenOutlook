@@ -746,15 +746,21 @@ namespace OpenOutlook.PstNative
         /// Creates a new, empty PST file (it must not exist; it is never overwritten) and returns it open for writing. The display name names the store and its
         /// top folder. Create the mail folders with <see cref="IPstEngine.CreateFolder"/> below the folder whose NID is the top folder's.
         /// </summary>
-        public static IPstEngine Create(string path, string displayName)
+        public static IPstEngine Create(string path, string displayName, string? topFolderName = null)
         {
             if (!NativeLibraryLoader.IsAvailable)
                 throw new PstCore.PstException("The native PST library is not available.");
             var full = System.IO.Path.GetFullPath(path);
-            try { OpenPst.PstFile.Create(full, displayName).Dispose(); }
+            try { OpenPst.PstFile.Create(full, displayName, topFolderName).Dispose(); }
             catch (OpenPst.PstException e) { throw new PstCore.PstException(e.Message, e); }
             return NativePstEngine.Open(full, write: true);
         }
+
+        /// <summary>
+        /// A new, empty data file as Outlook makes one: the store carries <paramref name="displayName"/> and its top folder is "Top of Outlook data file", which the
+        /// folder list treats as the wrapper (so Deleted Items and new folders show directly under the file's name, not under a second node with the same name).
+        /// </summary>
+        public static IPstEngine CreateDataFile(string path, string displayName) => Create(path, displayName, "Top of Outlook data file");
 
         /// <summary>
         /// Opens for writing. Throws <see cref="PstCore.PstException"/> when the archive is locked by another window, not writable, an

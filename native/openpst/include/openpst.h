@@ -65,6 +65,8 @@ OPST_API void opst_close(opst *p);
    display name of the store and of its top folder. The file has Deleted Items, Search Root and IPM_COMMON_VIEWS; create the mail folders with
    opst_folder_create below ipm_root. On failure nothing is left behind. */
 OPST_API int  opst_create(const char *path_utf8, const char *display_name, opst **out);
+/* Same, with a separate name for the top folder (NULL = the display name). Outlook names it "Top of Outlook data file". */
+OPST_API int  opst_create_ex(const char *path_utf8, const char *display_name, const char *top_folder_name, opst **out);
 
 OPST_API const char *opst_display_name(opst *p);      /* the store's name; owned by the handle */
 OPST_API uint32_t    opst_root_folder(opst *p);        /* NID of the root folder (not shown by Outlook) */

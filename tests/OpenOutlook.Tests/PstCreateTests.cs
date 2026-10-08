@@ -33,6 +33,27 @@ public sealed class PstCreateTests : IDisposable
     }
 
     [Fact]
+    public void A_created_data_file_shows_its_name_once_and_takes_new_folders()
+    {
+        if (!Native) return;
+        var path = Path.Combine(_dir, "MyData.pst");
+        using (var e = PstEngineFactory.CreateDataFile(path, "MyData"))
+        {
+            Assert.Equal("MyData", e.DisplayName);
+            var wrapper = Assert.Single(e.Root.Children, c => c.Name == "Top of Outlook data file");
+            // the folder list shows the file name once, with Deleted Items directly below it
+            Assert.Equal(["Deleted Items"], OpenOutlook.Desktop.PstFolderPresentation.VisibleRoots(e.Root).Select(f => f.Name).ToArray());
+            var made = e.CreateFolder(wrapper.Nid, "test");
+            Assert.Contains(OpenOutlook.Desktop.PstFolderPresentation.VisibleRoots(e.Root), f => f.Name == "test");
+            Assert.Equal(made.Nid, e.FindFolder(made.Nid)!.Nid);
+            Assert.Empty(e.Scan().Findings);
+        }
+        using var again = PstEngineFactory.Open(path);
+        Assert.Empty(again.Scan().Findings);
+        Assert.Contains(OpenOutlook.Desktop.PstFolderPresentation.VisibleRoots(again.Root), f => f.Name == "test");
+    }
+
+    [Fact]
     public void A_new_file_takes_folders_and_messages_and_stays_clean()
     {
         if (!Native) return;

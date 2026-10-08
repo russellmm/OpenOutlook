@@ -263,7 +263,7 @@ long utf8_to_utf16(const char *s, bbuf *out);                                  /
 int  set_has_sub(ops *o, uint32_t nid);
 int  fo_make_tables(ops *o, uint32_t nid, uint32_t parent, int only_missing);
 int  fo_add_row(ops *o, uint32_t nid, uint32_t parent, const bbuf *nm, const bbuf *cl, const pcprops *mirror);
-int  op_create_file(const char *path, const char *display_name);               /* op_create.c */
+int  op_create_file(const char *path, const char *display_name, const char *top_name);            /* op_create.c */
 int  fo_rename(ops *o, uint32_t nid, const char *name);
 /* every cell a contents row must carry: for each column of the table the row lacks, the message's own value, else the default SCANPST writes
    (0x0E03 empty, 0x1080 -1, 0x300B a 16-byte key). apply = 0 only counts. Returns the number of cells added / missing, or a negative error. */

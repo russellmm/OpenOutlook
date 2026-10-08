@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $src = Join-Path $root 'native\openpst'
 $bld = Join-Path $src "build-$Rid"
-$vcvars = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+$vcvars = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
 $vcvars = Join-Path $vcvars 'VC\Auxiliary\Build\vcvars64.bat'
 $cmd = "`"$vcvars`" >nul && cmake -S `"$src`" -B `"$bld`" -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPST_BUILD_TOOLS=OFF && cmake --build `"$bld`" && cd /d `"$bld`" && ctest --output-on-failure"
 cmd /c $cmd

@@ -248,6 +248,41 @@ public partial class MainWindow
             if (chosen.Count == 0) return null;                                              // the dialog was cancelled
             return added == 0 ? w._lastOpenError ?? "The file could not be added (it may already be open)." : $"{added} data file{(added == 1 ? "" : "s")} added to the folder list.";
         }
+        public async Task<string?> CreateDataFileAsync(Window owner)
+        {
+            IStorageFile? file;
+            try
+            {
+                file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+                {
+                    Title = "Create an Outlook data file", SuggestedFileName = "Outlook Data File.pst", DefaultExtension = "pst",
+                    FileTypeChoices = [new FilePickerFileType("Outlook PST") { Patterns = ["*.pst"] }]
+                });
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                AppLog.Error("picker", e, "save picker failed");
+                return "Could not open the file chooser; nothing was created.";
+            }
+            if (file is null) return null;                                                   // cancelled
+            if (file.TryGetLocalPath() is not { } p) return $"The chosen location ({file.Path}) is not a local file path.";
+            var full = System.IO.Path.GetFullPath(p);
+            if (!full.EndsWith(".pst", StringComparison.OrdinalIgnoreCase)) full += ".pst";
+            try
+            {
+                // some desktop portals create an empty placeholder for the chosen name; the engine never overwrites, so remove only an empty one
+                if (File.Exists(full) && new FileInfo(full).Length == 0) File.Delete(full);
+                if (File.Exists(full)) return $"{System.IO.Path.GetFileName(full)} already exists; choose a new name (an existing file is never overwritten).";
+                var name = System.IO.Path.GetFileNameWithoutExtension(full);
+                await Task.Run(() => PstEngineFactory.CreateDataFile(full, name).Dispose());
+            }
+            catch (Exception e) when (e is PstCore.PstException or IOException or UnauthorizedAccessException)
+            {
+                AppLog.Error("pst-create", e, full);
+                return "The data file could not be created: " + e.Message;
+            }
+            return await w.OpenArchiveAsync(full) ? $"{System.IO.Path.GetFileName(full)} was created and added to the folder list." : w._lastOpenError ?? "The file was created but could not be opened.";
+        }
         public async Task<string?> AddDataFileByPathAsync(string path)
         {
             path = path.Trim().Trim('"');

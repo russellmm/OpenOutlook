@@ -55,6 +55,7 @@ namespace OpenPst
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr opst_last_error();
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint flags, out IntPtr p);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern void opst_close(IntPtr p);
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_create_ex([MarshalAs(UnmanagedType.LPUTF8Str)] string path, [MarshalAs(UnmanagedType.LPUTF8Str)] string displayName, [MarshalAs(UnmanagedType.LPUTF8Str)] string? topFolderName, out IntPtr p);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_create([MarshalAs(UnmanagedType.LPUTF8Str)] string path, [MarshalAs(UnmanagedType.LPUTF8Str)] string displayName, out IntPtr p);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr opst_display_name(IntPtr p);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern uint opst_root_folder(IntPtr p);
@@ -263,10 +264,10 @@ namespace OpenPst
         /// Creates a new, empty Unicode PST (Deleted Items, Search Root and IPM_COMMON_VIEWS below the store) and returns it open for writing. The file must not
         /// exist (it is never overwritten); on failure nothing is left behind. <paramref name="displayName"/> names the store and its top folder.
         /// </summary>
-        public static PstFile Create(string path, string displayName)
+        public static PstFile Create(string path, string displayName, string? topFolderName = null)
         {
             NativeLibraryLoader.Install();
-            Native.Check(Native.opst_create(path, displayName, out var h));
+            Native.Check(Native.opst_create_ex(path, displayName, topFolderName, out var h));
             Native.opst_close(h);
             return new PstFile(path, true);
         }

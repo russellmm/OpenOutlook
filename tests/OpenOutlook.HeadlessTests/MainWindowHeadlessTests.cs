@@ -801,6 +801,7 @@ public sealed class MainWindowHeadlessTests
             new("rmarrash_outlook", "D:/email/rmarrash_outlook.pst", "Outlook data file", 700 * 1024 * 1024, "editable")
         ];
         public Task<string?> AddDataFileAsync(Window owner) { Log.Add("adddata"); return Task.FromResult<string?>(null); }
+        public Task<string?> CreateDataFileAsync(Window owner) { Log.Add("createdata"); return Task.FromResult<string?>(null); }
         public Task<string?> AddDataFileByPathAsync(string path) { Log.Add("addbypath " + path); return Task.FromResult<string?>("added"); }
         public Task<string?> RemoveDataFileAsync(DataFileRow row) { Log.Add("removedata " + row.Name); return Task.FromResult<string?>("closed"); }
         public void OpenFileLocation(DataFileRow row) => Log.Add("open " + row.Path);

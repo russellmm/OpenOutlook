@@ -25,6 +25,7 @@ public interface IAccountSettingsHost
     IReadOnlyList<DataFileRow> DataFiles();
     Task<string?> AddDataFileAsync(Window owner);
     Task<string?> AddDataFileByPathAsync(string path);
+    Task<string?> CreateDataFileAsync(Window owner);
     Task<string?> RemoveDataFileAsync(DataFileRow row);
     void OpenFileLocation(DataFileRow row);
     Task SyncNowAsync(string accountId);
@@ -230,6 +231,8 @@ public sealed partial class AccountSettingsWindow : Window
         var settings = Tool("Settings…", "OlIconGear", "How much of the mailbox the copy keeps, sync, and where the file is");
         var makeDefault = Tool("Set as Default", "OlIconFlag", "", planned: true);
         var remove = Tool("Remove", "OlIconDetach", "Close the file in OpenOutlook (the file itself is never deleted)");
+        var create = Tool("New…", "OlIconOpenArchive", "Create a new, empty Outlook data file (.pst) and show it in the folder list");
+        create.Click += async (_, _) => { var note = await _host.CreateDataFileAsync(this); if (note is not null) _note.Text = note; Refresh(); };
         var byPath = Tool("Add by path…", "OlIconOpenArchive", "Type or paste a path such as X:\\email\\old.pst or \\\\server\\share\\mail.pst, for a network drive the file dialog does not show");
         byPath.Click += async (_, _) =>
         {
@@ -257,7 +260,7 @@ public sealed partial class AccountSettingsWindow : Window
             TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(6, 8, 6, 6), Foreground = Themed.Brush("OlTextSecondary", Brushes.Gray)
         };
         var dock = new DockPanel { Margin = new Thickness(4, 6) };
-        var toolbar = Toolbar(add, byPath, settings, makeDefault, remove, open);
+        var toolbar = Toolbar(create, add, byPath, settings, makeDefault, remove, open);
         DockPanel.SetDock(toolbar, Dock.Top); DockPanel.SetDock(hint, Dock.Top);
         dock.Children.Add(toolbar); dock.Children.Add(hint); dock.Children.Add(Frame(Header(FileColumns), _fileList));
         return dock;

@@ -261,7 +261,7 @@ static int mk_folder(ops *o, uint32_t nid, uint32_t parent, const char *name, co
     return rc;
 }
 
-static int build(opst *p, const char *name) {
+static int build(opst *p, const char *name, const char *top_name) {
     ops o;
     int rc = ops_begin(p, &o);
     if (rc) return rc;
@@ -298,7 +298,7 @@ static int build(opst *p, const char *name) {
     if (!rc) rc = put_pc(w, OP_NID_ROOT, OP_NID_ROOT, &rp);
     pcprops_free(&rp);
     if (!rc) rc = fo_make_tables(&o, OP_NID_ROOT, OP_NID_ROOT, 0);
-    if (!rc) rc = mk_folder(&o, 0x8022, OP_NID_ROOT, name, NULL);                         /* "Top of ..." */
+    if (!rc) rc = mk_folder(&o, 0x8022, OP_NID_ROOT, top_name, NULL);                         /* "Top of ..." */
     if (!rc) rc = mk_folder(&o, 0x8042, OP_NID_ROOT, "Search Root", NULL);
     if (!rc) rc = mk_folder(&o, 0x8062, 0x8022, "Deleted Items", "Deleted Items folder");
     if (!rc) { o.deleted = 0x8062; rc = mk_folder(&o, 0x8082, OP_NID_ROOT, "IPM_COMMON_VIEWS", NULL); }
@@ -308,8 +308,9 @@ static int build(opst *p, const char *name) {
 }
 
 /* Creates the file (it must not exist). The name is the display name of the store and of its top folder. */
-int op_create_file(const char *path, const char *display_name) {
+int op_create_file(const char *path, const char *display_name, const char *top_name) {
     if (!path || !*path || !display_name || !*display_name) return op_err(OPST_E_ARG, "path and display name are required");
+    if (!top_name || !*top_name) top_name = display_name;
     if (op_file_exists(path)) return op_err(OPST_E_REFUSED, "the file already exists: it is never overwritten");
     size_t n = 0;
     uint8_t *f = skeleton(&n);
@@ -319,15 +320,19 @@ int op_create_file(const char *path, const char *display_name) {
     if (rc) return rc;
     opst *p = NULL;
     rc = opst_open(path, OPST_OPEN_WRITE, &p);
-    if (!rc) { rc = build(p, display_name); opst_close(p); }
+    if (!rc) { rc = build(p, display_name, top_name); opst_close(p); }
     if (rc) op_file_remove(path);
     return rc;
 }
 
-int opst_create(const char *path_utf8, const char *display_name, opst **out) {
+int opst_create_ex(const char *path_utf8, const char *display_name, const char *top_folder_name, opst **out) {
     if (!out) return op_err(OPST_E_ARG, "null argument");
     *out = NULL;
-    int rc = op_create_file(path_utf8, display_name);
+    int rc = op_create_file(path_utf8, display_name, top_folder_name);
     if (rc) return rc;
     return opst_open(path_utf8, OPST_OPEN_WRITE, out);
+}
+
+int opst_create(const char *path_utf8, const char *display_name, opst **out) {
+    return opst_create_ex(path_utf8, display_name, NULL, out);
 }

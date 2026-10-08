@@ -24,6 +24,7 @@ Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). *
 | Open Unicode PST (512-byte pages) read and **write** | Yes | Yes | Always editable unless the file is locked; `.lck` file and journal (crash-safe); `.bak` backup is opt-in (Options). |
 | Open ANSI, 4K-page (OST, compressed blocks), encrypted | Read-only | Read-only | The engine reads them; writing is Unicode-512 only. |
 | Open / detach, saved list restored at start | Yes | Yes | `attached-psts.json`. Detach never deletes the file. |
+| Create a new, empty PST (Account Settings > Data Files > New…) | Yes | Untested (shared code) | Save dialog; the file holds Deleted Items and Search Root under a "Top of Outlook data file" top folder, as Outlook makes it; never overwrites. |
 | Add by file dialog, or by typed path (mapped drive, `\\server\share`) | Yes | Yes | Account Settings > Data Files > Add… / Add by path…. Failure reasons are shown there and logged (`[pst-open]`). Network paths work; elevated programs do not see mapped drives (status bar says so). |
 | Read mail: HTML / Rich Text / Plain Text / Headers views | Yes | Yes | RTF converted to HTML. |
 | Read/unread, flag, move, copy, delete (to Deleted Items), permanent delete, empty Deleted Items | Yes | Yes | Drag and drop and the Move/Copy picker. Right-click Deleted Items > Empty Deleted Items asks "Permanently delete all N items?" (shared dialog, `ConfirmEmptyDeletedItemsAsync`). |

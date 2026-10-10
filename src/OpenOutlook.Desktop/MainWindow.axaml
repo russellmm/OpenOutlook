@@ -528,36 +528,19 @@
 
               <Border Grid.Row="4" Height="1" Background="{DynamicResource OlHairline}" Margin="20,0,16,0" />
 
-              <!-- Action chips live in a toolbar strip above the message, level with the list's "By date" row. -->
-              <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="10,8,10,4" MinHeight="30">
+              <!-- Keep common actions visible; the less common reader and export actions live in More. -->
+              <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="10,8,10,4" MinHeight="30">
                 <Button Name="ReaderBackButton" Classes="olChip" Content="‹ Back to list" IsVisible="False" Click="ReaderBackClicked"
-                        ToolTip.Tip="Return to the message list (Esc)" />
-                <StackPanel Name="FormatBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
-                  <TextBlock Text="View as" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" Margin="0,0,2,0" />
-                  <Button Name="FormatHtmlButton" Classes="olChip" Content="HTML" Tag="html" Click="FormatClicked"
-                          ToolTip.Tip="The message's HTML body" />
-                  <Button Name="FormatRtfButton" Classes="olChip" Content="Rich Text" Tag="rtf" Click="FormatClicked"
-                          ToolTip.Tip="The message's Rich Text (RTF) body, converted for display" />
-                  <Button Name="FormatTextButton" Classes="olChip" Content="Plain Text" Tag="text" Click="FormatClicked"
-                          ToolTip.Tip="The message as plain text" />
-                  <Button Name="FormatHeadersButton" Classes="olChip" Content="Headers" Tag="headers" Click="FormatClicked"
-                          ToolTip.Tip="Internet headers of the message" />
-                </StackPanel>
-                <Button Name="BodyViewButton" Classes="olChip" Content="View plain text" IsVisible="False" Click="ToggleBodyViewClicked" />
-                <Button Name="ReaderModeButton" Classes="olChip" Content="Use alternate reader" IsVisible="False" Click="ReaderModeClicked" />
-                <Button Name="ViewOriginalButton" Classes="olChip" Content="View original here (trusted mail)" IsVisible="False" Click="ToggleOriginalClicked" />
-                <Button Name="PopOutMessageButton" Classes="olChip" Content="Open in new window" IsVisible="False" Click="PopOutMessageClicked" />
-                <Button Name="InteractiveReaderButton" Classes="olChip" Content="Open interactive message" IsVisible="False" Click="OpenInteractiveReaderClicked" />
-                <Button Name="PrintablePdfButton" Classes="olChip" Content="Save printable PDF" IsVisible="False" Click="SavePrintablePdfClicked" />
-                <Button Name="OpenInBrowserButton" Classes="olChip" Content="Open in browser" IsVisible="False"
-                        ToolTip.Tip="Opens this message in your system browser, where text can be selected, searched and copied"
-                        Click="OpenInBrowserClicked" />
-                <StackPanel Name="ReaderZoomControls" Orientation="Horizontal" Spacing="4" IsVisible="False">
-                  <Button Classes="olChip" Content="−" Click="ZoomOutClicked" ToolTip.Tip="Zoom out" />
-                  <Button Classes="olChip" Content="+" Click="ZoomInClicked" ToolTip.Tip="Zoom in" />
-                  <Button Classes="olChip" Content="Fit" Click="ZoomFitClicked" ToolTip.Tip="Fit message to pane" />
-                </StackPanel>
-              </StackPanel>
+                        ToolTip.Tip="Return to the message list (Esc)" Margin="0,0,6,4" />
+                <Button Name="FormatBar" Classes="olChip" Content="View as" IsVisible="False" Click="FormatMenuClicked"
+                        ToolTip.Tip="Choose the stored message format or view its headers" Margin="0,0,6,4" />
+                <Button Name="BodyViewButton" Classes="olChip" Content="Plain text" IsVisible="False" Click="ToggleBodyViewClicked" Margin="0,0,6,4" />
+                <Button Name="ShowImagesButton" Classes="olChip" Content="Show images" IsVisible="False" Click="ShowImagesClicked"
+                        ToolTip.Tip="Download external pictures in this message" Margin="0,0,6,4" />
+                <Button Name="PopOutMessageButton" Classes="olChip" Content="Open window" IsVisible="False" Click="PopOutMessageClicked" Margin="0,0,6,4" />
+                <Button Name="ReaderMoreButton" Classes="olChip" Content="More ▾" IsVisible="False" Click="ReaderMoreClicked"
+                        ToolTip.Tip="Reader, browser, PDF and zoom options" Margin="0,0,6,4" />
+              </WrapPanel>
 
               <Grid Grid.Row="5" Margin="20,10,8,0">
                 <ScrollViewer Name="ReaderScrollViewer" HorizontalScrollBarVisibility="Auto">

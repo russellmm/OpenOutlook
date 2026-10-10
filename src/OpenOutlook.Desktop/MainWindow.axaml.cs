@@ -57,6 +57,9 @@ public sealed partial class MainWindow : Window
     private string? _bodyHtml;
     private IReadOnlyList<HtmlImageSource> _htmlImageSources = [];
     private int _failedMessageImages;
+    private int _hiddenExternalImages;
+    private bool _externalImagesAllowed;
+    private bool _showImagesLoading;
     private readonly Dictionary<string, byte[]> _inlineImageBytes = new(StringComparer.Ordinal);
     private readonly List<Bitmap> _htmlPageBitmaps = [];
     private bool _embeddedHtmlActive;
@@ -1184,7 +1187,7 @@ public sealed partial class MainWindow : Window
             ShowAttachmentChips(null);
             ShowPstMessageBody(message);
             StatusText.Text = _richRuns is null ? "Message opened read-only." :
-                "Message opened in rich-text view; images are loading automatically.";
+                "Message opened in rich-text view.";
         }
         catch (Exception ex) { if (version == _messageVersion) StatusText.Text = $"Could not read message: {ex.Message}"; }
     }
@@ -1221,7 +1224,10 @@ public sealed partial class MainWindow : Window
             else body = await new GraphInboxReader(_graphHttp, account.AccountId).GetMessageBodyAsync(token, message.Id, cancellationToken);
             IReadOnlyList<GraphAttachment> attachments = [];
             var attachmentError = false;
-            if (localBody is not null && message.HasAttachments)
+            // Graph's hasAttachments flag excludes inline-only pictures referenced with cid:.
+            var needsAttachments = message.HasAttachments ||
+                body?.Content?.Contains("cid:", StringComparison.OrdinalIgnoreCase) == true;
+            if (localBody is not null && needsAttachments)
             {
                 // show the message now; the attachment chips follow when the server has answered
                 if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
@@ -1230,7 +1236,7 @@ public sealed partial class MainWindow : Window
                 SetMessageBody(localBody.Html, localBody.Html is null ? localBody.Text : "");
                 StatusText.Text = "Microsoft message opened from the local copy.";
             }
-            if (message.HasAttachments)
+            if (needsAttachments)
             {
                 try
                 {
@@ -1241,7 +1247,7 @@ public sealed partial class MainWindow : Window
                 catch (Exception) { attachmentError = true; }
             }
             if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
-            var bodyShown = localBody is not null && message.HasAttachments;               // already on screen; only the attachments are left to add
+            var bodyShown = localBody is not null && needsAttachments; // already on screen; only the attachments are left to add
             if (!bodyShown) ShowGraphMessageHeader(message);
             _currentGraphAttachments = attachments;
             ExportAttachmentButton.IsEnabled = attachments.Any(CanSaveGraphAttachment);
@@ -1251,9 +1257,11 @@ public sealed partial class MainWindow : Window
                     ? body?.Content : null,
                 string.Equals(body?.ContentType, "text", StringComparison.OrdinalIgnoreCase)
                     ? body?.Content : body is null ? message.Preview : "");
+            else if (_htmlImageSources.Count > 0)
+                _imageLoadTask = LoadImagesAsync(version); // cid: images can now find their attachment metadata.
             StatusText.Text = attachmentError ? "Message opened; attachments could not be loaded." :
                 _richRuns is null ? "Microsoft message opened read-only." :
-                "Microsoft message opened in rich-text view; images are loading automatically.";
+                "Microsoft message opened in rich-text view.";
         }
         catch (OperationCanceledException) { }
         catch (Exception)
@@ -1896,6 +1904,7 @@ public sealed partial class MainWindow : Window
     private void SetMessageBody(string? html, string? plain)
     {
         ClearInlineImages();
+        _externalImagesAllowed = false;
         _bodyHtml = string.IsNullOrWhiteSpace(html) ? null : html;
         _showOriginalHtml = false;
         // Connected mail starts on the snapshot reader. The interactive web view renders real HTML,
@@ -1929,6 +1938,7 @@ public sealed partial class MainWindow : Window
             {
                 _richRuns = SafeHtmlPreview.Parse(html);
                 _htmlImageSources = SafeHtmlDocument.FindImages(html);
+                _hiddenExternalImages = _htmlImageSources.Count(source => source.ContactsExternalSite);
                 if (string.IsNullOrWhiteSpace(_bodyPlain))
                     _bodyPlain = string.Concat(_richRuns.Select(run => run.Text));
             }
@@ -1947,7 +1957,7 @@ public sealed partial class MainWindow : Window
             HtmlStatusText.Text = "Laying out HTML message…";
             HtmlStatusText.IsVisible = true;
             _ = RenderBrowserHtmlAsync(_messageVersion);
-            if (_htmlImageSources.Count > 0)
+            if (_htmlImageSources.Count > 0 && (_activeGraphMessage is null || _currentGraphAttachments is not null))
                 _imageLoadTask = LoadImagesAsync(_messageVersion);
         }
     }
@@ -1957,6 +1967,40 @@ public sealed partial class MainWindow : Window
         if (_richRuns is null && _bodyHtml is null) return;
         _showRichBody = !_showRichBody;
         ShowMessageBody();
+    }
+
+    private async void ShowImagesClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_htmlImageSources.Count == 0 || _showImagesLoading || !ShowImagesButton.IsEnabled) return;
+        var version = _messageVersion;
+        _showImagesLoading = true;
+        ShowImagesButton.IsEnabled = false;
+        ShowImagesButton.Content = "Loading images…";
+        try
+        {
+            if (_imageLoadTask is { } previous)
+            {
+                try { await previous; }
+                catch (Exception) { /* Retry sources that were not loaded. */ }
+            }
+            if (version != _messageVersion) return;
+            _externalImagesAllowed = true;
+            _imageLoadTask = LoadImagesAsync(version);
+            await _imageLoadTask;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("reader", ex, "could not load requested message images");
+            if (version == _messageVersion) StatusText.Text = "Could not load the requested images. Try again.";
+        }
+        finally
+        {
+            if (version == _messageVersion)
+            {
+                _showImagesLoading = false;
+                ShowMessageBody();
+            }
+        }
     }
 
     private void ReaderModeClicked(object? sender, RoutedEventArgs e)
@@ -2066,45 +2110,49 @@ public sealed partial class MainWindow : Window
 
     private async void SavePrintablePdfClicked(object? sender, RoutedEventArgs e)
     {
-        var version = _messageVersion;
-        if (_imageLoadTask is { } images)
-        {
-            try { await images; }
-            catch (Exception) { /* Print the images that were available. */ }
-        }
-        if (version != _messageVersion) return;
-        var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
-        { Title = "Choose a folder for a new printable PDF", AllowMultiple = false },
-        failure => StatusText.Text = failure);
-        if (version != _messageVersion || folders.FirstOrDefault()?.TryGetLocalPath() is not { } folder) return;
-        PrintablePdfButton.IsEnabled = false;
+        if (_savingPrintablePdf) return;
+        _savingPrintablePdf = true;
         try
         {
-            var document = _bodyHtml is { } html ? SafeHtmlDocument.Build(html, _inlineImageBytes) :
-                "<html><body><pre style='white-space:pre-wrap'>" + System.Net.WebUtility.HtmlEncode(_bodyPlain) +
-                "</pre></body></html>";
-            var pdf = await BrowserHtmlRenderer.RenderPdfAsync(document);
+            var version = _messageVersion;
+            if (_imageLoadTask is { } images)
+            {
+                try { await images; }
+                catch (Exception) { /* Print the images that were available. */ }
+            }
             if (version != _messageVersion) return;
-            var path = Path.Combine(folder, "message-" + Guid.NewGuid().ToString("N") + ".pdf");
-            var temporary = path + ".tmp";
-            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write,
-                Share = FileShare.None };
-            if (OperatingSystem.IsLinux()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            var folders = await SafePick.FoldersAsync(this, new FolderPickerOpenOptions
+            { Title = "Choose a folder for a new printable PDF", AllowMultiple = false },
+            failure => StatusText.Text = failure);
+            if (version != _messageVersion || folders.FirstOrDefault()?.TryGetLocalPath() is not { } folder) return;
             try
             {
-                await using (var output = new FileStream(temporary, options))
+                var document = _bodyHtml is { } html ? SafeHtmlDocument.Build(html, _inlineImageBytes) :
+                    "<html><body><pre style='white-space:pre-wrap'>" + System.Net.WebUtility.HtmlEncode(_bodyPlain) +
+                    "</pre></body></html>";
+                var pdf = await BrowserHtmlRenderer.RenderPdfAsync(document);
+                if (version != _messageVersion) return;
+                var path = Path.Combine(folder, "message-" + Guid.NewGuid().ToString("N") + ".pdf");
+                var temporary = path + ".tmp";
+                var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write,
+                    Share = FileShare.None };
+                if (OperatingSystem.IsLinux()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                try
                 {
-                    await output.WriteAsync(pdf);
-                    output.Flush(flushToDisk: true);
+                    await using (var output = new FileStream(temporary, options))
+                    {
+                        await output.WriteAsync(pdf);
+                        output.Flush(flushToDisk: true);
+                    }
+                    File.Move(temporary, path);
                 }
-                File.Move(temporary, path);
+                finally { if (File.Exists(temporary)) File.Delete(temporary); }
+                StatusText.Text = "Printable PDF saved. Open it in your PDF viewer to print.";
             }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
-            StatusText.Text = "Printable PDF saved. Open it in your PDF viewer to print.";
+            catch (Exception)
+            { StatusText.Text = "Could not create the printable PDF. Check the folder and browser installation."; }
         }
-        catch (Exception)
-        { StatusText.Text = "Could not create the printable PDF. Check the folder and browser installation."; }
-        finally { PrintablePdfButton.IsEnabled = true; }
+        finally { _savingPrintablePdf = false; }
     }
 
     private void ToggleOriginalClicked(object? sender, RoutedEventArgs e)
@@ -2126,18 +2174,25 @@ public sealed partial class MainWindow : Window
         _inlineImageLoadCancellation = loadLimit;
         try
         {
-            var images = _htmlImageSources.ToArray();
-            var loaded = 0;
-            var totalBytes = 0;
+            var images = _htmlImageSources.Where(source => _externalImagesAllowed || !source.ContactsExternalSite).ToArray();
+            _hiddenExternalImages = _htmlImageSources.Count - images.Length;
+            var loaded = images.Count(source => _inlineImageBytes.ContainsKey(source.Key));
+            var pending = images.Where(source => !_inlineImageBytes.ContainsKey(source.Key)).ToArray();
+            var totalBytes = _inlineImageBytes.Values.Sum(bytes => bytes.Length);
             var memoryLimited = 0;
             // Reserve declared pixels up front: Validate() trusts the size a file declares, and the
             // encoded-byte cap below cannot see a small file that decodes to a huge bitmap.
             var pixelBudget = new DecodedPixelBudget(SafeInlineImage.MaximumMessagePixels);
+            foreach (var bytes in _inlineImageBytes.Values)
+            {
+                var size = SafeInlineImage.Validate(bytes);
+                pixelBudget.TryReserve(size.Width * (long)size.Height);
+            }
             using var remoteClient = SafeRemoteImageLoader.CreateClient();
-            for (var offset = 0; offset < images.Length; offset += 4)
+            for (var offset = 0; offset < pending.Length; offset += 4)
             {
                 if (loadLimit.IsCancellationRequested || version != _messageVersion) break;
-                var batch = images.Skip(offset).Take(4).ToArray();
+                var batch = pending.Skip(offset).Take(4).ToArray();
                 var results = await Task.WhenAll(batch.Select(async source =>
                 {
                     try
@@ -2209,10 +2264,11 @@ public sealed partial class MainWindow : Window
             try { return await Task.Run(() => store.ReadAttachmentData(pstMessage.Summary, attachment, SafeInlineImage.MaximumBytes)); }
             finally { _readerGate.Release(); }
         }
-        if (_activeGraphMessage is { } graphMessage && _activeMicrosoftAccount is { } account &&
-            _currentGraphAttachments is { } attachments)
+        if (_activeGraphMessage is { } graphMessage && _activeMicrosoftAccount is { } account)
         {
-            var attachment = attachments.FirstOrDefault(a => a.IsInline && a.Kind == GraphAttachmentKind.File &&
+            if (await ReadLocalInlineImageAsync(account, graphMessage.Id, id) is { } local) return local;
+            if (_currentGraphAttachments is not { } attachments) return null;
+            var attachment = attachments.FirstOrDefault(a => a.Kind == GraphAttachmentKind.File &&
                 a.SizeBytes is >= 0 and <= SafeInlineImage.MaximumBytes &&
                 string.Equals(Normalize(a.ContentId ?? ""), id, StringComparison.OrdinalIgnoreCase));
             if (attachment is null) return null;
@@ -2239,6 +2295,9 @@ public sealed partial class MainWindow : Window
     private void ClearInlineImages()
     {
         _failedMessageImages = 0;
+        _hiddenExternalImages = 0;
+        _externalImagesAllowed = false;
+        _showImagesLoading = false;
         _embeddedHtmlActive = false;
         _embeddedNavigation?.TrySetCanceled();
         _embeddedNavigation = null;
@@ -2396,11 +2455,16 @@ public sealed partial class MainWindow : Window
 
     private void ShowImageFailureStatus()
     {
-        HtmlStatusText.IsVisible = _failedMessageImages > 0;
-        if (_failedMessageImages > 0)
-            HtmlStatusText.Text = _failedMessageImages == 1
-                ? "One message image could not be loaded. The rest of the message is available."
-                : $"{_failedMessageImages} message images could not be loaded. The rest of the message is available.";
+        HtmlStatusText.IsVisible = _failedMessageImages > 0 || _hiddenExternalImages > 0;
+        var failure = _failedMessageImages switch
+        {
+            0 => "",
+            1 => "One message image could not be loaded. ",
+            _ => $"{_failedMessageImages} message images could not be loaded. "
+        };
+        var hidden = _hiddenExternalImages == 0 ? "" :
+            $"{_hiddenExternalImages} external image{(_hiddenExternalImages == 1 ? " is" : "s are")} hidden. Select Show images to download them.";
+        HtmlStatusText.Text = failure + hidden;
     }
 
     private void OpenReaderLink(string url)
@@ -2484,18 +2548,16 @@ public sealed partial class MainWindow : Window
     {
         RichBodyPanel.Children.Clear();
         BodyViewButton.IsVisible = (_richRuns is not null || _bodyHtml is not null) && !FormatBar.IsVisible;
-        ReaderModeButton.IsVisible = _bodyHtml is not null;
-        ReaderModeButton.Content = _preferSnapshotForMessage ? "Use interactive reader" : "Use alternate reader";
-        ViewOriginalButton.IsVisible = _bodyHtml is not null;
-        ViewOriginalButton.Content = _showOriginalHtml ? "View safe layout" : "View original here (trusted mail)";
+        ShowImagesButton.IsVisible = _showRichBody && (_hiddenExternalImages > 0 || _failedMessageImages > 0);
+        ShowImagesButton.Content = _hiddenExternalImages > 0 ? "Show images" : "Retry images";
+        ShowImagesButton.IsEnabled = !_showImagesLoading &&
+            (_activeGraphMessage is null || _currentGraphAttachments is not null);
         PopOutMessageButton.IsVisible = _richRuns is not null || !string.IsNullOrWhiteSpace(_bodyPlain);
-        InteractiveReaderButton.IsVisible = _bodyHtml is not null && !_embeddedHtmlActive;
-        PrintablePdfButton.IsVisible = PopOutMessageButton.IsVisible;
-        OpenInBrowserButton.IsVisible = _bodyHtml is not null || !string.IsNullOrWhiteSpace(_formatMessage?.BodyHtml);
-        ReaderZoomControls.IsVisible = _bodyHtml is not null;
+        ReaderMoreButton.IsVisible = _bodyHtml is not null || PopOutMessageButton.IsVisible ||
+            !string.IsNullOrWhiteSpace(_formatMessage?.BodyHtml);
         ZoomSlider.IsVisible = _bodyHtml is not null;
         UpdateZoomUi();
-        BodyViewButton.Content = _showRichBody ? "View plain text" : "View rich text";
+        BodyViewButton.Content = _showRichBody ? "Plain text" : "Rich view";
         if (!_showRichBody || (_richRuns is null && _htmlPageBitmaps.Count == 0 && !_embeddedHtmlActive))
         {
             ReaderScrollViewer.IsVisible = true;
@@ -2593,14 +2655,10 @@ public sealed partial class MainWindow : Window
         _richRuns = null;
         _bodyPlain = "";
         BodyViewButton.IsVisible = false;
-        ReaderModeButton.IsVisible = false;
-        OpenInBrowserButton.IsVisible = false;
+        ShowImagesButton.IsVisible = false;
+        ReaderMoreButton.IsVisible = false;
         HtmlStatusText.IsVisible = false;
-        ViewOriginalButton.IsVisible = false;
         PopOutMessageButton.IsVisible = false;
-        InteractiveReaderButton.IsVisible = false;
-        PrintablePdfButton.IsVisible = false;
-        ReaderZoomControls.IsVisible = false;
         RichBodyPanel.Children.Clear();
         RichBodyPanel.IsVisible = false;
         ReaderScrollViewer.IsVisible = true;

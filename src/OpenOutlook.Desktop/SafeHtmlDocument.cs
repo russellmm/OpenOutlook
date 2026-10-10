@@ -24,7 +24,8 @@ public static partial class SafeHtmlDocument
     {
         var document = Parse(html);
         var sources = new Dictionary<string, HtmlImageSource>(StringComparer.Ordinal);
-        foreach (var image in document.QuerySelectorAll("img[src]")) Add(image.GetAttribute("src"));
+        foreach (var image in document.QuerySelectorAll("img[src]"))
+            if (!IsHiddenImage(image)) Add(image.GetAttribute("src"));
         foreach (var element in document.QuerySelectorAll("[background]")) Add(element.GetAttribute("background"));
         foreach (var element in document.QuerySelectorAll("[style], style"))
         {
@@ -37,6 +38,16 @@ public static partial class SafeHtmlDocument
         {
             if (TrySource(value, out var source)) sources.TryAdd(source.Key, source);
         }
+    }
+
+    private static bool IsHiddenImage(IElement image)
+    {
+        if (image.HasAttribute("hidden") || image.GetAttribute("width")?.Trim() == "0" ||
+            image.GetAttribute("height")?.Trim() == "0") return true;
+        var style = image.GetAttribute("style");
+        return style is not null && Regex.IsMatch(style,
+            @"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)(?:\s*!important)?\s*(?:;|$)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     public static string Build(string html, IReadOnlyDictionary<string, byte[]> images)

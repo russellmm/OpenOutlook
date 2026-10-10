@@ -6,6 +6,18 @@ namespace OpenOutlook.Tests;
 public sealed class SafeHtmlDocumentTests
 {
     [Fact]
+    public void HiddenTrackingImagesAreNotFetchedOrCountedAsMissingPictures()
+    {
+        var html = "<img src='https://track.example/pixel' style='display: none; visibility: hidden'>" +
+            "<img src='https://track.example/zero' width='0' height='0'>" +
+            "<img src='cid:mail-piece'><img src='https://images.example/visible.png'>";
+        var sources = SafeHtmlDocument.FindImages(html);
+        Assert.Equal(2, sources.Count);
+        Assert.Contains(sources, source => source.Key == "cid:mail-piece");
+        Assert.Contains(sources, source => source.Value == "https://images.example/visible.png");
+    }
+
+    [Fact]
     public void KeepsTableLayoutAndColorsWithoutBrowserNetworkUrls()
     {
         var html = """

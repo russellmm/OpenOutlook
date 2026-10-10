@@ -1,6 +1,6 @@
 # OpenOutlook: feature inventory and status
 
-Status date: **2026-10-09**. This is the single place that says what OpenOutlook does today, on which platform, where the code is and which file holds the setting. The requirements are in `PRODUCT_REQUIREMENTS.md`, the design in `DESIGN_SPEC.md` (section 11 onwards describes what was built after the original baseline), the build state in `BUILD_STATUS.md`, and the history in `docs/history/` and `docs/session-handoff-2026-10.md`.
+Status date: **2026-10-10**. This is the single place that says what OpenOutlook does today, on which platform, where the code is and which file holds the setting. The requirements are in `PRODUCT_REQUIREMENTS.md`, the design in `DESIGN_SPEC.md` (section 11 onwards describes what was built after the original baseline), the build state in `BUILD_STATUS.md`, and the history in `docs/history/` and `docs/session-handoff-2026-10.md`.
 
 Legend: **Yes** = built and used; **Partly** = built with the stated limits; **No** = not built (a ribbon button for it, if any, says "To be implemented"); **n/a** = does not apply.
 Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). **Linux** = the `.deb` / tar.gz, tested on Ubuntu 26.04 in WSL2 with WSLg, under Xvfb in CI, and (2026-10-06) built, installed and smoke-tested on a bare-metal Ubuntu 26.04 GNOME/Wayland desktop; the hands-on checklist in `docs/handoff-linux-bare-metal-2026-10-06.md` is still to be walked through.
@@ -85,10 +85,10 @@ A connected account keeps a local copy: a PST (`<address>.pst`) plus a SQLite st
 
 | Feature | Windows | Linux | Notes |
 |---|---|---|---|
-| Sanitized HTML laid out by a real browser engine (snapshot tiles), `cid:` / data / remote images loaded automatically within caps | Yes | Yes | Image caps: 8 MiB and 16 MP per image, 64 images and 48 MiB and 64 MP per message. |
+| Sanitized HTML laid out by a real browser engine (snapshot tiles); visible `cid:` / data images load automatically, external pictures on request | Yes | Yes | **Show images** downloads visible external pictures for the selected message; a status line counts blocked or failed images. Hidden tracking images are omitted. Microsoft inline images can come from the local PST copy, with Graph as fallback; Graph attachment metadata includes Content-ID even when the message's attachment flag is false. Image caps: 8 MiB and 16 MP per image, 64 images and 48 MiB and 64 MP per message. |
 | Interactive reader | Embedded WebView2 first, snapshot as fallback | Embedded WebKitGTK if `libwebkit2gtk-4.1` is installed, otherwise snapshot | Under Wayland the embedded view can paint nothing, so connected mail starts on the snapshot and the interactive reader is an opt-in per message. |
 | Text selection and copy over the snapshot (block granularity, Ctrl+A, Ctrl+C) | Yes | Yes | `docs/reading-pane-text-selection.md`. |
-| Open in browser, View original here (trusted), Save printable PDF, zoom, plain-text view | Yes | Yes | No native print dialog. |
+| Reader actions: plain-text toggle, Show images, new window, More menu for alternate reader, trusted original HTML, browser, printable PDF, and zoom | Yes | Yes | Common buttons wrap within a narrow reading pane; PST messages use a compact **View as** menu for HTML, Rich Text, Plain Text, and Headers. No native print dialog. |
 | Open message in its own window (double-click) | Yes | Yes | Microsoft and Gmail messages. |
 | Attachment chips: Open / Save as…; risky file types are never opened | Yes | Yes | Microsoft file attachments up to 64 MiB; Gmail attachments. Opening uses the default program (`AttachmentLauncher`; xdg-open on Linux, untested on a real desktop). |
 | Reading Pane options: mark as read after N seconds / on selection change, space-bar paging, portrait, always preview | Yes | Yes | `options.json`, `read-state.json`. |

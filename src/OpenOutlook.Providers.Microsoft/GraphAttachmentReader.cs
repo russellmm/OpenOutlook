@@ -25,7 +25,9 @@ public sealed class GraphAttachmentReader(HttpClient httpClient, string expected
         ValidateId(messageId, nameof(messageId));
         await VerifyAccountAsync(accessToken, cancellationToken).ConfigureAwait(false);
         var path = "/me/messages/" + Uri.EscapeDataString(messageId) + "/attachments";
-        Uri? next = new(Origin + path + "?$top=50&$select=id,name,size,isInline");
+        // contentId is defined on fileAttachment, not the base attachment type. Select it through the
+        // derived type so cid: images can be matched without returning every file's contentBytes.
+        Uri? next = new(Origin + path + "?$top=50&$select=id,name,size,isInline,microsoft.graph.fileAttachment/contentId");
         var pages = new HashSet<string>(StringComparer.Ordinal);
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var attachments = new List<GraphAttachment>();

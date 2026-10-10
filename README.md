@@ -21,7 +21,7 @@ Where to read next:
 - **PST files:** open, read, edit (flags, move, copy, delete, folders, import EML), create, check and repair Unicode PST files with the vendored C library OpenPST; read-only for ANSI and 4K/OST files. Files on mapped or network drives work.
 - **Hotmail and Gmail:** read, search folders, reply, forward, compose with attachments, flag, archive, delete, move, drag onto folders. Changes show at once and are sent to the server in the background.
 - **Mailbox copies:** each account keeps a PST copy (default `%LOCALAPPDATA%\OpenOutlook\Mail` on Windows, `~/.local/share/openoutlook/mail` on Linux, or a folder you choose in Account Settings > Data Files). Folders and message bodies are read from the copy; a status-bar indicator shows the sync state.
-- **Reading mail as sent:** HTML mail is sanitized and laid out by a bundled headless Chromium (or the platform web view), with images, selectable text, open in browser, printable PDF.
+- **Reading mail as sent:** HTML mail is sanitized and laid out by a bundled headless Chromium (or the platform web view), with inline images and selectable text. External pictures can be downloaded with **Show images** for the selected message. The reading pane keeps common actions visible and puts browser, reader, PDF, and zoom commands under **More**.
 - **Junk Cleaner (Hotmail):** keywords and rules, a preview before cleaning, optional automatic cleaning, import of the old OutlookJunkCleaner configuration.
 - **Hotmail calendar:** Month, Week, Work Week, and Day views; two mini months; an Outlook-style ribbon; create appointments and meetings in a connected personal Microsoft account.
 - **Outlook look and feel:** ribbon that squeezes as the window narrows, backstage File menu, column header menu with Importance and Flag columns, themes, folder reordering.
@@ -74,7 +74,7 @@ Sign-in uses the system browser (OAuth with PKCE); OpenOutlook never sees a pass
 ## Safety and privacy
 
 - PSTs are edited in place behind a journal; the owner's private archives are never used by automated tests directly (tests work on copies) and are never committed. Never commit tokens, logs, `openoutlook-oauth.json`, `.secrets/` or message contents.
-- HTML mail is sanitized, network access is blocked in the layout browser, images are fetched by a bounded loader (public addresses only, size and count caps), and active content only runs after the explicit **View original here** choice.
+- HTML mail is sanitized, network access is blocked in the layout browser, and visible external images are fetched only after **Show images** is selected for that message. The bounded loader accepts public addresses only and enforces size and count caps. Active content only runs after the explicit **Show original HTML (trusted mail)** choice under **More**.
 - The Junk Cleaner moves mail to Deleted Items and never deletes permanently; nothing is cleaned on an account until you turn it on for that account.
 - The log (`~/.local/share/OpenOutlook/logs/openoutlook.log`, rotating, 2 MB) records start, exit and failures; an unexpected error inside a UI action is shown in a notice and survived.
 

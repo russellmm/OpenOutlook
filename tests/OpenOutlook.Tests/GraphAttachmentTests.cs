@@ -14,6 +14,8 @@ public sealed class GraphAttachmentTests
         {
             Assert.Equal("fake-token", request.Headers.Authorization?.Parameter);
             requests.Add(request.RequestUri!.AbsolutePath);
+            if (request.RequestUri.AbsolutePath == "/v1.0/me/messages/message-id/attachments")
+                Assert.Contains("microsoft.graph.fileAttachment/contentId", request.RequestUri.Query);
             return request.RequestUri.AbsolutePath switch
             {
                 "/v1.0/me" => Json("""{"id":"account-id"}"""),

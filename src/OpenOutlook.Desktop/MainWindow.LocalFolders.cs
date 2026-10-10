@@ -2,6 +2,7 @@ using Avalonia.Threading;
 using OpenOutlook.Auth;
 using OpenOutlook.Mirror;
 using OpenOutlook.Providers.Microsoft;
+using PstCore;
 
 namespace OpenOutlook.Desktop;
 
@@ -89,6 +90,35 @@ public partial class MainWindow
             finally { _readerGate.Release(); }
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException or PstCore.PstException or Microsoft.Data.Sqlite.SqliteException)
+        { return null; }
+    }
+
+    /// <summary>Use an already downloaded inline image from the mailbox copy before asking Graph again.</summary>
+    private async Task<byte[]?> ReadLocalInlineImageAsync(ConnectedAccount account, string messageId, string contentId)
+    {
+        try
+        {
+            if (LocalCopyOf(account) is not var (store, statePath)) return null;
+            await _readerGate.WaitAsync();
+            try
+            {
+                return await Task.Run(() =>
+                {
+                    using var state = new SyncStateStore(statePath);
+                    if (state.FindMessage(messageId) is not { } known ||
+                        state.GetFolder(known.FolderRemoteId) is not { } folder) return null;
+                    var message = store.OpenMessage(new MailSummary { Nid = known.PstNid, FolderNid = folder.PstNid });
+                    var attachment = message.Attachments.FirstOrDefault(a => a.Method == 1 &&
+                        a.Size is >= 0 and <= SafeInlineImage.MaximumBytes &&
+                        string.Equals(a.ContentId.Trim().Trim('<', '>'), contentId, StringComparison.OrdinalIgnoreCase));
+                    return attachment is null ? null :
+                        store.ReadAttachmentData(message.Summary, attachment, SafeInlineImage.MaximumBytes);
+                });
+            }
+            finally { _readerGate.Release(); }
+        }
+        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException or
+            PstCore.PstException or Microsoft.Data.Sqlite.SqliteException or InvalidDataException)
         { return null; }
     }
 

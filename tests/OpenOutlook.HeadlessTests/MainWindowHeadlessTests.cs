@@ -25,6 +25,35 @@ namespace OpenOutlook.HeadlessTests;
 public sealed class MainWindowHeadlessTests
 {
     [AvaloniaFact]
+    public void ReaderActionsStayInsideNarrowReadingPane()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 900, Height = 700 };
+        var webView = window.FindControl<Control>("MainHtmlWebView")!;
+        ((Panel)webView.Parent!).Children.Remove(webView); // WebView2 cannot attach to the headless test window.
+        window.Show();
+        try
+        {
+            // Show every common action together to exercise the widest possible toolbar.
+            foreach (var name in new[] { "ReaderBackButton", "FormatBar", "BodyViewButton", "ShowImagesButton", "PopOutMessageButton", "ReaderMoreButton" })
+                window.FindControl<Button>(name)!.IsVisible = true;
+            window.UpdateLayout();
+
+            var pane = window.FindControl<Grid>("ReaderPane")!;
+            Assert.True(pane.Bounds.Width > 0);
+            foreach (var name in new[] { "ReaderBackButton", "FormatBar", "BodyViewButton", "ShowImagesButton", "PopOutMessageButton", "ReaderMoreButton" })
+            {
+                var button = window.FindControl<Button>(name)!;
+                var right = button.TranslatePoint(new Point(button.Bounds.Width, 0), pane);
+                Assert.NotNull(right);
+                Assert.True(right.Value.X <= pane.Bounds.Width + 1,
+                    $"{name} extends past the reading pane: {right.Value.X} > {pane.Bounds.Width}");
+            }
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public async Task CalendarRailOpensPersonalCalendarAndReturnsToMail()
     {
         ResetRegistry().Upsert(new OpenOutlook.Auth.ConnectedAccount(

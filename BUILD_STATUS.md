@@ -1,13 +1,13 @@
 # OpenOutlook build status
 
-Status date: **2026-10-09**. OpenOutlook is a working personal mail client for **Windows 11** and **Linux** (Ubuntu 26.04, tested in WSL2/WSLg). A Hotmail/Outlook.com calendar is partly implemented on the same Microsoft sign-in. It is still not a release candidate: the first-release gates in `PRODUCT_REQUIREMENTS.md` are not all met (see the list at the end).
+Status date: **2026-10-10**. OpenOutlook is a working personal mail client for **Windows 11** and **Linux** (Ubuntu 26.04, tested in WSL2/WSLg). A Hotmail/Outlook.com calendar is partly implemented on the same Microsoft sign-in. It is still not a release candidate: the first-release gates in `PRODUCT_REQUIREMENTS.md` are not all met (see the list at the end).
 
 What exists, per platform and per feature, is in **`docs/FEATURES.md`**. How it is built is in `DESIGN_SPEC.md` (sections 1-10 are the original baseline, section 11 onwards the design as built). The detailed history of earlier sessions (through 2026-10-02, when the app was Linux-only, read-only for PSTs and used the managed PST reader) is kept in `docs/history/BUILD_STATUS-through-2026-10-02.md`; it describes a state that no longer exists in several places (see "Superseded" in `DESIGN_SPEC.md`).
 
 ## Current state
 
 - **Repository:** `github.com/russellmm/OpenOutlook`, `main` branch.
-- **Tests:** the solution builds on Windows; the five Calendar Graph unit tests and two focused Calendar headless UI tests pass. Five existing Windows unit tests depend on Unix file permissions. C library tests `test_basic`, `test_formats`, and `test_write` (168 checks) pass. `.github/workflows/linux.yml` runs the Linux build, tests, packaging, and a start of the packaged program on every push to `main`.
+- **Tests:** the solution builds on Windows; the five Calendar Graph unit tests and two focused Calendar headless UI tests pass. On 2026-10-10, all 15 focused Graph attachment and safe HTML tests and the narrow reading pane headless UI test passed. Five existing Windows unit tests depend on Unix file permissions. C library tests `test_basic`, `test_formats`, and `test_write` (168 checks) pass. `.github/workflows/linux.yml` runs the Linux build, tests, packaging, and a start of the packaged program on every push to `main`.
 - **Published builds**
   - Windows: publish locally with `dotnet publish` as described in `docs/session-handoff-2026-10.md`; keep `openpst.dll`, `openoutlook-oauth.json`, and the `chromium\` folder beside the executable. Published binaries and the OAuth configuration are not tracked by Git.
   - Linux: `publish/openoutlook_<version>_amd64.deb` (currently 0.1.23; on an NTFS checkout set `OO_DEB_STAGE` for `scripts/build-deb.sh`; the deb ships an AppArmor profile for the bundled browser) and `publish/OpenOutlook-linux-x64.tar.gz`, built by `scripts/wsl-package.sh`.
@@ -15,6 +15,7 @@ What exists, per platform and per feature, is in **`docs/FEATURES.md`**. How it 
 - **Accounts:** Hotmail (Microsoft Graph) and Gmail (Gmail API) connected and used live by the owner on Windows; Linux sign-in uses libsecret; the owner connected both Hotmail and Gmail in WSL (2026-10-05).
 - **Calendar:** personal Hotmail/Outlook.com account through Microsoft Graph, using the same account and token as mail. Home/View ribbon, two mini months, four views, and appointment/meeting creation are built; the owner verified a new appointment in Outlook on Windows (2026-10-09). Multiple calendars at once, overlay, event details, offline calendar data, and scheduling tools remain. See `docs/calendar.md`.
 - **Mailbox copies:** both account types keep a local PST copy; folders, message bodies and most actions work from it (`docs/offline-mirror-plan.md`, `docs/FEATURES.md` section 4).
+- **Reading pane:** the action row wraps in narrow panes, with alternate reader, trusted original HTML, browser, printable PDF, and zoom under **More**. Visible embedded images load automatically; **Show images** explicitly downloads external pictures for the selected message. Microsoft inline images can be read from the local mailbox copy or Graph attachment data. Hidden tracking images are omitted from loading.
 - **Junk Cleaner:** built for Microsoft accounts (manual with preview, automatic, import, log).
 
 ## Commands

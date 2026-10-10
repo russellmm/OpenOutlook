@@ -6,9 +6,7 @@ using PstCore;
 namespace OpenOutlook.Desktop;
 
 /// <summary>
-/// "View as: HTML | Rich Text | Plain Text | Headers" for archive messages. The bar tells which body formats the message really stores
-/// (a missing one is greyed out), starts on the richest one (HTML, else Rich Text, else Plain Text, like the GTK client) and lets the
-/// reader switch to the plain-text rendition or the internet headers.
+/// "View as" menu for archive messages. Unavailable stored formats are disabled; the message starts in its richest format.
 /// </summary>
 public partial class MainWindow
 {
@@ -17,16 +15,12 @@ public partial class MainWindow
     private MailMessage? _formatMessage;
     private MessageFormat _format;
 
-    /// <summary>Shows an archive message in its richest format and arms the format bar.</summary>
+    /// <summary>Shows an archive message in its richest format and arms the format menu.</summary>
     private void ShowPstMessageBody(MailMessage message)
     {
         _formatMessage = message;
         _format = message.HasHtml ? MessageFormat.Html : message.HasRtf ? MessageFormat.Rich : MessageFormat.Plain;
         FormatBar.IsVisible = true;
-        FormatHtmlButton.IsEnabled = message.HasHtml;
-        FormatRtfButton.IsEnabled = message.HasRtf;
-        FormatTextButton.IsEnabled = true;
-        FormatHeadersButton.IsEnabled = true;
         ApplyFormat();
     }
 
@@ -37,9 +31,32 @@ public partial class MainWindow
         BodyText.ClearValue(TextBox.FontFamilyProperty);
     }
 
+    private void FormatMenuClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_formatMessage is not { } message) return;
+        var flyout = new MenuFlyout();
+        Add("HTML", "html", MessageFormat.Html, message.HasHtml);
+        Add("Rich Text", "rtf", MessageFormat.Rich, message.HasRtf);
+        Add("Plain Text", "text", MessageFormat.Plain, true);
+        Add("Headers", "headers", MessageFormat.Headers, true);
+        flyout.ShowAt(FormatBar);
+
+        void Add(string label, string tag, MessageFormat format, bool enabled)
+        {
+            var item = new MenuItem
+            {
+                Header = format == _format ? "✓ " + label : label,
+                Tag = tag,
+                IsEnabled = enabled
+            };
+            item.Click += FormatClicked;
+            flyout.Items.Add(item);
+        }
+    }
+
     private void FormatClicked(object? sender, RoutedEventArgs e)
     {
-        if (_formatMessage is null || sender is not Button { Tag: string tag }) return;
+        if (_formatMessage is null || sender is not Control { Tag: string tag }) return;
         var wanted = tag switch { "html" => MessageFormat.Html, "rtf" => MessageFormat.Rich, "headers" => MessageFormat.Headers, _ => MessageFormat.Plain };
         if (wanted == _format) return;
         _format = wanted;
@@ -61,12 +78,13 @@ public partial class MainWindow
         SetMessageBody(string.IsNullOrWhiteSpace(html) ? null : html, plain);
         if (_format == MessageFormat.Headers) BodyText.FontFamily = new FontFamily("Consolas, Menlo, DejaVu Sans Mono, monospace");
         else BodyText.ClearValue(TextBox.FontFamilyProperty);
-        foreach (var (button, format) in new[]
+        FormatBar.Content = _format switch
         {
-            (FormatHtmlButton, MessageFormat.Html), (FormatRtfButton, MessageFormat.Rich),
-            (FormatTextButton, MessageFormat.Plain), (FormatHeadersButton, MessageFormat.Headers)
-        })
-            button.FontWeight = format == _format ? FontWeight.Bold : FontWeight.Normal;
-        BodyViewButton.IsVisible = false;                       // the bar replaces the old "View plain text" toggle for archive messages
+            MessageFormat.Html => "View as: HTML ▾",
+            MessageFormat.Rich => "View as: Rich Text ▾",
+            MessageFormat.Headers => "View as: Headers ▾",
+            _ => "View as: Plain Text ▾"
+        };
+        BodyViewButton.IsVisible = false; // The format menu replaces the rich/plain toggle for archive messages.
     }
 }

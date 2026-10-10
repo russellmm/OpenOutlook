@@ -1,6 +1,6 @@
 # OpenOutlook: feature inventory and status
 
-Status date: **2026-10-06**. This is the single place that says what OpenOutlook does today, on which platform, where the code is and which file holds the setting. The requirements are in `PRODUCT_REQUIREMENTS.md`, the design in `DESIGN_SPEC.md` (section 11 onwards describes what was built after the original baseline), the build state in `BUILD_STATUS.md`, and the history in `docs/history/` and `docs/session-handoff-2026-10.md`.
+Status date: **2026-10-09**. This is the single place that says what OpenOutlook does today, on which platform, where the code is and which file holds the setting. The requirements are in `PRODUCT_REQUIREMENTS.md`, the design in `DESIGN_SPEC.md` (section 11 onwards describes what was built after the original baseline), the build state in `BUILD_STATUS.md`, and the history in `docs/history/` and `docs/session-handoff-2026-10.md`.
 
 Legend: **Yes** = built and used; **Partly** = built with the stated limits; **No** = not built (a ribbon button for it, if any, says "To be implemented"); **n/a** = does not apply.
 Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). **Linux** = the `.deb` / tar.gz, tested on Ubuntu 26.04 in WSL2 with WSLg, under Xvfb in CI, and (2026-10-06) built, installed and smoke-tested on a bare-metal Ubuntu 26.04 GNOME/Wayland desktop; the hands-on checklist in `docs/handoff-linux-bare-metal-2026-10-06.md` is still to be walked through.
@@ -42,14 +42,15 @@ Details and the file-format rules: `native-engine-status.md`, `OpenOutlook_Desig
 
 | Feature | Windows | Linux | Notes |
 |---|---|---|---|
-| Microsoft personal accounts (Hotmail/Outlook.com) via Microsoft Graph, OAuth PKCE in the system browser | Yes | Yes (owner connected Hotmail in WSL, 2026-10-05) | Scopes: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Contacts.ReadWrite`. Account verified against Graph `/me`. |
+| Microsoft personal accounts (Hotmail/Outlook.com) via Microsoft Graph, OAuth PKCE in the system browser | Yes | Yes (owner connected Hotmail in WSL, 2026-10-05) | New sign-ins request `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Contacts.ReadWrite`, and `Calendars.ReadWrite`. Existing accounts need a completed Repair sign-in to add calendar consent. File > Info and Calendar use the same account registry and OS-protected refresh token; the registry records requested scopes, not tokens. Account verified against Graph `/me`. |
 | Gmail via Gmail REST API | Yes | Yes (owner connected Gmail in WSL, 2026-10-05) | Scopes `gmail.modify` + `gmail.compose`; permanent delete not offered (needs a broader scope). The Google consent screen is in Testing mode (refresh tokens last 7 days). |
 | Token storage | Windows Credential Manager | libsecret (persistent unlocked default keyring required) | Never a file. Under WSL the keyring is created through GNOME Keyring's password window (`scripts/wsl-create-keyring.sh`). |
 | Up to 2 accounts per provider, 4 in total; reconnect / remove | Yes | Yes | `accounts.json` holds labels and public ids, no tokens. |
 | Account Settings (File > Info): Email tab, Data Files tab, Junk Cleaner tab | Yes | Yes | Email: New, Repair, Set as Default, Remove (Change and the arrows are placeholders). |
 | Opening sign-in pages | system browser | system browser; under WSL the launcher sets `BROWSER` to the Windows browser | |
 | Microsoft contacts / address book | No | No | The permission is requested; there is no UI. |
-| Calendar, tasks, people | No | No | Navigation rail items are placeholders. |
+| Hotmail/Outlook.com calendar | Partly | Untested (shared code) | Graph calendar list and event view; Home/View ribbon, two mini months, Month grid, timed Day/Work Week/Week views, and appointment/meeting creation with attendees, all-day, location, and notes. The owner created an appointment in OpenOutlook and confirmed it in Outlook on Windows (2026-10-09). One calendar is shown at a time. Side-by-side/overlay, event details, offline access, and scheduling tools remain; planned ribbon commands are disabled. Gmail and iCloud calendars are outside scope. See [calendar.md](calendar.md). |
+| Tasks, people UI | No | No | Navigation rail items are placeholders. |
 
 ## 4. Mailbox copies (offline mirror) and local-first reading
 
@@ -157,12 +158,12 @@ Plan and decisions: `junk-cleaner-plan.md`.
 
 ## 12. Not built / known gaps
 
-Calendar, People/contacts UI, Tasks; signatures and spelling; undo/redo; rules; Automatic Replies; offline sending (Outbox); cross-store full-text search; native print dialog; Gmail draft editing and permanent Gmail delete; folder/label rename and delete from the mailbox copies; Junk Cleaner for Gmail; dark-mode and high-DPI verification; running on a bare-metal Linux desktop; a bare-metal Linux run (sign-in with the keyring is confirmed in WSL); the PST engine writes Unicode-512 files only; `rmarrash_*.pst` fixtures are the owner's private data and are never in the repository.
+Calendar gaps (multiple calendars at once, overlay, event details, offline access, scheduling tools, and day preview); People/contacts UI, Tasks; signatures and spelling; undo/redo; rules; Automatic Replies; offline sending (Outbox); cross-store full-text search; native print dialog; Gmail draft editing and permanent Gmail delete; folder/label rename and delete from the mailbox copies; Junk Cleaner for Gmail; dark-mode and high-DPI verification; the PST engine writes Unicode-512 files only; `rmarrash_*.pst` fixtures are the owner's private data and are never in the repository.
 
 ## 13. Tests
 
-- .NET unit tests `tests/OpenOutlook.Tests`: 531 on Linux, all passing; on Windows 5 `OfflineMessageCacheTests` (Unix file permissions) cannot pass.
-- Avalonia headless UI tests `tests/OpenOutlook.HeadlessTests`: 21, all passing on both.
+- .NET unit tests `tests/OpenOutlook.Tests`: the focused Graph Calendar tests pass on Windows. Five existing `OfflineMessageCacheTests` depend on Unix file permissions and cannot pass on Windows.
+- Avalonia headless UI tests `tests/OpenOutlook.HeadlessTests`: the focused Calendar tests pass on Windows. The complete suite is exercised by Linux CI.
 - C tests (`native/openpst/tests`: `test_basic`, `test_formats`, `test_write` with 168 checks) and the soak harness `tools/PstSoak`; SCANPST.EXE is the oracle for PST correctness (Windows).
 - Live-account tools: `tools/MailSmoke` (send/receive between the owner's accounts, mirror, Junk Cleaner dry run `junkscan`, timings `timing` / `gmailtiming` / `gmailsync`, `localfolder`, `openpath`, `openeditable`).
 - Linux/WSL scripts: `scripts/wsl-*.sh` (tests, package, deb smoke test, placement test, keyring diagnosis).

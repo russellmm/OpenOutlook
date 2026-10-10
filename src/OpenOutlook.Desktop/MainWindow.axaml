@@ -63,10 +63,10 @@
       <!-- Navigation rail -->
       <Border Background="{DynamicResource OlChrome}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,0,1,0">
         <StackPanel Spacing="2" Margin="0,4,0,0">
-          <Button Classes="olRail olRailActive" ToolTip.Tip="Mail">
+          <Button Name="MailNavButton" Classes="olRail olRailActive" Click="ShowMailClicked" ToolTip.Tip="Mail">
             <ContentControl Template="{StaticResource OlIconMail}" Width="22" Height="22" />
           </Button>
-          <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="Calendar" ToolTip.Tip="Calendar — planned">
+          <Button Name="CalendarNavButton" Classes="olRail" Click="ShowCalendarClicked" ToolTip.Tip="Calendar">
             <ContentControl Template="{StaticResource OlIconCalendar}" Width="22" Height="22" />
           </Button>
           <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="People" ToolTip.Tip="People — planned">
@@ -402,8 +402,12 @@
           </TabControl>
         </Border>
 
+        <Border Name="CalendarToolbarBand" Grid.Row="0" IsVisible="False" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,0,0,0">
+          <ContentControl Name="CalendarRibbonContent" />
+        </Border>
+
         <!-- Panes: one white card divided by hairlines, like classic Outlook's folder / list / reading panes -->
-        <Border Grid.Row="1" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,6,0,0" ClipToBounds="True">
+        <Border Name="MailContentBorder" Grid.Row="1" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,6,0,0" ClipToBounds="True">
           <Grid Name="PaneGrid" ColumnDefinitions="2*,5,5*,5,4*">
             <!-- Folder pane -->
             <DockPanel Grid.Column="0" Margin="0,0,0,0" ClipToBounds="True">
@@ -567,6 +571,9 @@
               </Grid>
             </Grid>
           </Grid>
+        </Border>
+        <Border Name="CalendarContentBorder" Grid.Row="1" IsVisible="False" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,6,0,0" ClipToBounds="True">
+          <ContentControl Name="CalendarContent" />
         </Border>
       </Grid>
     </Grid>

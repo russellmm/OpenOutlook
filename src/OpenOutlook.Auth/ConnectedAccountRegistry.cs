@@ -21,12 +21,14 @@ public sealed record ConnectedAccount(OAuthProvider Provider, string AccountId, 
         RequestedScopes?.Contains("Mail.Send", StringComparer.OrdinalIgnoreCase) == true;
     public bool CanManageMicrosoftContacts => Provider == OAuthProvider.MicrosoftConsumers &&
         RequestedScopes?.Contains("Contacts.ReadWrite", StringComparer.OrdinalIgnoreCase) == true;
+    public bool CanWriteMicrosoftCalendar => Provider == OAuthProvider.MicrosoftConsumers &&
+        RequestedScopes?.Contains("Calendars.ReadWrite", StringComparer.OrdinalIgnoreCase) == true;
 }
 
 public static class MicrosoftAccountPermissions
 {
     public static readonly string[] PlannedPersonalScopes =
-        ["offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send", "Contacts.ReadWrite"];
+        ["offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send", "Contacts.ReadWrite", "Calendars.ReadWrite"];
 }
 
 /// <summary>Small interim local registry for the desktop onboarding milestone.</summary>

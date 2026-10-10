@@ -136,7 +136,7 @@ public sealed class AccountSetupWindow : Window
     {
         _permissions.Text = (SelectedAccount?.Provider ?? SelectedProvider) == OAuthProvider.Google
             ? "Gmail sign-in allows reading, organizing and sending mail (mark read, star, archive, trash, move to labels, compose, reply, forward). OpenOutlook sends only when you press Send."
-            : "Microsoft sign-in requests access to read, organize and send mail, plus read and edit your Microsoft contacts for the planned address book. OpenOutlook sends only when you press Send.";
+            : "Microsoft sign-in requests access to read, organize and send mail; read and edit your calendar; and read and edit contacts for the planned address book. Meeting invitations are sent when you save a meeting with attendees.";
         if (_isBusy) return;
         _provider.IsEnabled = SelectedAccount is null;
         var provider = SelectedAccount?.Provider ?? SelectedProvider;
@@ -191,13 +191,14 @@ public sealed class AccountSetupWindow : Window
             }
             RefreshAccounts();
             _status.Text = provider == OAuthProvider.MicrosoftConsumers
-                ? $"{identity.DisplayAddress} is connected. Close this window and select a mail folder."
+                ? $"{identity.DisplayAddress} is connected with calendar access. Close this window to load its calendars."
                 : $"{identity.DisplayAddress} is connected. Its folders are in the folder pane (read-only for now).";
         }
         catch (OperationCanceledException) { _status.Text = "Account connection canceled."; }
         catch (SecretStoreException exception) { _status.Text = exception.Message; }
         catch (TimeoutException) { _status.Text = "Sign-in timed out. Close the browser tab and try again."; }
         catch (InvalidOperationException) when (_declinedReason is not null) { _status.Text = _declinedReason; }
+        catch (InvalidOperationException exception) { _status.Text = "Account connection was not saved: " + exception.Message; }
         catch (Exception) { _status.Text = "Account connection failed. Check the browser and the secret store, then retry."; }
         finally { _operation = null; SetBusy(false); }
     }

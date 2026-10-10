@@ -11,6 +11,7 @@ Where to read next:
 | [PRODUCT_REQUIREMENTS.md](PRODUCT_REQUIREMENTS.md) | What the product must do, with a conformance table |
 | [DESIGN_SPEC.md](DESIGN_SPEC.md) | The design, and (from section 11) how it was actually built |
 | [docs/accounts-setup.md](docs/accounts-setup.md) | Connecting Hotmail and Gmail, Account Settings, the Junk Cleaner tab |
+| [docs/calendar.md](docs/calendar.md) | Hotmail calendar features, account permissions, and current limits |
 | [docs/offline-mirror-plan.md](docs/offline-mirror-plan.md) | Mailbox copies (local PST per account) |
 | [docs/native-engine-status.md](docs/native-engine-status.md) | The PST engine and how it is validated |
 | [docs/session-handoff-2026-10.md](docs/session-handoff-2026-10.md) | Working notes for resuming development (build, publish, push, gotchas) |
@@ -22,9 +23,10 @@ Where to read next:
 - **Mailbox copies:** each account keeps a PST copy (default `%LOCALAPPDATA%\OpenOutlook\Mail` on Windows, `~/.local/share/openoutlook/mail` on Linux, or a folder you choose in Account Settings > Data Files). Folders and message bodies are read from the copy; a status-bar indicator shows the sync state.
 - **Reading mail as sent:** HTML mail is sanitized and laid out by a bundled headless Chromium (or the platform web view), with images, selectable text, open in browser, printable PDF.
 - **Junk Cleaner (Hotmail):** keywords and rules, a preview before cleaning, optional automatic cleaning, import of the old OutlookJunkCleaner configuration.
+- **Hotmail calendar:** Month, Week, Work Week, and Day views; two mini months; an Outlook-style ribbon; create appointments and meetings in a connected personal Microsoft account.
 - **Outlook look and feel:** ribbon that squeezes as the window narrows, backstage File menu, column header menu with Importance and Flag columns, themes, folder reordering.
 
-What is not built yet (calendar, contacts, tasks, signatures, offline sending, full-text search across stores, ...) is listed in [docs/FEATURES.md](docs/FEATURES.md) section 12.
+Calendar is partly built. Remaining work, along with contacts, tasks, signatures, offline sending, and other gaps, is listed in [docs/FEATURES.md](docs/FEATURES.md) section 12.
 
 ## Build and run
 

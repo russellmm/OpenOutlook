@@ -26,7 +26,8 @@ public partial class MainWindow
 {
     private int _ribbonTabBeforeBackstage = 1;
 
-    private sealed record BackstageAccountOption(string Address, string Kind, string WebUrl);
+    private sealed record BackstageAccountOption(string AccountId, OAuthProvider Provider,
+        string Address, string Kind, string WebUrl);
 
     private void RibbonTabsSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -95,20 +96,27 @@ public partial class MainWindow
         {
             foreach (var account in _accountRegistry.Load())
                 options.Add(new BackstageAccountOption(
+                    account.AccountId, account.Provider,
                     account.DisplayAddress,
-                    account.Provider == OAuthProvider.MicrosoftConsumers ? "Microsoft Exchange" : "Google",
+                    account.Provider == OAuthProvider.MicrosoftConsumers ? "Outlook.com / Hotmail" : "Google",
                     account.Provider == OAuthProvider.Google ? "https://mail.google.com/" : "https://outlook.live.com/owa/"));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException) { }
         var previous = BackstageAccounts.SelectedItem as BackstageAccountOption;
         BackstageAccounts.ItemsSource = options;
-        BackstageAccounts.SelectedItem = previous is not null && options.Contains(previous) ? previous : options.FirstOrDefault();
+        var calendarAccountId = CalendarContentBorder.IsVisible ? _calendarPage?.SelectedAccountId : null;
+        BackstageAccounts.SelectedItem = options.FirstOrDefault(option => option.AccountId == calendarAccountId) ??
+            (previous is not null && options.Contains(previous) ? previous : options.FirstOrDefault());
     }
 
     private void BackstageAccountSelected(object? sender, SelectionChangedEventArgs e)
     {
         if (sender is ComboBox { SelectedItem: BackstageAccountOption option })
+        {
             BsWebLinkUrl.Text = option.WebUrl;
+            if (option.Provider == OAuthProvider.MicrosoftConsumers)
+                _calendarPage?.SelectAccount(option.AccountId);
+        }
     }
 
     /// <summary>

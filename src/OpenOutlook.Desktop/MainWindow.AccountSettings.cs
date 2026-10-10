@@ -230,8 +230,7 @@ public partial class MainWindow
         public Task AddAccountAsync() => w.ShowAccountSetupAsync();
         public async Task RepairAccountAsync(ConnectedAccount account)
         {
-            await new AccountSetupWindow(account).ShowDialog(w);
-            w.RefreshConnectedAccounts();
+            await w.ShowAccountSetupAsync(account);
         }
         public Task<string?> RemoveAccountAsync(ConnectedAccount account, Window owner) => w.RemoveAccountCoreAsync(account, owner);
         public IReadOnlyList<DataFileRow> DataFiles() => w.BuildDataFileRows();

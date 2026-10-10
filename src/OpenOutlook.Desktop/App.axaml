@@ -26,6 +26,8 @@
           <SolidColorBrush x:Key="OlGroupBand" Color="#F4F4F4" />
           <SolidColorBrush x:Key="OlField" Color="#F7F7F7" />
           <SolidColorBrush x:Key="OlIcon" Color="#3B3B3B" />
+          <SolidColorBrush x:Key="OlCalendarEvent" Color="#D5EAF8" />
+          <SolidColorBrush x:Key="OlCalendarEventBorder" Color="#0F6CBD" />
           <!-- Backstage (File menu): nav column #E4E4E4 measured from the reference, pane #F5F5F5 -->
           <SolidColorBrush x:Key="OlBackstageNav" Color="#E4E4E4" />
           <SolidColorBrush x:Key="OlBackstagePane" Color="#F5F5F5" />
@@ -47,6 +49,8 @@
           <SolidColorBrush x:Key="OlGroupBand" Color="#262626" />
           <SolidColorBrush x:Key="OlField" Color="#333333" />
           <SolidColorBrush x:Key="OlIcon" Color="#D6D6D6" />
+          <SolidColorBrush x:Key="OlCalendarEvent" Color="#24445D" />
+          <SolidColorBrush x:Key="OlCalendarEventBorder" Color="#4FA3E3" />
           <SolidColorBrush x:Key="OlBackstageNav" Color="#2B2B2B" />
           <SolidColorBrush x:Key="OlBackstagePane" Color="#1E1E1E" />
           <SolidColorBrush x:Key="OlBsDisabled" Color="#5A5A5A" />

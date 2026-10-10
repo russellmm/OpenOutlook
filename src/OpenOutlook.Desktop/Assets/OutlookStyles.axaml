@@ -96,6 +96,59 @@
     <Style Selector="Button.olLarge:disabled">
       <Setter Property="Opacity" Value="0.42" />
     </Style>
+    <Style Selector="Button.olLarge.olCalViewSelected">
+      <Setter Property="Background" Value="{DynamicResource OlSelected}" />
+    </Style>
+
+    <Style Selector="Border.olCalendarSidebar">
+      <Setter Property="Background" Value="{DynamicResource OlGroupBand}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlCardBorder}" />
+      <Setter Property="BorderThickness" Value="0,0,1,0" />
+    </Style>
+    <Style Selector="Button.olMiniDay">
+      <Setter Property="MinWidth" Value="27" />
+      <Setter Property="MinHeight" Value="25" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.olMiniDay:pointerover">
+      <Setter Property="Background" Value="{DynamicResource OlSelected}" />
+    </Style>
+    <Style Selector="Button.olMiniDay.olMiniSelected">
+      <Setter Property="Background" Value="{DynamicResource OlAccent}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="Button.olMiniNav">
+      <Setter Property="MinWidth" Value="22" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.olCalendarDate">
+      <Setter Property="Padding" Value="2,0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+    <Style Selector="Button.olCalendarDate:pointerover">
+      <Setter Property="Background" Value="{DynamicResource OlHover}" />
+    </Style>
+    <Style Selector="Border.olCalendarCell">
+      <Setter Property="BorderBrush" Value="{DynamicResource OlCardBorder}" />
+      <Setter Property="BorderThickness" Value="0,0,1,1" />
+    </Style>
+    <Style Selector="Border.olCalendarEvent">
+      <Setter Property="Background" Value="{DynamicResource OlCalendarEvent}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OlCalendarEventBorder}" />
+      <Setter Property="BorderThickness" Value="3,0,0,0" />
+      <Setter Property="Padding" Value="4,2" />
+    </Style>
 
     <!-- Ribbon compact command: small icon with caption to the right -->
     <Style Selector="Button.olSmall">

@@ -694,9 +694,9 @@ public sealed partial class MainWindow : Window
     private async void AccountSetupClicked(object? sender, RoutedEventArgs e) => await ShowAccountSetupAsync();
 
     /// <summary>Shared by the ribbon button and the Backstage Info page so both refresh their own state after.</summary>
-    private async Task ShowAccountSetupAsync()
+    private async Task ShowAccountSetupAsync(ConnectedAccount? reconnect = null)
     {
-        await new AccountSetupWindow().ShowDialog(this);
+        await new AccountSetupWindow(reconnect).ShowDialog(this);
         _activeMicrosoftAccount = null;
         _activeMicrosoftFolder = null;
         _activeGmailFolder = null;
@@ -707,7 +707,10 @@ public sealed partial class MainWindow : Window
         MessageList.ItemsSource = null; RefreshItemCount();
         ClearReader();
         RefreshConnectedAccounts();
-        StatusText.Text = "Account settings updated. Select a mailbox folder to continue.";
+        RefreshCalendarAccounts();
+        StatusText.Text = CalendarContentBorder.IsVisible
+            ? "Account settings updated. Select a calendar to continue."
+            : "Account settings updated. Select a mailbox folder to continue.";
     }
 
     private void RefreshConnectedAccounts()

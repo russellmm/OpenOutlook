@@ -21,9 +21,19 @@ The app needs a public OAuth client id for each provider. They are read from `op
 ## Microsoft (Hotmail, Outlook.com, Live)
 1. Azure portal > App registrations > New registration. Supported account types: *Personal Microsoft accounts only*.
 2. Authentication > Add a platform > *Mobile and desktop applications*; add the redirect URI `http://127.0.0.1` (the app uses a random loopback port; Microsoft matches the loopback host without the port). Allow public client flows.
-3. API permissions (delegated, Microsoft Graph): `User.Read`, `offline_access`, `Mail.ReadWrite`, `Mail.Send`, `Contacts.ReadWrite`.
+3. API permissions (delegated, Microsoft Graph): `User.Read`, `offline_access`, `Mail.ReadWrite`, `Mail.Send`, `Contacts.ReadWrite`, `Calendars.ReadWrite`.
 4. Copy the *Application (client) ID* into `microsoftClientId`.
 5. In the app: File > Info > Add Account > Microsoft > Connect. The browser opens; sign in and approve; return to the app and confirm the account.
+
+## Hotmail / Outlook.com calendar
+
+Mail and Calendar use the **same connected personal Microsoft account**, refresh token, and account registry entry. File > Info shows all connected accounts, including Gmail; Calendar offers only personal Microsoft accounts because Gmail and iCloud calendars are outside this feature. Selecting a Microsoft account in File > Info selects it in Calendar. The Email tab in Account Settings shows whether calendar permission is recorded for that account.
+
+An account connected before `Calendars.ReadWrite` was added can keep working for mail while Calendar's New Appointment and New Meeting buttons remain disabled. In File > Info > Account Settings > Email, select the Microsoft account and choose **Repair…**, or use **Repair selected account sign-in** in Calendar. Approve the browser request, confirm the account identity in OpenOutlook, and wait for the Accounts window to say **connected with calendar access** before closing it. The Calendar page then loads that account's calendars. Browser approval alone does not update the saved account until this flow finishes.
+
+The metadata file `~/.local/share/OpenOutlook/accounts.json` records account labels and requested scopes; it contains no tokens. Windows stores the refresh token in Credential Manager, and Linux stores it in the keyring. If Calendar cannot load calendars, its message and the Accounts window show the failure. A previous live check returned HTTP 403 while the old permission was saved; after reconnection, the owner created an appointment in OpenOutlook and saw it in Outlook on 2026-10-09.
+
+To create an event, choose an editable calendar and select **New Appointment** or **New Meeting**. A meeting requires at least one attendee and sends invitations when saved. The user guide and current limits are in [calendar.md](calendar.md).
 
 ## Hotmail / Outlook.com mail actions
 Mark read/unread, flag, archive, delete, and **Move to Folder / Copy to Folder** (ribbon Move, right-click menu, or drag the messages onto a folder of the same account; right-drag offers Move Here / Copy Here). The picker looks like Outlook's Move Items window and its New... button creates a folder. These need the account to have been connected with mail write permission; otherwise the app asks you to sign in again.
@@ -52,7 +62,7 @@ Setting up the Google side (once):
 ## What is tested
 - Windows Credential Manager store: real round trips (short and multi-chunk tokens, replace, delete) under a throwaway prefix.
 - The loopback callback listener, the PKCE exchange and refresh requests, the Google client secret (sent only to Google), the Gmail reader and its changes (exact requests, batching, refused-scope error) against a fake server, and in the headless UI the Gmail folders plus mark read / unread, flag, archive and delete against a stateful fake Gmail.
-- The Microsoft authorization request built from the configured client id was accepted by Microsoft's login endpoint on Windows. Completing a sign-in needs a person at the browser and has not been done by the automated tests.
+- The Microsoft authorization request built from the configured client id was accepted by Microsoft's login endpoint on Windows. Automated tests do not complete an interactive sign-in; the owner completed one and verified that a new Calendar appointment appeared in Outlook on 2026-10-09.
 
 ## Account Settings (File > Info > Account Settings)
 The Account Settings button opens a menu like Outlook's (Account Settings…, Account Name and Sync Settings, and four items still marked "To be implemented"). **Account Settings…** is a dialog with three tabs (Email, Data Files, Junk Cleaner):

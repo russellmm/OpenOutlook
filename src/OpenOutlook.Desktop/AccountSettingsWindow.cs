@@ -316,7 +316,9 @@ public sealed partial class AccountSettingsWindow : Window
         foreach (var a in _accounts)
         {
             var isDefault = a.AccountId == def;
-            var type = a.Provider == OAuthProvider.Google ? "Gmail (send and receive)" : "Microsoft mail (send and receive)";
+            var type = a.Provider == OAuthProvider.Google ? "Gmail (send and receive)"
+                : a.CanWriteMicrosoftCalendar ? "Outlook.com / Hotmail (mail and calendar)"
+                : "Outlook.com / Hotmail (calendar permission needed)";
             var item = new ListBoxItem
             {
                 Tag = a,

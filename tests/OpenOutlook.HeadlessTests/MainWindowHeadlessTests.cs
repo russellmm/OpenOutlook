@@ -24,6 +24,41 @@ namespace OpenOutlook.HeadlessTests;
 /// </summary>
 public sealed class MainWindowHeadlessTests
 {
+    [AvaloniaFact]
+    public async Task CalendarRailOpensPersonalCalendarAndReturnsToMail()
+    {
+        ResetRegistry().Upsert(new OpenOutlook.Auth.ConnectedAccount(
+            OpenOutlook.Auth.OAuthProvider.Google, "gmail-only", "person@gmail.test", "client",
+            DateTimeOffset.UtcNow));
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            window.FindControl<Button>("CalendarNavButton")!
+                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntil(() => window.FindControl<ContentControl>("CalendarContent")?.Content is CalendarPage);
+            Assert.True(window.FindControl<Border>("CalendarContentBorder")!.IsVisible);
+            Assert.False(window.FindControl<Border>("MailContentBorder")!.IsVisible);
+            var page = Assert.IsType<CalendarPage>(window.FindControl<ContentControl>("CalendarContent")!.Content);
+            Assert.Contains(page.GetVisualDescendants().OfType<TextBlock>(), text =>
+                text.Text?.Contains("Connect an Outlook.com or Hotmail account") == true);
+            Shot(window, "calendar-empty");
+            var workWeek = window.GetVisualDescendants().OfType<Button>()
+                .First(button => button.GetVisualDescendants().OfType<TextBlock>()
+                    .Any(text => text.Text == "Work\nWeek"));
+            workWeek.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntil(() => page.GetVisualDescendants().OfType<TextBlock>()
+                .Any(text => text.Text == "8 AM"));
+            Shot(window, "calendar-work-week");
+            window.FindControl<Button>("MailNavButton")!
+                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(window.FindControl<Border>("MailContentBorder")!.IsVisible);
+            Assert.False(window.FindControl<Border>("CalendarContentBorder")!.IsVisible);
+        }
+        finally { window.Close(); }
+    }
+
     private static string? Fixture()
     {
         var path = Environment.GetEnvironmentVariable("OPENOUTLOOK_TEST_PST");

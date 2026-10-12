@@ -29,9 +29,7 @@ public sealed class MainWindowHeadlessTests
     {
         ResetRegistry();
         var window = new MainWindow { Width = 1200, Height = 800 };
-        var webView = window.FindControl<Control>("MainHtmlWebView")!;
-        ((Panel)webView.Parent!).Children.Remove(webView); // Native WebView2 cannot attach to the headless window.
-        window.Show();
+        ShowWithSnapshotReader(window);
         try
         {
             var account = new OpenOutlook.Auth.ConnectedAccount(
@@ -40,8 +38,6 @@ public sealed class MainWindowHeadlessTests
             var handler = new FakeMicrosoftDelete();
             typeof(MainWindow).GetField("_graphHttp", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .SetValue(window, new HttpClient(handler));
-            typeof(MainWindow).GetField("_webViewAvailable", BindingFlags.NonPublic | BindingFlags.Instance)!
-                .SetValue(window, false);
             typeof(MainWindow).GetField("_activeMicrosoftAccount", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .SetValue(window, account);
             var folderType = typeof(MainWindow).GetNestedType("MicrosoftFolderSelection", BindingFlags.NonPublic)!;
@@ -147,9 +143,7 @@ public sealed class MainWindowHeadlessTests
     {
         ResetRegistry();
         var window = new MainWindow { Width = 1200, Height = 800 };
-        var webView = window.FindControl<Control>("MainHtmlWebView")!;
-        ((Panel)webView.Parent!).Children.Remove(webView);
-        window.Show();
+        ShowWithSnapshotReader(window);
         try
         {
             var account = new OpenOutlook.Auth.ConnectedAccount(
@@ -185,9 +179,7 @@ public sealed class MainWindowHeadlessTests
     {
         ResetRegistry();
         var window = new MainWindow { Width = 900, Height = 700 };
-        var webView = window.FindControl<Control>("MainHtmlWebView")!;
-        ((Panel)webView.Parent!).Children.Remove(webView); // WebView2 cannot attach to the headless test window.
-        window.Show();
+        ShowWithSnapshotReader(window);
         try
         {
             // Show every common action together to exercise the widest possible toolbar.
@@ -207,6 +199,18 @@ public sealed class MainWindowHeadlessTests
             }
         }
         finally { window.Close(); }
+    }
+
+    private static void ShowWithSnapshotReader(MainWindow window)
+    {
+        // Without WebKitGTK, MainWindow already removes this control on Linux. If it is still
+        // present, detach it before Show: native web views cannot attach to the headless host.
+        if (window.FindControl<Control>("MainHtmlWebView") is { } webView)
+            Assert.IsAssignableFrom<Panel>(webView.Parent).Children.Remove(webView);
+        typeof(MainWindow).GetField("_webViewAvailable", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(window, false);
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
     }
 
     [AvaloniaFact]

@@ -1132,8 +1132,17 @@ public sealed partial class MainWindow : Window
     private void MessageSelected(object? sender, SelectionChangedEventArgs e)
     {
         if (_updatingMessageList) return;
+        BeginReadSelectedMessage();
+    }
+
+    private object? _readerRequestedRow;
+
+    private void BeginReadSelectedMessage()
+    {
+        _readerRequestedRow = MessageList.SelectedItem;
         var version = Interlocked.Increment(ref _messageVersion);
         TrackReadingPaneItem();
+        ClearReader(); // Never leave the previous message visible while this selection loads or fails.
         _messageSelectionTask = LoadSelectedMessageAsync(version);
     }
 
@@ -1219,27 +1228,32 @@ public sealed partial class MainWindow : Window
             var cancellationToken = _onlineCancellation?.Token ?? CancellationToken.None;
             GraphMessageBody? body;
             var localBody = await ReadLocalBodyAsync(account, message.Id);                    // the copy holds the body: no network wait
-            var token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
-            if (localBody is not null) body = localBody.Html is not null ? new GraphMessageBody("html", localBody.Html) : new GraphMessageBody("text", localBody.Text);
-            else body = await new GraphInboxReader(_graphHttp, account.AccountId).GetMessageBodyAsync(token, message.Id, cancellationToken);
+            if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
+            string? token = null;
+            if (localBody is not null)
+            {
+                body = localBody.Html is not null ? new GraphMessageBody("html", localBody.Html) : new GraphMessageBody("text", localBody.Text);
+                ShowGraphMessageHeader(message);
+                SetMessageBody(localBody.Html, localBody.Html is null ? localBody.Text : "");
+                StatusText.Text = "Microsoft message opened from the local copy.";
+            }
+            else
+            {
+                token = await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
+                body = await new GraphInboxReader(_graphHttp, account.AccountId).GetMessageBodyAsync(token, message.Id, cancellationToken);
+            }
             IReadOnlyList<GraphAttachment> attachments = [];
             var attachmentError = false;
             // Graph's hasAttachments flag excludes inline-only pictures referenced with cid:.
             var needsAttachments = message.HasAttachments ||
                 body?.Content?.Contains("cid:", StringComparison.OrdinalIgnoreCase) == true;
             if (localBody is not null && needsAttachments)
-            {
-                // show the message now; the attachment chips follow when the server has answered
-                if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
-                ShowGraphMessageHeader(message);
                 AttachmentText.Text = "Loading attachments…";
-                SetMessageBody(localBody.Html, localBody.Html is null ? localBody.Text : "");
-                StatusText.Text = "Microsoft message opened from the local copy.";
-            }
             if (needsAttachments)
             {
                 try
                 {
+                    token ??= await GetMicrosoftSession(account).GetAccessTokenAsync(cancellationToken);
                     attachments = await new GraphAttachmentReader(_graphHttp, account.AccountId)
                         .ListAsync(token, message.Id, cancellationToken);
                 }
@@ -1247,7 +1261,7 @@ public sealed partial class MainWindow : Window
                 catch (Exception) { attachmentError = true; }
             }
             if (version != _messageVersion || cancellationToken.IsCancellationRequested) return;
-            var bodyShown = localBody is not null && needsAttachments; // already on screen; only the attachments are left to add
+            var bodyShown = localBody is not null; // already on screen; only the attachments are left to add
             if (!bodyShown) ShowGraphMessageHeader(message);
             _currentGraphAttachments = attachments;
             ExportAttachmentButton.IsEnabled = attachments.Any(CanSaveGraphAttachment);

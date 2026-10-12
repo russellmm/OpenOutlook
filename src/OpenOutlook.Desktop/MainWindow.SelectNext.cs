@@ -34,15 +34,22 @@ public partial class MainWindow
         SelectDisplayedRow(index);
     }
 
-    /// <summary>Highlights the row at this place in the list (the last one when the list is now shorter); does nothing when something else is already highlighted.</summary>
+    /// <summary>Highlights the row at this place in the list (the last one when the list is now shorter) and makes sure its reader load started.</summary>
     private void SelectDisplayedRow(int index)
     {
-        if (index < 0 || MessageList.SelectedItem is not null) return;
-        var rows = DisplayedRows();
-        if (rows.Count == 0) return;
-        var next = rows[Math.Min(index, rows.Count - 1)];
-        MessageList.SelectedItem = next;
-        MessageList.ScrollIntoView(next, null);
+        if (index < 0) return;
+        if (MessageList.SelectedItem is null)
+        {
+            var rows = DisplayedRows();
+            if (rows.Count == 0) return;
+            var next = rows[Math.Min(index, rows.Count - 1)];
+            MessageList.SelectedItem = next;
+            MessageList.ScrollIntoView(next, null);
+        }
+        // The grid can auto-select a replacement as a row is removed without delivering a
+        // selection event. In that case the highlight changes but the old reader remains.
+        if (MessageList.SelectedItem is { } selected && !ReferenceEquals(_readerRequestedRow, selected))
+            BeginReadSelectedMessage();
     }
 
     /// <summary>The display index of the first highlighted row among these (for a PST list that is rebuilt after the change).</summary>

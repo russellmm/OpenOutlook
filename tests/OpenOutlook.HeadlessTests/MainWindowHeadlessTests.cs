@@ -25,6 +25,44 @@ namespace OpenOutlook.HeadlessTests;
 public sealed class MainWindowHeadlessTests
 {
     [AvaloniaFact]
+    public void ReplacementHighlightClearsDeletedMessageFromReader()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        var webView = window.FindControl<Control>("MainHtmlWebView")!;
+        ((Panel)webView.Parent!).Children.Remove(webView);
+        window.Show();
+        try
+        {
+            var account = new OpenOutlook.Auth.ConnectedAccount(
+                OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "selection-test", "person@hotmail.test", "client", DateTimeOffset.UtcNow);
+            typeof(MainWindow).GetField("_activeMicrosoftAccount", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(window, account);
+            var deleted = new GraphMessageListRow(new OpenOutlook.Providers.Microsoft.GraphInboxMessage(
+                "deleted", "Deleted USPS message", "USPS", "person@hotmail.test", DateTimeOffset.UtcNow, 100, false, true, ""));
+            var replacement = new GraphMessageListRow(new OpenOutlook.Providers.Microsoft.GraphInboxMessage(
+                "next", "The next message", "Daniel", "person@hotmail.test", DateTimeOffset.UtcNow, 100, false, true, ""));
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            list.ItemsSource = new Avalonia.Collections.DataGridCollectionView(new[] { deleted, replacement });
+            list.SelectedItem = deleted;
+            var subject = window.FindControl<TextBlock>("SubjectText")!;
+            subject.Text = "Deleted USPS message";
+
+            // Model the grid replacing the highlight during a suppressed selection notification.
+            var updating = typeof(MainWindow).GetField("_updatingMessageList", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            updating.SetValue(window, true);
+            list.SelectedItem = replacement;
+            updating.SetValue(window, false);
+            Assert.Equal("Deleted USPS message", subject.Text);
+
+            typeof(MainWindow).GetMethod("SelectDisplayedRow", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(window, [0]);
+            Assert.Equal("Select a message", subject.Text);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public void ReaderActionsStayInsideNarrowReadingPane()
     {
         ResetRegistry();

@@ -1,6 +1,6 @@
 # OpenOutlook build status
 
-Status date: **2026-10-10**. OpenOutlook is a working personal mail client for **Windows 11** and **Linux** (Ubuntu 26.04, tested in WSL2/WSLg). A Hotmail/Outlook.com calendar is partly implemented on the same Microsoft sign-in. It is still not a release candidate: the first-release gates in `PRODUCT_REQUIREMENTS.md` are not all met (see the list at the end).
+Status date: **2026-10-11**. OpenOutlook is a working personal mail client for **Windows 11** and **Linux** (Ubuntu 26.04, tested in WSL2/WSLg). A Hotmail/Outlook.com calendar is partly implemented on the same Microsoft sign-in. It is still not a release candidate: the first-release gates in `PRODUCT_REQUIREMENTS.md` are not all met (see the list at the end).
 
 What exists, per platform and per feature, is in **`docs/FEATURES.md`**. How it is built is in `DESIGN_SPEC.md` (sections 1-10 are the original baseline, section 11 onwards the design as built). The detailed history of earlier sessions (through 2026-10-02, when the app was Linux-only, read-only for PSTs and used the managed PST reader) is kept in `docs/history/BUILD_STATUS-through-2026-10-02.md`; it describes a state that no longer exists in several places (see "Superseded" in `DESIGN_SPEC.md`).
 
@@ -16,6 +16,7 @@ What exists, per platform and per feature, is in **`docs/FEATURES.md`**. How it 
 - **Calendar:** personal Hotmail/Outlook.com account through Microsoft Graph, using the same account and token as mail. Home/View ribbon, two mini months, four views, and appointment/meeting creation are built; the owner verified a new appointment in Outlook on Windows (2026-10-09). Multiple calendars at once, overlay, event details, offline calendar data, and scheduling tools remain. See `docs/calendar.md`.
 - **Mailbox copies:** both account types keep a local PST copy; folders, message bodies and most actions work from it (`docs/offline-mirror-plan.md`, `docs/FEATURES.md` section 4).
 - **Reading pane:** the action row wraps in narrow panes, with alternate reader, trusted original HTML, browser, printable PDF, and zoom under **More**. Visible embedded images load automatically; **Show images** explicitly downloads external pictures for the selected message. Microsoft inline images can be read from the local mailbox copy or Graph attachment data. Hidden tracking images are omitted from loading.
+- **Selection after deletion (2026-10-11):** the reader clears when the highlighted message changes, including when a deleted row is replaced without a selection event. A Microsoft message body already in the local mailbox copy appears before any token or attachment request. A headless regression test covers the replacement highlight; the Windows executable was republished to `publish/win-x64/`.
 - **Junk Cleaner:** built for Microsoft accounts (manual with preview, automatic, import, log).
 
 ## Commands

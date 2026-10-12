@@ -24,6 +24,107 @@ namespace OpenOutlook.HeadlessTests;
 /// </summary>
 public sealed class MainWindowHeadlessTests
 {
+    [AvaloniaFact]
+    public async Task TwoMicrosoftDeleteKeysKeepSelectionHeaderAndBodyTogether()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        var webView = window.FindControl<Control>("MainHtmlWebView")!;
+        ((Panel)webView.Parent!).Children.Remove(webView); // Native WebView2 cannot attach to the headless window.
+        window.Show();
+        try
+        {
+            var account = new OpenOutlook.Auth.ConnectedAccount(
+                OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "headless-delete", "person@hotmail.test", "client", DateTimeOffset.UtcNow,
+                ["Mail.ReadWrite", "Mail.Send"]);
+            var handler = new FakeMicrosoftDelete();
+            typeof(MainWindow).GetField("_graphHttp", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(window, new HttpClient(handler));
+            typeof(MainWindow).GetField("_webViewAvailable", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(window, false);
+            typeof(MainWindow).GetField("_activeMicrosoftAccount", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(window, account);
+            var folderType = typeof(MainWindow).GetNestedType("MicrosoftFolderSelection", BindingFlags.NonPublic)!;
+            typeof(MainWindow).GetField("_activeMicrosoftFolder", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(window, Activator.CreateInstance(folderType, account, "inbox", "Inbox"));
+            var session = new MicrosoftMailSession(account, new OpenOutlook.Auth.UnavailableSecretStore(), new HttpClient());
+            typeof(MicrosoftMailSession).GetField("_accessToken", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(session, "headless-token");
+            typeof(MicrosoftMailSession).GetField("_expiresAt", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(session, DateTimeOffset.UtcNow.AddHours(1));
+            var sessions = (System.Collections.IDictionary)typeof(MainWindow)
+                .GetField("_microsoftSessions", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            sessions[account.AccountId] = session;
+
+            var ids = new[] { "first", "second", "third" };
+            var rows = new System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow>(ids.Select(id =>
+                new GraphMessageListRow(new OpenOutlook.Providers.Microsoft.GraphInboxMessage(
+                    id, "Subject " + id, "Sender " + id, "person@hotmail.test", DateTimeOffset.UtcNow,
+                    100, false, true, "Preview " + id))));
+            typeof(MainWindow).GetField("_graphRows", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(window, rows);
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            list.ItemsSource = new Avalonia.Collections.DataGridCollectionView(rows);
+            list.SelectedItem = rows[0];
+            var subject = window.FindControl<TextBlock>("SubjectText")!;
+            var body = typeof(MainWindow).GetField("_bodyHtml", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            async Task AssertReader(string id)
+            {
+                await WaitUntil(() => list.SelectedItem is GraphMessageListRow selected && selected.Message.Id == id &&
+                    subject.Text == "Subject " + id && (body.GetValue(window) as string)?.Contains("Body " + id, StringComparison.Ordinal) == true);
+                Assert.Equal(id, ((GraphMessageListRow)list.SelectedItem!).Message.Id);
+                Assert.Equal("Subject " + id, subject.Text);
+                Assert.Contains("Body " + id, (string)body.GetValue(window)!);
+            }
+            void PressDelete() => list.RaiseEvent(new KeyEventArgs
+            { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Delete, Source = list });
+
+            await AssertReader("first");
+            PressDelete();
+            await WaitUntil(() => list.SelectedItem is GraphMessageListRow selected && selected.Message.Id == "second");
+            Assert.Equal("second", ((GraphMessageListRow)list.SelectedItem!).Message.Id);
+            PressDelete();
+            await AssertReader("third");
+            await Task.Delay(450); // The second message's delayed body response arrives after the third is shown.
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Subject third", subject.Text);
+            Assert.Contains("Body third", (string)body.GetValue(window)!);
+            Shot(window, "rapid-microsoft-delete-third");
+            await WaitUntil(() => handler.Moved.Count == 2);
+            Assert.Equal(["first", "second"], handler.Moved.ToArray());
+            Assert.Single(rows);
+        }
+        finally { window.Close(); }
+    }
+
+    private sealed class FakeMicrosoftDelete : HttpMessageHandler
+    {
+        public readonly System.Collections.Concurrent.ConcurrentQueue<string> Moved = new();
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            string json;
+            var status = HttpStatusCode.OK;
+            if (path == "/v1.0/me") json = """{"id":"headless-delete"}""";
+            else if (path.StartsWith("/v1.0/me/messages/", StringComparison.Ordinal) && path.EndsWith("/move", StringComparison.Ordinal))
+            {
+                var id = path.Split('/')[4];
+                Moved.Enqueue(id);
+                status = HttpStatusCode.Created;
+                json = "{\"id\":\"moved-" + id + "\"}";
+            }
+            else if (path.StartsWith("/v1.0/me/messages/", StringComparison.Ordinal))
+            {
+                var id = path.Split('/')[4];
+                if (id == "second") await Task.Delay(300, cancellationToken);
+                json = "{\"id\":\"" + id + "\",\"body\":{\"contentType\":\"html\",\"content\":\"<html><body>Body " + id + "</body></html>\"}}";
+            }
+            else json = "{}"; // Folder-count refresh is cosmetic and may run after a move.
+            return new HttpResponseMessage(status)
+            { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"), RequestMessage = request };
+        }
+    }
+
     [Fact]
     public void ConsecutiveReaderNavigationsHaveDistinctPageMarkers()
     {

@@ -174,11 +174,16 @@ public sealed class MainWindowHeadlessTests
         finally { window.Close(); }
     }
 
-    [AvaloniaFact]
-    public void ReaderActionsStayInsideNarrowReadingPane()
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReaderActionsStayInsideNarrowReadingPane(bool nativeViewAlreadyDetached)
     {
         ResetRegistry();
         var window = new MainWindow { Width = 900, Height = 700 };
+        // Exercise Linux's missing-WebKitGTK setup even when this test runs on Windows.
+        if (nativeViewAlreadyDetached && window.FindControl<Control>("MainHtmlWebView") is { Parent: Panel parent } webView)
+            parent.Children.Remove(webView);
         ShowWithSnapshotReader(window);
         try
         {
@@ -204,9 +209,10 @@ public sealed class MainWindowHeadlessTests
     private static void ShowWithSnapshotReader(MainWindow window)
     {
         // Without WebKitGTK, MainWindow already removes this control on Linux. If it is still
-        // present, detach it before Show: native web views cannot attach to the headless host.
-        if (window.FindControl<Control>("MainHtmlWebView") is { } webView)
-            Assert.IsAssignableFrom<Panel>(webView.Parent).Children.Remove(webView);
+        // attached, detach it before Show: native web views cannot attach to the headless host.
+        // Its registered name may still resolve after Linux has detached it, with Parent == null.
+        if (window.FindControl<Control>("MainHtmlWebView") is { Parent: Panel parent } webView)
+            parent.Children.Remove(webView);
         typeof(MainWindow).GetField("_webViewAvailable", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(window, false);
         window.Show();

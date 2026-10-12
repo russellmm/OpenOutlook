@@ -24,6 +24,23 @@ namespace OpenOutlook.HeadlessTests;
 /// </summary>
 public sealed class MainWindowHeadlessTests
 {
+    [Fact]
+    public void ConsecutiveReaderNavigationsHaveDistinctPageMarkers()
+    {
+        const string html = "<!doctype html><html><head></head><body>Message body</body></html>";
+        var first = MainWindow.StampReaderNavigation(html, "first-page");
+        var second = MainWindow.StampReaderNavigation(html, "second-page");
+        Assert.Contains("<meta name=\"openoutlook-reader-id\" content=\"first-page\">", first);
+        Assert.Contains("<meta name=\"openoutlook-reader-id\" content=\"second-page\">", second);
+        Assert.DoesNotContain("first-page", second);
+        Assert.True(first.IndexOf("openoutlook-reader-id", StringComparison.Ordinal) < first.IndexOf("</head>", StringComparison.Ordinal));
+        var parser = new AngleSharp.Html.Parser.HtmlParser();
+        Assert.Equal("first-page", parser.ParseDocument(first).QuerySelector("meta[name='openoutlook-reader-id']")?.GetAttribute("content"));
+        Assert.Equal("second-page", parser.ParseDocument(second).QuerySelector("meta[name='openoutlook-reader-id']")?.GetAttribute("content"));
+        Assert.StartsWith("<!doctype html><meta name=\"openoutlook-reader-id\"", MainWindow.StampReaderNavigation(
+            "<!doctype html><html><body>No head</body></html>", "third-page"));
+    }
+
     [AvaloniaFact]
     public void ReplacementHighlightClearsDeletedMessageFromReader()
     {

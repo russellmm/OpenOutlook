@@ -2427,28 +2427,47 @@ public sealed partial class MainWindow : Window
         }
         var succeeded = false;
         var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var marker = Guid.NewGuid().ToString("N");
+        document = StampReaderNavigation(document, marker);
         try
         {
             _embeddedNavigation = completed;
-            _embeddedHtmlActive = true;
-            MainHtmlWebView.IsVisible = true;
+            // A rapid second Delete can start this navigation while the previous page is still painted.
+            // Keep that old page hidden until the new document proves it is the one we requested.
+            _embeddedHtmlActive = false;
+            MainHtmlWebView.IsVisible = false;
             MainHtmlWebView.NavigateToString(document);
             var timeout = Task.Delay(TimeSpan.FromSeconds(6), cancellationToken);
             if (await Task.WhenAny(completed.Task, timeout) != completed.Task ||
                 cancellationToken.IsCancellationRequested || version != _messageVersion)
             { AppLog.Note("reader", "interactive reader: the page did not finish loading within 6 seconds"); return false; }
-            var probeTask = MainHtmlWebView.InvokeScript(
-                "document.body && (document.body.innerText.trim().length > 0 || document.images.length > 0)");
-            if (await Task.WhenAny(probeTask, Task.Delay(TimeSpan.FromSeconds(2), cancellationToken)) != probeTask)
-            { AppLog.Note("reader", "interactive reader: the page did not answer the content probe"); return false; }
-            var probe = await probeTask;
-            if (!string.Equals(probe?.Trim('"'), "true", StringComparison.OrdinalIgnoreCase)) { AppLog.Note("reader", "interactive reader: the page has no text or images (probe said " + probe + ")"); return false; }
+            // NavigationCompleted can belong to the old page. Verify a unique marker in the DOM
+            // rather than accepting a successful probe of the previous message's body.
+            var probeScript = "document.querySelector('meta[name=\"openoutlook-reader-id\"]')?.content === '" + marker +
+                "' && document.body && (document.body.innerText.trim().length > 0 || document.images.length > 0)";
+            var probeUntil = DateTime.UtcNow.AddSeconds(2);
+            var ready = false;
+            while (!ready && DateTime.UtcNow < probeUntil)
+            {
+                if (cancellationToken.IsCancellationRequested || version != _messageVersion) return false;
+                var probeTask = MainHtmlWebView.InvokeScript(probeScript);
+                if (await Task.WhenAny(probeTask, Task.Delay(TimeSpan.FromSeconds(1), cancellationToken)) != probeTask)
+                { AppLog.Note("reader", "interactive reader: the page did not answer the content probe"); return false; }
+                try { ready = string.Equals((await probeTask)?.Trim('"'), "true", StringComparison.OrdinalIgnoreCase); }
+                catch (Exception) { /* Navigation may still be replacing the previous document. */ }
+                if (!ready) await Task.Delay(75, cancellationToken);
+            }
+            if (!ready) { AppLog.Note("reader", "interactive reader: the selected message did not reach the web view"); return false; }
+            if (cancellationToken.IsCancellationRequested || version != _messageVersion ||
+                !ReferenceEquals(_embeddedNavigation, completed)) return false;
+            _embeddedHtmlActive = true;
             ShowImageFailureStatus();
             ShowMessageBody();
             StatusText.Text = "Interactive HTML ready in the reading pane.";
             succeeded = true;
             return true;
         }
+        catch (OperationCanceledException) { return false; }
         catch (Exception ex)
         { AppLog.Error("reader", ex, "interactive reader failed"); return false; }
         finally
@@ -2465,6 +2484,17 @@ public sealed partial class MainWindow : Window
                 }
             }
         }
+    }
+
+    internal static string StampReaderNavigation(string document, string marker)
+    {
+        var tag = "<meta name=\"openoutlook-reader-id\" content=\"" + marker + "\">";
+        var headEnd = document.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+        if (headEnd >= 0) return document.Insert(headEnd, tag);
+        // Original HTML supplied by a sender might omit a head. Keep its doctype in front.
+        var doctypeEnd = document.StartsWith("<!doctype", StringComparison.OrdinalIgnoreCase)
+            ? document.IndexOf('>') + 1 : 0;
+        return document.Insert(doctypeEnd, tag);
     }
 
     private void ShowImageFailureStatus()

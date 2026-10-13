@@ -503,6 +503,51 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Message_right_click_menu_ends_with_Properties_and_the_sheet_shows_the_internet_headers()
+    {
+        var fixture = Fixture();
+        if (fixture is null) return;
+        var (window, copy) = await OpenFixtureAsync(fixture);
+        try
+        {
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            await WaitUntil(() => list.CollectionView?.Cast<object>().Any() == true);
+            var flyout = Assert.IsType<MenuFlyout>(list.ContextFlyout);
+            Assert.Equal("Properties", flyout.Items.OfType<MenuItem>().Last().Header?.ToString());
+            list.SelectedIndex = 0;
+            Dispatcher.UIThread.RunJobs();
+            var origin = typeof(MainWindow).GetMethod("CurrentTransferOrigin", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null)!;
+            var sheet = window.CreateMessagePropertiesSheet(origin);
+            try
+            {
+                sheet.Show();
+                var box = sheet.GetLogicalDescendants().OfType<TextBox>().First();
+                await WaitUntil(() => box.Text?.StartsWith("Loading", StringComparison.Ordinal) == false);
+                Assert.False(string.IsNullOrWhiteSpace(box.Text));
+                var shown = string.Join("|", sheet.GetLogicalDescendants().OfType<SelectableTextBlock>().Select(t => t.Text));
+                Assert.DoesNotContain("loading…", shown);
+                Dispatcher.UIThread.RunJobs();
+                sheet.CaptureRenderedFrame()?.Save(Path.Combine(OutDir(), "message-properties.png"));
+            }
+            finally { sheet.Close(); }
+        }
+        finally { window.Close(); Cleanup(copy); }
+    }
+
+    [Fact]
+    public void Header_helpers_cut_the_header_block_and_unfold_values()
+    {
+        var nl = ((char)13).ToString() + (char)10;
+        var raw = System.Text.Encoding.UTF8.GetBytes(string.Join(nl, "Received: from a", " by b", "Message-ID: <x@y>", "Subject: Hi", " there", "", "Body: not a header", ""));
+        var block = MainWindow.HeaderBlockOf(raw);
+        Assert.DoesNotContain("Body", block);
+        Assert.Equal("<x@y>", MainWindow.HeaderValue(block, "message-id"));
+        Assert.Equal("Hi there", MainWindow.HeaderValue(block, "Subject"));
+        Assert.Equal("from a by b", MainWindow.HeaderValue(block, "Received"));
+        Assert.Equal("", MainWindow.HeaderValue(block, "X-Missing"));
+    }
+
+    [AvaloniaFact]
     public async Task Space_bar_pages_the_message_then_moves_to_the_next_one()
     {
         var fixture = Fixture();

@@ -26,17 +26,44 @@ public partial class MainWindow
         catch (Exception) { return []; }
     }
 
+    /// <summary>The keyword list: <c>junk-keywords.json</c> next to the other settings, one comma-separated line, shared by all accounts.</summary>
+    private readonly JunkKeywordFile _junkKeywordFile = new(Path.GetDirectoryName(new OpenOutlook.Mirror.MirrorSettingsStore().Path)!);
+
     private JunkCleanerAccountSettings JunkSettingsFor(string accountId)
     {
-        try { return _junkStore.Load().Accounts.FirstOrDefault(a => a.AccountId == accountId) ?? new JunkCleanerAccountSettings { AccountId = accountId }; }
+        JunkCleanerAccountSettings own;
+        try { own = _junkStore.Load().Accounts.FirstOrDefault(a => a.AccountId == accountId) ?? new JunkCleanerAccountSettings { AccountId = accountId }; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        { return new JunkCleanerAccountSettings { AccountId = accountId }; }
+        { own = new JunkCleanerAccountSettings { AccountId = accountId }; }
+        try
+        {
+            if (!_junkKeywordFile.Exists && own.Keywords.Count > 0) _junkKeywordFile.Save(own.Keywords);     // first run after the file was introduced: the keywords kept in junk-cleaner.json move into it
+            return own with { Keywords = _junkKeywordFile.Load() };
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            StatusText.Text = "The Junk Cleaner keyword file could not be read (" + e.Message + "). Fix or delete " + _junkKeywordFile.Path + ".";
+            return own with { Keywords = [] };
+        }
+    }
+
+    /// <summary>The file path of the keyword list; the file is created (empty) when it does not exist so an editor can open it.</summary>
+    private string JunkKeywordsPath()
+    {
+        try { if (!_junkKeywordFile.Exists) _junkKeywordFile.Save([]); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        return _junkKeywordFile.Path;
     }
 
     private void SaveJunkSettings(JunkCleanerAccountSettings settings)
     {
         try
         {
+            // keywords live in junk-keywords.json (written only when they differ from it: an edit in the file made while the window was open must not be undone)
+            var current = _junkKeywordFile.Exists ? _junkKeywordFile.Load() : [];
+            var incoming = JunkCleanerSettingsStore.NormalizeKeywords(settings.Keywords);
+            if (!current.SequenceEqual(incoming, StringComparer.Ordinal) && (incoming.Count > 0 || !_junkKeywordFile.Exists)) _junkKeywordFile.Save(incoming);
+            settings = settings with { Keywords = [] };
             var all = _junkStore.Load().Accounts.Where(a => a.AccountId != settings.AccountId).Append(settings).ToArray();
             _junkStore.Save(new JunkCleanerSettings { Accounts = all });
         }

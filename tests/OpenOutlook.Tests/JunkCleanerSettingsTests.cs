@@ -145,6 +145,46 @@ public sealed class JunkCleanerSettingsTests
         Assert.DoesNotContain("account-1", File.ReadAllText(path));        // no account id or token travels with the file
     }
 
+    [Fact]
+    public void Keyword_file_is_one_comma_separated_line_and_reads_back()
+    {
+        using var fixture = new TemporaryDirectory();
+        var file = new JunkKeywordFile(fixture.Path);
+        Assert.False(file.Exists);
+        Assert.Empty(file.Load());                                           // missing file = empty list
+        file.Save(["casino", " aarp ", "Casino", "free spins", "a,b", ""]);
+        var text = File.ReadAllText(file.Path);
+        Assert.Contains("\"keywords\": \"casino, aarp, free spins, a b\"", text);
+        Assert.Equal(["casino", "aarp", "free spins", "a b"], file.Load());
+        Assert.True(file.Exists);
+        Assert.Empty(Directory.GetFiles(fixture.Path, ".junk-keywords-*"));      // no temporary file left behind
+    }
+
+    [Theory]
+    [InlineData("{ \"keywords\": \"x, y;z, w, x\" }", "x,y,z,w")]
+    [InlineData("{ \"keywords\": [\"x\", \"y, z\"] }", "x,y,z")]
+    [InlineData("[\"x\", \"y\"]", "x,y")]
+    [InlineData("{ \"keywords\": \"x,\", }", "x")]
+    public void Keyword_file_accepts_a_line_a_list_or_a_bare_array(string json, string expected)
+    {
+        using var fixture = new TemporaryDirectory();
+        Directory.CreateDirectory(fixture.Path);
+        var file = new JunkKeywordFile(fixture.Path);
+        File.WriteAllText(file.Path, json);
+        Assert.Equal(expected, string.Join(",", file.Load()));
+    }
+
+    [Fact]
+    public void A_damaged_keyword_file_throws_instead_of_being_overwritten()
+    {
+        using var fixture = new TemporaryDirectory();
+        Directory.CreateDirectory(fixture.Path);
+        var file = new JunkKeywordFile(fixture.Path);
+        File.WriteAllText(file.Path, "{ not json");
+        Assert.ThrowsAny<System.Text.Json.JsonException>(() => file.Load());
+        Assert.Equal("{ not json", File.ReadAllText(file.Path));
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(),

@@ -33,6 +33,7 @@ public interface IAccountSettingsHost
     void SaveMirrorSettings(string accountId, MirrorAccountSettings settings);
     IReadOnlyList<ConnectedAccount> JunkAccounts();
     JunkCleanerAccountSettings JunkSettings(string accountId);
+    string JunkKeywordsPath();
     void SaveJunkSettings(JunkCleanerAccountSettings settings);
     Task<string?> CleanJunkNowAsync(string accountId, Window owner);
     Task<string?> ImportJunkConfigAsync(string accountId, Window owner);

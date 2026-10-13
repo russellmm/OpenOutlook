@@ -1120,6 +1120,7 @@ public sealed class MainWindowHeadlessTests
         public Task<string?> CleanJunkNowAsync(string accountId, Window owner) { Log.Add("cleanjunk " + accountId); return Task.FromResult<string?>("Moved 2"); }
         public Task<string?> ImportJunkConfigAsync(string accountId, Window owner) { Log.Add("importjunk " + accountId); return Task.FromResult<string?>(null); }
         public Task<string?> ExportJunkConfigAsync(string accountId, Window owner) { Log.Add("exportjunk " + accountId); return Task.FromResult<string?>(null); }
+        public string JunkKeywordsPath() => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "junk-keywords.json");
         public IReadOnlyList<string> JunkLog() => ["2026-10-05 10:00  me@hotmail.test  moved \"win\" from promo@temu.example [From keyword]"];
     }
 
@@ -1137,18 +1138,17 @@ public sealed class MainWindowHeadlessTests
             Assert.Contains("Junk Cleaner", tabs.Items.OfType<TabItem>().Select(t => t.Header?.ToString()));
             var accounts = window.GetVisualDescendants().OfType<ComboBox>().First();
             Assert.Single(accounts.Items);                                                      // Microsoft accounts only
-            var keywords = window.GetVisualDescendants().OfType<TextBox>().First(t => !t.IsReadOnly && t.AcceptsReturn);
+            var keywords = window.GetVisualDescendants().OfType<TextBox>().First(t => t.IsReadOnly && t.AcceptsReturn);       // a preview of junk-keywords.json
             Assert.Equal("temu", keywords.Text);
             var enable = window.GetVisualDescendants().OfType<CheckBox>().First(c => c.Content?.ToString()!.StartsWith("Use the Junk") == true);
             enable.IsChecked = true;
             Dispatcher.UIThread.RunJobs();
             Assert.True(host.JunkSaved.Last().Enabled);
-            keywords.Text = "temu" + (char)10 + "shein";
             window.GetVisualDescendants().OfType<CheckBox>().First(c => c.Content?.ToString()!.Contains("no To") == true).IsChecked = true;
             Dispatcher.UIThread.RunJobs();
-            Assert.Equal(["temu", "shein"], host.JunkSaved.Last().Keywords);
+            Assert.Equal(["temu"], host.JunkSaved.Last().Keywords);                              // saving a rule keeps the keywords as they are in the file
             Assert.True(host.JunkSaved.Last().Rules.DeleteMissingTo);
-            var log = window.GetVisualDescendants().OfType<TextBox>().First(t => t.IsReadOnly);
+            var log = window.GetVisualDescendants().OfType<TextBox>().Last(t => t.IsReadOnly);
             Assert.Contains("temu.example", log.Text);
             window.GetVisualDescendants().OfType<Button>().First(b => Cap(b) == "Clean now…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();

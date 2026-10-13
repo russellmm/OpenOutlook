@@ -14,7 +14,8 @@ public sealed partial class AccountSettingsWindow
     private readonly CheckBox _junkEnabled = new() { Content = "Use the Junk Cleaner for this account" };
     private readonly CheckBox _junkAuto = new() { Content = "Clean automatically in the background" };
     private readonly NumericUpDown _junkInterval = new() { Minimum = 1, Maximum = 60, Increment = 1, Value = 15, Width = 110, FormatString = "0" };
-    private readonly TextBox _junkKeywords = new() { AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, MinHeight = 150, FontSize = 13 };
+    private readonly TextBox _junkKeywords = new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 90, MaxHeight = 220, FontSize = 13 };
+    private readonly TextBlock _junkKeywordInfo = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap };
     private readonly CheckBox _junkHigh = new() { Content = "Also remove junk marked High importance (any sender)" };
     private readonly CheckBox _junkNoTo = new() { Content = "Also remove junk with no To address" };
     private readonly CheckBox _junkFlagged = new() { Content = "Also remove junk that is flagged" };
@@ -27,7 +28,8 @@ public sealed partial class AccountSettingsWindow
         var gray = Themed.Brush("OlTextSecondary", Brushes.Gray);
         var clean = Tool("Clean now…", "OlIconRemoveJunk", "Look through the Junk folder now and remove matching messages");
         var import = Tool("Import keywords…", "OlIconOpenArchive", "Add the keywords and options from a file: one saved with Export, or the old OutlookJunkCleaner config.json");
-        var export = Tool("Export keywords…", "OlIconSave", "Save the keywords and rules of this account to a file (to carry them to another computer or keep a backup)");
+        var openFile = Tool("Open keyword file", "OlIconOpenArchive", "Open junk-keywords.json in your text editor: one comma-separated line of keywords, shared by all accounts. Click Reload afterwards");
+        var reload = Tool("Reload", "OlIconRefresh", "Read the keyword file again");
         clean.Click += async (_, _) =>
         {
             if (SelectedJunkAccount() is not { } a) { _note.Text = "Select an account first."; return; }
@@ -43,13 +45,12 @@ public sealed partial class AccountSettingsWindow
             if (note is not null) _note.Text = note;
             LoadJunk();
         };
-        export.Click += async (_, _) =>
+        openFile.Click += (_, _) =>
         {
-            if (SelectedJunkAccount() is not { } a) { _note.Text = "Select an account first."; return; }
-            SaveJunk();
-            var note = await _host.ExportJunkConfigAsync(a.AccountId, this);
-            if (note is not null) _note.Text = note;
+            var path = _host.JunkKeywordsPath();
+            _note.Text = AttachmentLauncher.Launch(path) ?? "Edit the line of keywords, save the file, then click Reload.";
         };
+        reload.Click += (_, _) => { LoadJunk(); _note.Text = "Keywords reloaded."; };
         _junkAccount.SelectionChanged += (_, _) => LoadJunk();
         _junkEnabled.IsCheckedChanged += (_, _) => SaveJunk();
         _junkAuto.IsCheckedChanged += (_, _) => SaveJunk();
@@ -58,7 +59,6 @@ public sealed partial class AccountSettingsWindow
         _junkBehalf.IsCheckedChanged += (_, _) => SaveJunk();
         _junkFlagged.IsCheckedChanged += (_, _) => SaveJunk();
         _junkInterval.ValueChanged += (_, _) => SaveJunk();
-        _junkKeywords.LostFocus += (_, _) => SaveJunk();
         TextBlock Label(string t) => new() { Text = t, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 10, 0, 4), Foreground = Themed.Brush("OlText", Brushes.Black) };
         var intro = new TextBlock
         {
@@ -78,9 +78,9 @@ public sealed partial class AccountSettingsWindow
                 intro,
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0), Children = { new TextBlock { Text = "Account", VerticalAlignment = VerticalAlignment.Center, FontSize = 13 }, _junkAccount } },
                 _junkEnabled, _junkAuto, interval,
-                Label("Remove junk whose From line contains (one keyword per line)"), _junkKeywords,
+                Label("Remove junk whose From line contains any of these keywords (kept in a file: one comma-separated line)"), _junkKeywordInfo, _junkKeywords,
                 Label("Other rules"), _junkHigh, _junkNoTo, _junkBehalf, _junkFlagged,
-                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 8, 0, 0), Children = { clean, import, export } },
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 8, 0, 0), Children = { clean, openFile, reload, import } },
                 Label("What was removed (newest first)"), _junkLog
             }
         };
@@ -116,7 +116,8 @@ public sealed partial class AccountSettingsWindow
             _junkEnabled.IsChecked = s?.Enabled == true;
             _junkAuto.IsChecked = s?.AutoClean == true;
             _junkInterval.Value = s?.IntervalMinutes ?? 15;
-            _junkKeywords.Text = s is null ? "" : string.Join(Environment.NewLine, s.Keywords);
+            _junkKeywords.Text = s is null ? "" : string.Join(", ", s.Keywords);
+            _junkKeywordInfo.Text = s is null ? "" : $"{s.Keywords.Count} keyword{(s.Keywords.Count == 1 ? "" : "s")} in {_host.JunkKeywordsPath()}";
             _junkHigh.IsChecked = s?.Rules.DeleteHighImportance == true;
             _junkNoTo.IsChecked = s?.Rules.DeleteMissingTo == true;
             _junkBehalf.IsChecked = s?.Rules.DeleteOnBehalfOf == true;
@@ -129,7 +130,7 @@ public sealed partial class AccountSettingsWindow
     private void SaveJunk()
     {
         if (_junkLoading || SelectedJunkAccount() is not { } a) return;
-        var keywords = (_junkKeywords.Text ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(k => k.Trim()).Where(k => k.Length > 0).ToList();
+        var keywords = _host.JunkSettings(a.AccountId).Keywords;                       // the keywords are edited in the file, not here
         _host.SaveJunkSettings(new JunkCleanerAccountSettings
         {
             AccountId = a.AccountId, Enabled = _junkEnabled.IsChecked == true, AutoClean = _junkAuto.IsChecked == true,

@@ -47,6 +47,17 @@ public partial class MainWindow
         }
     }
 
+    private string SaveJunkKeywords(IReadOnlyList<string> keywords)
+    {
+        try
+        {
+            _junkKeywordFile.Save(keywords);
+            return $"Saved {keywords.Count} keyword{(keywords.Count == 1 ? "" : "s")} to {_junkKeywordFile.Path}.";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { return "Could not save the keywords: " + e.Message; }
+    }
+
     /// <summary>The file path of the keyword list; the file is created (empty) when it does not exist so an editor can open it.</summary>
     private string JunkKeywordsPath()
     {

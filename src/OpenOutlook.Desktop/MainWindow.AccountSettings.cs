@@ -319,6 +319,7 @@ public partial class MainWindow
         public IReadOnlyList<ConnectedAccount> JunkAccounts() => w.JunkAccounts();
         public OpenOutlook.JunkCleaner.JunkCleanerAccountSettings JunkSettings(string accountId) => w.JunkSettingsFor(accountId);
         public string JunkKeywordsPath() => w.JunkKeywordsPath();
+        public string SaveJunkKeywords(IReadOnlyList<string> keywords) => w.SaveJunkKeywords(keywords);
         public void SaveJunkSettings(OpenOutlook.JunkCleaner.JunkCleanerAccountSettings settings) => w.SaveJunkSettings(settings);
         public Task<string?> CleanJunkNowAsync(string accountId, Window owner) =>
             w.JunkAccounts().FirstOrDefault(a => a.AccountId == accountId) is { } a ? w.CleanJunkNowAsync(a, owner) : Task.FromResult<string?>("That account is not connected.");

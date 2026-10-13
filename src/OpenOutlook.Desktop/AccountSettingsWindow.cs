@@ -34,6 +34,8 @@ public interface IAccountSettingsHost
     IReadOnlyList<ConnectedAccount> JunkAccounts();
     JunkCleanerAccountSettings JunkSettings(string accountId);
     string JunkKeywordsPath();
+    /// <summary>Writes the keyword list to junk-keywords.json (an empty list is allowed); returns a sentence for the status line.</summary>
+    string SaveJunkKeywords(IReadOnlyList<string> keywords);
     void SaveJunkSettings(JunkCleanerAccountSettings settings);
     Task<string?> CleanJunkNowAsync(string accountId, Window owner);
     Task<string?> ImportJunkConfigAsync(string accountId, Window owner);

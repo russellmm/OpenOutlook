@@ -65,6 +65,7 @@ public partial class MainWindow
             {
                 var existing = root.Items.OfType<TreeViewItem>().FirstOrDefault(i => i.Tag is GmailFolderSelection s && s.LabelId == label.Id);
                 _gmailUnread[account.AccountId + "|" + label.Id] = label.Unread ?? 0;
+                if (label.Total is { } labelTotal) _gmailTotal[account.AccountId + "|" + label.Id] = labelTotal;
                 if (existing is not null) { existing.Header = FolderHeader(((GmailFolderSelection)existing.Tag!).Name, label.Unread ?? 0); continue; }
                 if (label.IsSystem) continue;                       // CHAT, CATEGORY_*, ... are not folders
                 var item = new TreeViewItem { Header = FolderHeader(label.Name, label.Unread ?? 0), Tag = new GmailFolderSelection(account, label.Id, label.Name) };

@@ -474,6 +474,35 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Folder_right_click_menu_offers_Properties_on_folders_and_data_files()
+    {
+        var fixture = Fixture();
+        if (fixture is null) return;
+        var (window, copy) = await OpenFixtureAsync(fixture);
+        try
+        {
+            var tree = window.FindControl<TreeView>("FolderTree")!;
+            var rows = tree.GetLogicalDescendants().OfType<TreeViewItem>().Where(i => i.Tag?.GetType().Name == "FolderSelection" || i.Tag is string).ToList();
+            Assert.Contains(rows, r => r.Tag is string);                                        // the data file row
+            Assert.Contains(rows, r => r.Tag is not string);                                    // a folder row
+            foreach (var row in rows)
+            {
+                var flyout = Assert.IsType<MenuFlyout>(row.ContextFlyout);
+                var headers = flyout.Items.OfType<MenuItem>().Select(i => i.Header?.ToString()).ToList();
+                Assert.Equal("Properties", headers.Last());
+            }
+            var folderSheet = window.CreateFolderPropertiesSheet(rows.First(r => r.Tag is not string))!;
+            var folderText = string.Join("|", folderSheet.GetLogicalDescendants().OfType<SelectableTextBlock>().Select(x => x.Text));
+            Assert.Contains("Folder in an Outlook data file", folderText);
+            Assert.Contains("Subfolders", string.Join("|", folderSheet.GetLogicalDescendants().OfType<TextBlock>().Select(x => x.Text)));
+            var fileSheet = window.CreateFolderPropertiesSheet(rows.First(r => r.Tag is string))!;
+            var fileText = string.Join("|", fileSheet.GetLogicalDescendants().OfType<SelectableTextBlock>().Select(x => x.Text));
+            Assert.Contains(Path.GetFileName(copy), fileText);
+        }
+        finally { window.Close(); Cleanup(copy); }
+    }
+
+    [AvaloniaFact]
     public async Task Space_bar_pages_the_message_then_moves_to_the_next_one()
     {
         var fixture = Fixture();

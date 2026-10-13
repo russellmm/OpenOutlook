@@ -827,6 +827,7 @@ public sealed partial class MainWindow : Window
     private TreeViewItem BuildMicrosoftFolderNode(ConnectedAccount account, GraphMailboxFolder folder)
     {
         _msUnread[account.AccountId + "|" + folder.Id] = folder.UnreadCount;
+        _msTotal[account.AccountId + "|" + folder.Id] = folder.TotalCount;
         var item = new TreeViewItem
         {
             Header = FolderHeader(folder.DisplayName, folder.UnreadCount),

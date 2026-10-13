@@ -175,6 +175,8 @@ public partial class MainWindow
             items.Add(new Separator());
             items.Add(purgeMs);
         }
+        items.Add(new Separator());
+        items.Add(FolderPropertiesMenuItem(item));
         var menu = new MenuFlyout();
         foreach (var entry in items) menu.Items.Add(entry);
         menu.Opening += (_, _) =>

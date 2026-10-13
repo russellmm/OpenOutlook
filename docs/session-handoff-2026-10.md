@@ -1,13 +1,16 @@
-# Session handoff (updated 2026-10-06, evening)
+# Session handoff (updated 2026-10-13)
 
-> Documentation map (kept in step with the code as of 2026-10-06): `README.md` (overview, build), `docs/FEATURES.md` (every feature per platform), `BUILD_STATUS.md` (state, tests, open items), `PRODUCT_REQUIREMENTS.md` (requirements + conformance table), `DESIGN_SPEC.md` (baseline design; sections 11-18 = design as built). This file is the chronological working log; older material is in `docs/history/`.
+> Documentation map (kept in step with the code as of 2026-10-12): `README.md` (overview, build), `docs/FEATURES.md` (every feature per platform), `BUILD_STATUS.md` (state, tests, open items), `PRODUCT_REQUIREMENTS.md` (requirements + conformance table), `DESIGN_SPEC.md` (baseline design; sections 11-18 = design as built). This file is the chronological working log; older material is in `docs/history/`.
 
 Read this first when resuming. Longer background: `native-engine-status.md` (what exists and how it is validated), `OpenOutlook_Design_Document.md` (every PST rule found, rules 1-35), `accounts-setup.md` (Hotmail / Gmail), `OpenOutlook_Avalonia_Integration_Plan.md` (phases, backlog), `Ctools.MD` / `PythonTools.MD` (tool references).
 
 ## State
 - Repo `github.com/russellmm/OpenOutlook`, work branch `native-engine-phase0`, merged to `main` after every step (both point at the same commit). The app (Avalonia 11.2.3, .NET 8) reads and writes PST files through the vendored C library `native/openpst`, and has Hotmail (Microsoft Graph) and Gmail accounts.
-- Everything below is done and pushed (latest commit: `git log -1`; the last code change is `387c608`, docs `cfdc5e8`). Three build outputs exist: the published Windows build `F:\Claude\OpenOutlook_win\OpenOutlook.Desktop.exe` (+ `openpst.dll`, `chromium\`, `openoutlook-oauth.json`), republished 2026-10-06 18:17 by cross-publishing from Linux and **not yet started on Windows**; the Linux `.deb` 0.1.23 (built in WSL on 2026-10-06 evening, contains the display-to and heap-bitmap engine fixes and the junk keyword export/import; the bare-metal desktop still has 0.1.22 installed) and the portable tar.gz in `publish/` (git-ignored).
-- Two machines share this repo through the NTFS drive (`F:` on Windows, `/mnt/SOLIDIGM` on the Linux box). The Linux side is documented in `docs/handoff-linux-bare-metal-2026-10-06.md`.
+- Everything below is done and pushed (latest commit: `git log -1`; last code change `b56214a`, docs `42757d6`, 2026-10-12; `main` and `native-engine-phase0` are the same commit). Build outputs: Windows `F:\Claude\OpenOutlook_win\OpenOutlook.Desktop.exe` (+ `openpst.dll`, `chromium\`, `openoutlook-oauth.json`), built natively on this PC from `b56214a` and used by the owner; Linux `publish/openoutlook_0.1.24_amd64.deb` and `publish/OpenOutlook-linux-x64.tar.gz` (git-ignored), built in WSL from the same commit, **not yet installed on the bare-metal Ubuntu box** (it has 0.1.22).
+- **Three working copies / machines.** (1) This Windows PC: `F:\Claude\OpenOutlook` is the git repo (push with the credential helper, see below). (2) The bare-metal Linux box mounts the same NTFS drive (`/mnt/SOLIDIGM`; see `docs/handoff-linux-bare-metal-2026-10-06.md`). (3) Another Windows PC (new machine, other model; `docs/handoff-2026-10-08.md`) that works from a non-git copy plus a clone and pushes to `main` over GitHub. Always `git fetch` and read `git log HEAD..origin/main` before starting; the 2026-10-12 pull brought 12 commits (Data Files > New, copy/move between stores, Hotmail calendar, reading-pane changes) and merged as a fast-forward.
+- Where things stand per feature is in `docs/FEATURES.md`; the sections below are chronological. Latest sessions: SCANPST minor / display-to and message-index heap fixes (rules 27, 28), junk keywords (file `junk-keywords.json`, edit box, import), Folder Properties and Message Properties (raw headers), Linux 0.1.24 packaging.
+- Test baseline on Windows: unit 564-570 with the 5 known `OfflineMessageCacheTests` failures (unix permissions) and, now and then, two flaky Graph reader tests (`GraphJunkMailReaderTests.Unsafe_pagination...`, `GraphInboxReaderTests.DownloadsTheRawMimeMessageForTheVerifiedAccountOnly`; pass alone); headless 37 pass (`OPENOUTLOOK_TEST_PST=F:/Claude/OpenOutlook/rmarrash_2.pst`, the owner's small archive; tests work on a copy). WSL: unit 570/570.
+- Standing rules: never modify the owner's real PSTs (work on copies in `.local/`), never print or commit `.secrets/`, `gh_token`, `openoutlook-oauth.json`; publish the Windows build only when a change affects Windows and never taskkill the running app (check `tasklist` first); commit messages end with the `Co-Authored-By: Claude Sonnet 5.5` line; push `native-engine-phase0` to both `native-engine-phase0` and `main` (`GCM_INTERACTIVE=never GIT_TERMINAL_PROMPT=0 git push origin native-engine-phase0:main`).
 
 ## Build, test, publish, push
 ```
@@ -37,6 +40,14 @@ cp src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll /f/Claude/OpenOut
 - Windows git: SCANPST scans may leave `.log` files next to scanned PSTs; the test PSTs (`rmarrash_*.pst`) are the owner's data: only ever work on copies.
 
 ## Open items / ideas
+A. **Bcc recipients give a real SCANPST ERRORS** in files our importer writes (deferred until after the first production release; repro and suspects in `docs/handoff-linux-bare-metal-2026-10-06.md` section 6 and `native-engine-status.md`).
+B. **Run the new Linux package 0.1.24 on the bare-metal box** and walk the hands-on checklist (section 3 of the Linux handoff); copy `junk-keywords.json` to `~/.config/OpenOutlook/`. Folder/Message Properties, the calendar and copy/move have only been exercised on Windows.
+C. **Gmail live check** of copy/move and a Google client id + secret on the other PC (`docs/handoff-2026-10-08.md`); calendar meeting invitations and Linux calendar are unverified.
+D. Ribbon Zoom icon is cropped (32px template in a 28px box: wrap in a Viewbox); the flaky Graph reader tests (shared static state in `GraphAccountVerification`); no checker/fixer rule for old PSTs with an independent display-to copy (recreate the mailbox copy).
+E. Possible next features: Properties on the message list header and attachments, keyword list per account (it is shared now), saving the list sort in `view-layout.json`.
+F. `rmarrash_2.zip` was removed from the repo (still in history); `tools/python/scan_results.txt` changes on every scan and is usually left uncommitted.
+
+Older items:
 0. **Future feature: offline sending (Outbox)** for the mailbox copies; see section 9e of `offline-mirror-plan.md`. Not needed now.
 1. Gmail: editing a saved draft; drag onto Gmail labels works.
 2. Hotmail: unread counts in the Move picker only come from the folder list loaded at startup.

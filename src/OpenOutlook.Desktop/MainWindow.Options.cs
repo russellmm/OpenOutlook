@@ -23,7 +23,8 @@ public partial class MainWindow
         ["calendar"] = "Calendar", ["groups"] = "Groups", ["people"] = "People", ["tasks"] = "Tasks",
         ["search"] = "Search", ["language"] = "Language", ["accessibility"] = "Accessibility",
         ["advanced"] = "Advanced", ["ribbon"] = "Customize Ribbon", ["qat"] = "Quick Access Toolbar",
-        ["addins"] = "Add-ins", ["trust"] = "Trust Center"
+        ["addins"] = "Add-ins"
+        // "trust" (Trust Center) has its own page now: PageTrustCenter, applied and collected below.
     };
 
     // ---- opening and closing ----
@@ -38,6 +39,7 @@ public partial class MainWindow
     {
         _options = _optionsStore.Load();
         ApplyMailOptions(_options);
+        ApplyTrustCenterOptions(_options);
         OptionsHost.IsVisible = true;
         OptionsFeedback.Text = "";
         SelectOptionsCategory("general");
@@ -55,6 +57,7 @@ public partial class MainWindow
     private void OptionsOkClicked(object? sender, RoutedEventArgs e)
     {
         _options = CollectMailOptions(_options);
+        _options = CollectTrustCenterOptions(_options);
         try
         {
             _optionsStore.Save(_options);
@@ -78,12 +81,27 @@ public partial class MainWindow
     {
         PageGeneral.IsVisible = key == "general";
         PageMail.IsVisible = key == "mail";
+        PageTrustCenter.IsVisible = key == "trust";
         PageOptionPlaceholder.IsVisible = OptionCategoryNames.TryGetValue(key, out var name);
         if (name is not null) OptionsPlaceholderHeading.Text = name;
     }
 
     private void OptionsPlaceholderClicked(object? sender, RoutedEventArgs e) =>
         OptionsFeedback.Text = $"{(sender as Button)?.Tag} is planned for a future version of OpenOutlook.";
+
+    // ---- Trust Center (Automatic Download) ----
+
+    private void ApplyTrustCenterOptions(OptionsSettings s)
+    {
+        TcDontDownloadPictures.IsChecked = s.TrustDontDownloadPictures;
+        TcDontDownloadSignedPictures.IsChecked = s.TrustDontDownloadSignedPictures;
+    }
+
+    private OptionsSettings CollectTrustCenterOptions(OptionsSettings s) => s with
+    {
+        TrustDontDownloadPictures = TcDontDownloadPictures.IsChecked == true,
+        TrustDontDownloadSignedPictures = TcDontDownloadSignedPictures.IsChecked == true
+    };
 
     // ---- Editor Options dialog ----
 

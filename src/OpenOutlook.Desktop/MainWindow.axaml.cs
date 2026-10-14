@@ -98,6 +98,7 @@ public sealed partial class MainWindow : Window
         LoadOAuthClientConfigurationAtStartup();
         _appearance = _appearanceStore.Load();
         _shortcuts = _shortcutStore.Load();
+        _options = _optionsStore.Load();   // Trust Center and other options apply from startup, not only after the dialog is opened
         ApplyAppearance();
         var layout = _viewLayoutStore.Load();
         ApplyViewLayout(layout);
@@ -1919,7 +1920,10 @@ public sealed partial class MainWindow : Window
     private void SetMessageBody(string? html, string? plain)
     {
         ClearInlineImages();
-        _externalImagesAllowed = false;
+        // Trust Center > Automatic Download: when "Don't download pictures automatically…" is unchecked
+        // (Outlook's default), visible external pictures join the first image load instead of waiting
+        // for Show images. The bounded loader and its caps are the same either way.
+        _externalImagesAllowed = !_options.TrustDontDownloadPictures;
         _bodyHtml = string.IsNullOrWhiteSpace(html) ? null : html;
         _showOriginalHtml = false;
         // Connected mail starts on the snapshot reader. The interactive web view renders real HTML,
@@ -1972,7 +1976,9 @@ public sealed partial class MainWindow : Window
             HtmlStatusText.Text = "Laying out HTML message…";
             HtmlStatusText.IsVisible = true;
             _ = RenderBrowserHtmlAsync(_messageVersion);
-            if (_htmlImageSources.Count > 0 && (_activeGraphMessage is null || _currentGraphAttachments is not null))
+            // Automatic Download (Trust Center): when external pictures are allowed, start loading at
+            // once -- they do not depend on the attachment metadata that cid: images wait for.
+            if (_htmlImageSources.Count > 0 && (_externalImagesAllowed || _activeGraphMessage is null || _currentGraphAttachments is not null))
                 _imageLoadTask = LoadImagesAsync(_messageVersion);
         }
     }
@@ -2311,7 +2317,7 @@ public sealed partial class MainWindow : Window
     {
         _failedMessageImages = 0;
         _hiddenExternalImages = 0;
-        _externalImagesAllowed = false;
+        _externalImagesAllowed = !_options.TrustDontDownloadPictures;
         _showImagesLoading = false;
         _embeddedHtmlActive = false;
         _embeddedNavigation?.TrySetCanceled();

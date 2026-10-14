@@ -1189,6 +1189,56 @@
                   </Grid>
                 </StackPanel>
 
+                <!-- Trust Center: the Automatic Download page is live and controls which pictures the
+                     reading pane downloads by itself; the other Trust Center pages are placeholders -->
+                <StackPanel Name="PageTrustCenter" IsVisible="False" Margin="36,20,48,24">
+                  <TextBlock Classes="olBsHeading" Text="Trust Center" />
+                  <Border Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4"
+                          Width="940" HorizontalAlignment="Left" Margin="0,14,0,0">
+                    <Grid ColumnDefinitions="220,*">
+                      <Border Background="{DynamicResource OlBackstagePane}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,0,1,0" Padding="8,10">
+                        <ListBox Name="TcSections" Classes="olList" SelectionMode="Single">
+                          <ListBoxItem Content="Trusted Publishers" IsEnabled="False" ToolTip.Tip="Planned Feature" />
+                          <ListBoxItem Content="Privacy Options" IsEnabled="False" ToolTip.Tip="Planned Feature" />
+                          <ListBoxItem Content="Form-based Sign-in" IsEnabled="False" ToolTip.Tip="Planned Feature" />
+                          <ListBoxItem Content="Email Security" IsEnabled="False" ToolTip.Tip="Planned Feature" />
+                          <ListBoxItem Content="Attachment Handling" IsEnabled="False" ToolTip.Tip="Planned Feature" />
+                          <ListBoxItem Content="Automatic Download" IsSelected="True" />
+                          <ListBoxItem Content="Macro Settings" IsEnabled="False" ToolTip.Tip="Planned Feature" />
+                          <ListBoxItem Content="Programmatic Access" IsEnabled="False" ToolTip.Tip="Planned Feature" />
+                        </ListBox>
+                      </Border>
+                      <!-- The outer Options dialog scrolls; a plain fixed-width panel avoids nested scrolling -->
+                      <StackPanel Grid.Column="1" Margin="26,18,26,18" Spacing="10" Width="640" HorizontalAlignment="Left">
+                          <TextBlock FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource OlText}" Text="Pictures" />
+                          <Border Height="1" Background="{DynamicResource OlHairline}" Margin="0,0,0,4" />
+                          <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource OlText}"
+                                     Text="You can control whether Outlook automatically downloads and displays pictures when you open an HTML email message or meeting." />
+                          <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource OlText}"
+                                     Text="Blocking pictures in email messages and meetings can help protect your privacy. Pictures in HTML can require Outlook to download the pictures from a server. Communicating to an external server in this way can verify to the sender that your email address is valid, possibly making you the target of more junk mailings." />
+                          <CheckBox Name="TcDontDownloadPictures" Margin="0,6,0,0"
+                                    Content="Don't download pictures automatically in standard HTML email messages, meetings or RSS items"
+                                    ToolTip.Tip="Unchecked (default): visible external pictures download automatically through the bounded image loader. Checked: they stay hidden until Show images." />
+                          <StackPanel Margin="52,0,0,0" Spacing="6">
+                            <CheckBox IsChecked="True" IsEnabled="False" ToolTip.Tip="Planned Feature"
+                                      Content="Permit downloads in email messages and meetings from senders and to recipients defined in the Safe Senders and Safe Recipients Lists used by the Junk Email filter" />
+                            <CheckBox IsChecked="True" IsEnabled="False" ToolTip.Tip="Planned Feature"
+                                      Content="Permit downloads from Web sites in this security zone: Trusted Zone" />
+                            <CheckBox IsChecked="True" IsEnabled="False" ToolTip.Tip="Planned Feature"
+                                      Content="Permit downloads in RSS items" />
+                            <CheckBox IsChecked="True" IsEnabled="False" ToolTip.Tip="Planned Feature"
+                                      Content="Permit downloads in SharePoint Discussion Boards" />
+                            <CheckBox IsChecked="True" IsEnabled="False" ToolTip.Tip="Planned Feature"
+                                      Content="Warn me before downloading content when editing, forwarding, or replying to an email message or meeting" />
+                          </StackPanel>
+                          <CheckBox Name="TcDontDownloadSignedPictures" Margin="0,10,0,0"
+                                    Content="Don't download pictures in encrypted or signed HTML email messages"
+                                    ToolTip.Tip="Unchecked by default: pictures download in signed or encrypted mail too. Detection of signed and encrypted messages is a Planned Feature; the choice is stored either way." />
+                        </StackPanel>
+                    </Grid>
+                  </Border>
+                </StackPanel>
+
                 <!-- Everything else is a named placeholder until its category is built -->
                 <StackPanel Name="PageOptionPlaceholder" IsVisible="False" Margin="36,20,48,24">
                   <TextBlock Name="OptionsPlaceholderHeading" Classes="olBsHeading" Text="Calendar" />

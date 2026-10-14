@@ -89,6 +89,16 @@ public sealed record OptionsSettings
     public bool MarkReadWhenDeleted { get; init; }
     public bool HighlightFlaggedItems { get; init; } = true;
 
+    // Trust Center > Automatic Download. Both checkboxes start unchecked, exactly like Outlook's
+    // dialog: pictures are downloaded automatically by default, and the owner checks a box to block
+    // them. The five sub-options of the first checkbox (Safe Senders, Trusted Zone, RSS, SharePoint,
+    // warn-before-download) are displayed checked and disabled until those features exist.
+    /// <summary>"Don't download pictures automatically in standard HTML email messages, meetings or RSS items".
+    /// Unchecked: visible external pictures download automatically in the reading pane through the bounded image loader; Show images stays available for retries.</summary>
+    public bool TrustDontDownloadPictures { get; init; }
+    /// <summary>"Don't download pictures in encrypted or signed HTML email messages". Unchecked by default; enforcement follows signed/encrypted message detection.</summary>
+    public bool TrustDontDownloadSignedPictures { get; init; }
+
     // Reading Pane dialog
     public bool ReadPaneMarkOnView { get; init; } = true;
     public int ReadPaneWaitSeconds { get; init; } = 2;

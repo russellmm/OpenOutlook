@@ -211,6 +211,27 @@
     <Style Selector="Button.olRailActive /template/ Border#bar">
       <Setter Property="Background" Value="{DynamicResource OlAccent}" />
     </Style>
+    <!-- Rail icon fills and the active state. New Outlook paints the active rail icon in the accent
+         colour (the reference screenshot shows the blue envelope); filled parts are styled so templates
+         stay brush-free, punched holes keep the chrome colour, and the To Do check keeps its own blue
+         because it has no classes. -->
+    <Style Selector="ContentControl Path.olIconFill">
+      <Setter Property="Fill" Value="{DynamicResource OlIcon}" />
+    </Style>
+    <Style Selector="ContentControl Path.olIconHole">
+      <Setter Property="Stroke" Value="{DynamicResource OlChrome}" />
+      <Setter Property="Fill" Value="{DynamicResource OlChrome}" />
+    </Style>
+    <Style Selector="Button.olRailActive ContentControl Path">
+      <Setter Property="Stroke" Value="{DynamicResource OlAccent}" />
+    </Style>
+    <Style Selector="Button.olRailActive ContentControl Path.olIconFill">
+      <Setter Property="Fill" Value="{DynamicResource OlAccent}" />
+    </Style>
+    <Style Selector="Button.olRailActive ContentControl Path.olIconHole">
+      <Setter Property="Stroke" Value="{DynamicResource OlChrome}" />
+      <Setter Property="Fill" Value="{DynamicResource OlChrome}" />
+    </Style>
 
     <!-- Message zoom slider in the 26px status bar: the theme's 32px-tall template would overflow and be clipped -->
     <Style Selector="Slider.statusZoom">

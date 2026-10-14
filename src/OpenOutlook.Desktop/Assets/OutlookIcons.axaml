@@ -325,7 +325,124 @@
     </Canvas>
   </ControlTemplate>
 
+  <!-- Appointment window ribbon -->
+  <ControlTemplate x:Key="OlIconRecurrence">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.9" Data="M25,16 A9,9 0 1 1 16,7" />
+      <Path Fill="{DynamicResource OlIcon}" Data="M16,2 L16,12 L22,7 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.9" Data="M7,16 A9,9 0 1 1 16,25" />
+      <Path Fill="{DynamicResource OlIcon}" Data="M16,20 L16,30 L10,25 Z" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconInvite">
+    <Canvas Width="32" Height="32">
+      <Ellipse Canvas.Left="4" Canvas.Top="5" Width="10" Height="10" Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Data="M2,27 C2,21 6,18 9,18 C12,18 16,21 16,27" />
+      <Path Stroke="#217346" StrokeThickness="2" Data="M23,15 L23,27 M17,21 L29,21" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconLock">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Data="M10,14 L10,10 A6,6 0 0 1 22,10 L22,14" />
+      <Rectangle Canvas.Left="8" Canvas.Top="14" Width="16" Height="13" Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="{DynamicResource OlCard}" />
+      <Ellipse Canvas.Left="14.6" Canvas.Top="18.4" Width="2.8" Height="2.8" Fill="{DynamicResource OlIcon}" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconImportanceHigh">
+    <Canvas Width="32" Height="32">
+      <Path Fill="#C00000" Data="M14,4 L18,4 L17.4,20 L14.6,20 Z" />
+      <Ellipse Canvas.Left="14.2" Canvas.Top="23" Width="3.6" Height="3.6" Fill="#C00000" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconImportanceLow">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="#0F6CBD" StrokeThickness="2.4" Data="M16,4 L16,22" />
+      <Path Fill="#0F6CBD" Data="M9,20 L23,20 L16,28 Z" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconOneNote">
+    <Canvas Width="32" Height="32">
+      <Path Fill="#7719AA" Data="M7,4 L22,4 L26,8 L26,28 L7,28 Z" />
+      <TextBlock Canvas.Left="10" Canvas.Top="8" Text="N" FontSize="16" FontWeight="Bold" Foreground="White" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconTemplate">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Fill="{DynamicResource OlCard}" Data="M7,3 L20,3 L25,8 L25,29 L7,29 Z" />
+      <Path Fill="#0F6CBD" Data="M17,10 L12,19 L16,19 L14,26 L21,16 L17,16 Z" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconGlobe">
+    <Canvas Width="32" Height="32">
+      <Ellipse Canvas.Left="5" Canvas.Top="5" Width="22" Height="22" Stroke="#0F6CBD" StrokeThickness="1.6" />
+      <Path Stroke="#0F6CBD" StrokeThickness="1.3" Data="M6,13 L26,13 M6,19 L26,19 M16,5 C10,10 10,22 16,27 M16,5 C22,10 22,22 16,27" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconBulb">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="#0F6CBD" StrokeThickness="1.7" Data="M11,13 A5,5 0 1 1 21,13 C21,16 19,17 19,20 L13,20 C13,17 11,16 11,13 Z" />
+      <Path Stroke="#0F6CBD" StrokeThickness="1.6" Data="M13.5,23 L18.5,23 M14.5,26 L17.5,26" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconSaveClose">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Fill="{DynamicResource OlCard}" Data="M5,5 L22,5 L27,10 L27,27 L5,27 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.4" Data="M10,5 L10,12 L20,12 L20,5 M9,27 L9,18 L23,18 L23,27" />
+      <Path Stroke="#0F6CBD" StrokeThickness="1.8" Data="M14,22 L24,12" />
+    </Canvas>
+  </ControlTemplate>
+
   <!-- Chrome: rail, quick access, window -->
+  <!--
+    Rail icons drawn to match the Microsoft Outlook (new Outlook) navigation rail: a rounded envelope,
+    a filled calendar whose divider and day cells are punched in the chrome colour, a two-person outline
+    and the solid blue To Do checkmark. Filled parts carry the olIconFill class (styled to OlIcon, or the
+    accent when the rail button is active — see OutlookStyles.axaml); punched holes carry olIconHole so
+    they keep the chrome colour in the active state too.
+  -->
+  <ControlTemplate x:Key="OlIconRailMail">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.7"
+            Data="M8.2,7.9 L23.8,7.9 C25.1,7.9 26.1,8.9 26.1,10.2 L26.1,21.8 C26.1,23.1 25.1,24.1 23.8,24.1 L8.2,24.1 C6.9,24.1 5.9,23.1 5.9,21.8 L5.9,10.2 C5.9,8.9 6.9,7.9 8.2,7.9 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.7" Data="M6.7,10.3 L16,17.2 L25.3,10.3" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconRailCalendar">
+    <Canvas Width="32" Height="32">
+      <Path Classes="olIconFill"
+            Data="M8.5,7 L23.5,7 C25.2,7 26.5,8.3 26.5,10 L26.5,23 C26.5,24.7 25.2,26 23.5,26 L8.5,26 C6.8,26 5.5,24.7 5.5,23 L5.5,10 C5.5,8.3 6.8,7 8.5,7 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="2.4" StrokeLineCap="Round" Data="M11.2,3.8 L11.2,7.4 M20.8,3.8 L20.8,7.4" />
+      <Path Classes="olIconHole" StrokeThickness="1.5" Data="M6.6,12.7 L25.4,12.7" />
+      <Path Classes="olIconHole" StrokeThickness="0"
+            Data="M9,16.1 H11.4 V18.5 H9 Z M13.7,16.1 H16.1 V18.5 H13.7 Z M18.4,16.1 H20.8 V18.5 H18.4 Z M23.1,16.1 H25.5 V18.5 H23.1 Z M9,20.7 H11.4 V23.1 H9 Z M13.7,20.7 H16.1 V23.1 H13.7 Z M18.4,20.7 H20.8 V23.1 H18.4 Z M23.1,20.7 H25.5 V23.1 H23.1 Z" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconRailPeople">
+    <Canvas Width="32" Height="32">
+      <Ellipse Canvas.Left="7.5" Canvas.Top="5.5" Width="9.6" Height="9.6" Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Data="M3,26.5 C3,21 6.8,18 12.3,18 C17.8,18 21.6,21 21.6,26.5" />
+      <Ellipse Canvas.Left="18.6" Canvas.Top="7.4" Width="7.8" Height="7.8" Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Data="M21.4,17.6 C26.4,18 30,20.9 30,26.5" />
+    </Canvas>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OlIconRailTasks">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="#2B7CE0" StrokeThickness="5" StrokeLineCap="Round" StrokeJoin="Round" Data="M7.5,17.2 L13.4,23 L24.5,8.6" />
+    </Canvas>
+  </ControlTemplate>
+
   <ControlTemplate x:Key="OlIconMail">
     <Canvas Width="32" Height="32">
       <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.7" Fill="Transparent" Data="M4,8 L28,8 L28,24 L4,24 Z" />

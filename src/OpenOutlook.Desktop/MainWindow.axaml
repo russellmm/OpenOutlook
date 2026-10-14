@@ -64,16 +64,16 @@
       <Border Background="{DynamicResource OlChrome}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,0,1,0">
         <StackPanel Spacing="2" Margin="0,4,0,0">
           <Button Name="MailNavButton" Classes="olRail olRailActive" Click="ShowMailClicked" ToolTip.Tip="Mail">
-            <ContentControl Template="{StaticResource OlIconMail}" Width="22" Height="22" />
+            <ContentControl Template="{StaticResource OlIconRailMail}" Width="22" Height="22" />
           </Button>
           <Button Name="CalendarNavButton" Classes="olRail" Click="ShowCalendarClicked" ToolTip.Tip="Calendar">
-            <ContentControl Template="{StaticResource OlIconCalendar}" Width="22" Height="22" />
+            <ContentControl Template="{StaticResource OlIconRailCalendar}" Width="22" Height="22" />
           </Button>
           <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="People" ToolTip.Tip="People — planned">
-            <ContentControl Template="{StaticResource OlIconPeople}" Width="22" Height="22" />
+            <ContentControl Template="{StaticResource OlIconRailPeople}" Width="22" Height="22" />
           </Button>
           <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="Tasks" ToolTip.Tip="Tasks — planned">
-            <ContentControl Template="{StaticResource OlIconTasks}" Width="22" Height="22" />
+            <ContentControl Template="{StaticResource OlIconRailTasks}" Width="22" Height="22" />
           </Button>
         </StackPanel>
       </Border>

@@ -33,7 +33,7 @@ Contents: [Reading pane: HTML safety](#reading-pane-html-safety) · [Pictures](#
 | Hidden images (display:none, width/height 0, `hidden`) are not fetched | Tracking | `IsHiddenImage` | `SafeHtmlDocumentTests.HiddenTrackingImagesAreNotFetchedOrCountedAsMissingPictures` |
 | 1 x 1 images (attributes or inline px) are tracking pixels: not fetched, not counted | 2026-10-15: an American Express tracker took 8 s per 47-byte pixel | `IsTrackingPixel` | `SafeHtmlDocumentTests.OneByOneTrackingPixelsAreNotFetched` |
 | Style-sheet pictures count only in rules that can show (`@media print`, rules matching no element are skipped) | Same AmEx mail: "printed" and "forwarded" beacons | `ScreenRulesWithPictures` | `SafeHtmlDocumentTests.StyleSheetPicturesThatCannotShowAreNotFetched` |
-| Pictures show as they arrive (6 at a time, first layout after 1.2 s); one slow server does not hold back the rest | AmEx: everything waited for the slowest picture | `MainWindow.LoadImagesAsync`, `FirstPaintDelay` | **No automated test**: checked in the app on the AmEx message (all pictures within ~3 s) |
+| Pictures show as they arrive (6 at a time, first layout after 1.2 s); one slow server does not hold back the rest; a slow picture that fails needs no second layout; switching message or cancelling stops without a layout | AmEx: everything waited for the slowest picture | `ProgressivePictureLoader`, `MainWindow.LoadImagesAsync`, `FirstPaintDelay` | `ProgressivePictureLoaderTests.*` (7; slow pictures are test-controlled, no timing dependence); also checked in the app on the AmEx message (all pictures within ~3 s) |
 
 ## Reading pane: text selection
 
@@ -218,7 +218,7 @@ All settings stores share the same rules: a missing file gives defaults, a corru
 
 These have no automated test; they were verified in the app or with a tool, and need re-checking when the code around them changes.
 
-- **Pictures appear progressively** (AmEx message, Windows, 2026-10-15). Tool: MailSmoke `imgprobe <pst copy> <subject>` prints each fetch's time.
+- **Real-server picture timing** (AmEx message, Windows, 2026-10-15; the scheduling itself is unit tested). Tool: MailSmoke `imgprobe <pst copy> <subject>` prints each fetch's time.
 - **Snapshot character selection in the app**: drag, double/triple-click, right-click Copy on the Google Cloud message with `OPENOUTLOOK_READER=snapshot` (Windows, 2026-10-15). **Not yet tried on the bare-metal Wayland desktop.**
 - **WebView2 character selection** and the > 2 MB file path (Google Cloud and 6.9 MB Delta messages, 2026-10-15).
 - **SCANPST verdicts** on files the engine writes (big recipient lists, imports, mirrors): `tools/python/run_scanpst2.ps1`, repair-and-diff until two passes agree (rule 26).
@@ -235,7 +235,6 @@ These have no automated test; they were verified in the app or with a tool, and 
 - Flag status and categories do not travel through MIME; messages with an embedded message cannot go to a mailbox; moving out of a read-only data file is refused (copy works).
 - Gmail live copy/move, calendar invitations, Linux calendar, People against the live account: unverified.
 - WebKitGTK file navigation for > 2 MB messages (X11 Linux): untested.
-- Progressive picture loading has no automated test (needs a slow fake server in a test).
 
 ## Test environment caveats
 

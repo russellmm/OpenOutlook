@@ -2219,67 +2219,45 @@ public sealed partial class MainWindow : Window
                 pixelBudget.TryReserve(size.Width * (long)size.Height);
             }
             using var remoteClient = SafeRemoteImageLoader.CreateClient();
-            // Up to six pictures at a time, each handled as soon as it arrives. The message is laid out again once the quick ones are
-            // in (FirstPaintDelay) and once more at the end, so one slow server does not hold back every picture: an American Express
-            // mailing waited 8 s for a tracking server that sends its 47-byte pixel's headers at once and the body seconds later.
-            using var gate = new SemaphoreSlim(6);
-            var remaining = pending.Select(async source =>
-            {
-                await gate.WaitAsync(loadLimit.Token);
-                try
+            // Six at a time, each shown as it arrives: the message is laid out once the quick ones are in and again at the end
+            // (ProgressivePictureLoader), so one slow server does not hold back every picture.
+            var result = await ProgressivePictureLoader.RunAsync(pending,
+                async (source, token) => source.Key.StartsWith("cid:", StringComparison.Ordinal)
+                    ? await ReadInlineImageAsync(source.Value)
+                    : source.ContactsExternalSite
+                        ? await SafeRemoteImageLoader.FetchAsync(source.Value, remoteClient, token)
+                        : SafeHtmlDocument.DecodeDataImage(source),
+                (source, bytes) =>
                 {
-                    return (Source: source, Bytes: source.Key.StartsWith("cid:", StringComparison.Ordinal)
-                        ? await ReadInlineImageAsync(source.Value)
-                        : source.ContactsExternalSite
-                            ? await SafeRemoteImageLoader.FetchAsync(source.Value, remoteClient, loadLimit.Token)
-                            : SafeHtmlDocument.DecodeDataImage(source));
-                }
-                catch (Exception) { return (Source: source, Bytes: (byte[]?)null); }
-                finally { gate.Release(); }
-            }).ToList();
-            var firstPaint = Task.Delay(FirstPaintDelay, loadLimit.Token);
-            var painted = false;
-            var newSincePaint = 0;
-            while (remaining.Count > 0)
-            {
-                var next = await Task.WhenAny(painted ? (IEnumerable<Task>)remaining : remaining.Append<Task>(firstPaint));
-                if (loadLimit.IsCancellationRequested || version != _messageVersion) return;
-                if (next == firstPaint)
-                {
-                    painted = true;
-                    if (newSincePaint > 0)
+                    if (totalBytes + bytes.Length > 48 * 1024 * 1024) return false;
+                    try
                     {
-                        newSincePaint = 0;
-                        StatusText.Text = $"Showing {loaded} of {images.Length} message images; loading the rest…";
-                        _ = RenderBrowserHtmlAsync(version);
+                        var declared = SafeInlineImage.Validate(bytes);
+                        var decodeSize = SafeInlineImage.PreviewSize(declared);
+                        if (!pixelBudget.TryReserve(decodeSize.Width * (long)decodeSize.Height))
+                        { memoryLimited++; return false; }
+                        var bitmap = declared.Width > SafeInlineImage.PreviewDecodeWidth
+                            ? Bitmap.DecodeToWidth(new MemoryStream(bytes, writable: false), SafeInlineImage.PreviewDecodeWidth)
+                            : new Bitmap(new MemoryStream(bytes, writable: false));
+                        if (bitmap.PixelSize.Width * (long)bitmap.PixelSize.Height > SafeInlineImage.MaximumPixels)
+                        { bitmap.Dispose(); return false; }
+                        _inlineImages[source.Key] = bitmap;
+                        _inlineImageBytes[source.Key] = bytes;
+                        totalBytes += bytes.Length;
+                        loaded++;
+                        return true;
                     }
-                    continue;
-                }
-                var finished = (Task<(HtmlImageSource Source, byte[]? Bytes)>)next;
-                remaining.Remove(finished);
-                var (source, bytes) = await finished;
-                if (bytes is null || totalBytes >= 48 * 1024 * 1024) continue;
-                try
+                    catch (Exception) { return false; }      // damaged image: leave its placeholder
+                },
+                () =>
                 {
-                    var declared = SafeInlineImage.Validate(bytes);
-                    var decodeSize = SafeInlineImage.PreviewSize(declared);
-                    if (!pixelBudget.TryReserve(decodeSize.Width * (long)decodeSize.Height))
-                    { memoryLimited++; continue; }
-                    if (totalBytes + bytes.Length > 48 * 1024 * 1024) continue;
-                    var bitmap = declared.Width > SafeInlineImage.PreviewDecodeWidth
-                        ? Bitmap.DecodeToWidth(new MemoryStream(bytes, writable: false), SafeInlineImage.PreviewDecodeWidth)
-                        : new Bitmap(new MemoryStream(bytes, writable: false));
-                    if (bitmap.PixelSize.Width * (long)bitmap.PixelSize.Height > SafeInlineImage.MaximumPixels)
-                    { bitmap.Dispose(); continue; }
-                    _inlineImages[source.Key] = bitmap;
-                    _inlineImageBytes[source.Key] = bytes;
-                    totalBytes += bytes.Length;
-                    loaded++;
-                    newSincePaint++;
-                }
-                catch (Exception) { /* Damaged image: leave its placeholder. */ }
-            }
-            if (painted && newSincePaint == 0 && !loadLimit.IsCancellationRequested && version == _messageVersion)
+                    StatusText.Text = $"Showing {loaded} of {images.Length} message images; loading the rest…";
+                    _ = RenderBrowserHtmlAsync(version);
+                },
+                () => version == _messageVersion,
+                concurrency: 6, FirstPaintDelay, loadLimit.Token);
+            if (!result.Completed) return;
+            if (!result.NeedsFinalLayout)
             {
                 // Everything that arrived is already on screen; only the status line changes.
                 _failedMessageImages = images.Length - loaded;

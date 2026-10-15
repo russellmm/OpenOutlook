@@ -114,6 +114,106 @@ if (step == "touchall")
     return 0;
 }
 
+if (step == "compare")
+{
+    // renders one message the way the reader does (sanitized + loaded pictures) and as the original HTML, side by side PNGs: MailSmoke compare <copy of a pst> <subject part> <out dir> [width]
+    using var e = OpenOutlook.PstNative.PstEngineFactory.Open(Path.GetFullPath(args[1]));
+    var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase));
+    if (hit is null) { Console.WriteLine("no such message"); return 1; }
+    var html = e.OpenMessage(hit).BodyHtml;
+    var outDir = Directory.CreateDirectory(args[3]).FullName;
+    var width = args.Length > 4 ? int.Parse(args[4]) : 900;
+    var images = new Dictionary<string, byte[]>();
+    using var client = OpenOutlook.Desktop.SafeRemoteImageLoader.CreateClient();
+    foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(html, "(?:src|background)\\s*=\\s*[\"']([^\"']+)[\"']|url\\(\\s*['\"]?([^'\")]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+    {
+        var raw = System.Net.WebUtility.HtmlDecode(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value);
+        if (!SafeHtmlDocument.TrySource(raw, out var source) || !source.ContactsExternalSite || images.ContainsKey(source.Key)) continue;
+        try { images[source.Key] = await OpenOutlook.Desktop.SafeRemoteImageLoader.FetchAsync(source.Value, client); } catch { }
+    }
+    Console.WriteLine($"{hit.Subject}: {images.Count} pictures loaded");
+    var safe = SafeHtmlDocument.Build(html, images);
+    File.WriteAllText(Path.Combine(outDir, "sanitized.html"), safe);
+    File.WriteAllText(Path.Combine(outDir, "original.html"), html);
+    var ours = await BrowserHtmlRenderer.RenderDocumentAsync(safe, width, CancellationToken.None, trustedOriginal: false);
+    for (var i = 0; i < ours.Pages.Count; i++) File.WriteAllBytes(Path.Combine(outDir, $"ours-{i}.png"), ours.Pages[i]);
+    var orig = await BrowserHtmlRenderer.RenderDocumentAsync(html, width, CancellationToken.None, trustedOriginal: true);
+    for (var i = 0; i < orig.Pages.Count; i++) File.WriteAllBytes(Path.Combine(outDir, $"original-{i}.png"), orig.Pages[i]);
+    Console.WriteLine($"ours {ours.Pages.Count} page(s), original {orig.Pages.Count} page(s) -> {outDir}");
+    return 0;
+}
+
+if (step == "imgsurvey")
+{
+    // the newest N messages of a folder of a (copy of a) PST: how many external pictures the reader's loader gets, and why the rest fail: MailSmoke imgsurvey <file> <folder> <N>
+    using var e = OpenOutlook.PstNative.PstEngineFactory.Open(Path.GetFullPath(args[1]));
+    var folder = e.AllFolders().First(f => f.Name.Equals(args[2], StringComparison.OrdinalIgnoreCase));
+    var messages = e.GetMessages(folder).OrderByDescending(m => m.Received).Take(int.Parse(args[3])).ToList();
+    using var client = OpenOutlook.Desktop.SafeRemoteImageLoader.CreateClient();
+    var reasons = new Dictionary<string, int>();
+    int total = 0, ok = 0;
+    var formats = new Dictionary<string, int>();
+    foreach (var m in messages)
+    {
+        var html = e.OpenMessage(m).BodyHtml;
+        if (string.IsNullOrEmpty(html)) continue;
+        var urls = System.Text.RegularExpressions.Regex.Matches(html, "<img[^>]*?\\ssrc\\s*=\\s*[\"']([^\"']+)[\"']", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            .Select(x => System.Net.WebUtility.HtmlDecode(x.Groups[1].Value)).Where(u => u.StartsWith("http", StringComparison.OrdinalIgnoreCase) || u.StartsWith("//")).Distinct().Take(25).ToList();
+        int mok = 0;
+        var tasks = urls.Select(async u =>
+        {
+            try { var b = await OpenOutlook.Desktop.SafeRemoteImageLoader.FetchAsync(u.StartsWith("//") ? "https:" + u : u, client); return ("OK", OpenOutlook.Desktop.SafeInlineImage.MimeType(b)); }
+            catch (Exception ex) { return ("FAIL", ex.GetType().Name + ": " + ex.Message); }
+        }).ToList();
+        foreach (var (kind, detail) in await Task.WhenAll(tasks))
+        {
+            total++;
+            if (kind == "OK") { ok++; mok++; formats[detail] = formats.GetValueOrDefault(detail) + 1; }
+            else reasons[detail] = reasons.GetValueOrDefault(detail) + 1;
+        }
+        Console.WriteLine($"{mok,3}/{urls.Count,-3} {m.From,-28} {(m.Subject.Length > 60 ? m.Subject[..60] : m.Subject)}");
+    }
+    Console.WriteLine($"TOTAL {ok}/{total} loaded; formats: {string.Join(", ", formats.Select(kv => kv.Key + "=" + kv.Value))}");
+    foreach (var kv in reasons.OrderByDescending(kv => kv.Value)) Console.WriteLine($"  {kv.Value,4}  {kv.Key}");
+    return 0;
+}
+
+if (step == "imgprobe")
+{
+    // finds a message by subject in a (copy of a) PST, writes its HTML next to the file and tries every <img> the way the reader does: MailSmoke imgprobe <file> <subject part>
+    using var e = OpenOutlook.PstNative.PstEngineFactory.Open(Path.GetFullPath(args[1]));
+    var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase));
+    if (hit is null) { Console.WriteLine("no such message"); return 1; }
+    var msg = e.OpenMessage(hit);
+    var html = msg.BodyHtml;
+    File.WriteAllText(Path.ChangeExtension(args[1], ".html"), html);
+    Console.WriteLine($"{hit.Subject} | html {html.Length} chars | attachments {msg.Attachments.Count}");
+    var urls = System.Text.RegularExpressions.Regex.Matches(html, "<img[^>]*?\\ssrc\\s*=\\s*[\"']([^\"']+)[\"']", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+        .Select(m => System.Net.WebUtility.HtmlDecode(m.Groups[1].Value)).Distinct().ToList();
+    var bg = System.Text.RegularExpressions.Regex.Matches(html, "(?:background(?:-image)?\\s*:[^;\"]*url\\(|background\\s*=\\s*[\"'])\\s*['\"]?([^'\")]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count;
+    Console.WriteLine($"{urls.Count} img sources, {bg} CSS/attribute background images");
+    using var client = OpenOutlook.Desktop.SafeRemoteImageLoader.CreateClient();
+    foreach (var u in urls)
+    {
+        string verdict;
+        try { var bytes = await OpenOutlook.Desktop.SafeRemoteImageLoader.FetchAsync(u, client); verdict = "OK " + bytes.Length; }
+        catch (Exception ex) { verdict = "FAIL " + ex.GetType().Name + ": " + ex.Message; }
+        // what the server really sends, without the reader's restrictions
+        string raw;
+        try
+        {
+            using var plain = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true }) { Timeout = TimeSpan.FromSeconds(10) };
+            using var r = await plain.GetAsync(u, HttpCompletionOption.ResponseHeadersRead);
+            var head = new byte[16];
+            await using (var st = await r.Content.ReadAsStreamAsync()) { var n = await st.ReadAsync(head); head = head[..n]; }
+            raw = $"{(int)r.StatusCode} {r.Content.Headers.ContentType} final={(r.RequestMessage!.RequestUri!.Host)} magic={Convert.ToHexString(head[..Math.Min(4, head.Length)])}";
+        }
+        catch (Exception ex) { raw = "plain fetch failed: " + ex.Message; }
+        Console.WriteLine($"{verdict,-70} | {raw} | {(u.Length > 90 ? u[..90] + "…" : u)}");
+    }
+    return 0;
+}
+
 if (step == "openeditable")
 {
     // the way the application opens a data file (editable when it can be, else read-only with a reason); no accounts needed: MailSmoke openeditable <file>

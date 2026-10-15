@@ -31,6 +31,36 @@ public sealed class SafeInlineImageTests
         Assert.Throws<InvalidDataException>(() => SafeInlineImage.Validate(DeclaresSize(8192, 4096)));
     }
 
+    /// <summary>A 1x1 lossless WebP (newsletters' CDNs answer WebP to a browser Accept header).</summary>
+    private static readonly byte[] OnePixelWebP = Convert.FromBase64String("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==");
+
+    [Fact]
+    public void AcceptsWebPAndReadsItsSizeFromEveryHeaderKind()
+    {
+        Assert.Equal((1, 1), SafeInlineImage.Validate(OnePixelWebP));
+        Assert.Equal("image/webp", SafeInlineImage.MimeType(OnePixelWebP));
+        Assert.Equal("image/png", SafeInlineImage.MimeType(OnePixelPng));
+        var extended = new byte[30];                                                   // "VP8X": canvas size minus one, 24 bits each
+        "RIFF"u8.CopyTo(extended); "WEBP"u8.CopyTo(extended.AsSpan(8)); "VP8X"u8.CopyTo(extended.AsSpan(12));
+        extended[24] = 0x1F; extended[25] = 0x03;                                      // width 800 = 0x31F + 1
+        extended[27] = 0xBB; extended[28] = 0x01;                                      // height 444 = 0x1BB + 1
+        Assert.Equal((800, 444), SafeInlineImage.Validate(extended));
+        extended[26] = 0x01;                                                           // 66,336 wide: over the ceiling
+        Assert.Throws<InvalidDataException>(() => SafeInlineImage.Validate(extended));
+        var lossy = new byte[30];                                                      // "VP8 ": start code 9d 01 2a, then 14-bit sizes
+        "RIFF"u8.CopyTo(lossy); "WEBP"u8.CopyTo(lossy.AsSpan(8)); "VP8 "u8.CopyTo(lossy.AsSpan(12));
+        lossy[23] = 0x9d; lossy[24] = 0x01; lossy[25] = 0x2a; lossy[26] = 0x14; lossy[27] = 0x03; lossy[28] = 0xBC; lossy[29] = 0x01;
+        Assert.Equal((788, 444), SafeInlineImage.Validate(lossy));
+    }
+
+    [Fact]
+    public void Picture_requests_carry_a_browser_user_agent_and_accept_webp()
+    {
+        using var client = SafeRemoteImageLoader.CreateClient();
+        Assert.Contains("Mozilla/5.0", client.DefaultRequestHeaders.UserAgent.ToString());       // without one, bot-protected image hosts answer 403
+        Assert.Contains("image/webp", SafeRemoteImageLoader.AcceptedImageTypes);
+    }
+
     [Fact]
     public void RejectsFormatsThatAreNotPngGifOrJpeg()
     {

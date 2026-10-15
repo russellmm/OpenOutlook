@@ -217,7 +217,7 @@ public static partial class SafeHtmlDocument
         if (!TrySource(source, out var parsed) || !images.TryGetValue(parsed.Key, out var bytes)) return null;
         try { SafeInlineImage.Validate(bytes); }
         catch (Exception ex) when (ex is InvalidDataException or OverflowException) { return null; }
-        var mime = bytes[0] == 137 ? "image/png" : bytes[0] == 0xff ? "image/jpeg" : "image/gif";
+        var mime = SafeInlineImage.MimeType(bytes);
         return "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
     }
 
@@ -240,24 +240,49 @@ public static partial class SafeHtmlDocument
         foreach (var tag in new[] { "html", "head", "body", "a", "div", "span", "p", "br", "hr", "strong", "b",
             "em", "i", "u", "s", "small", "big", "font", "center", "blockquote", "pre", "code",
             "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "thead", "tbody",
-            "tfoot", "tr", "td", "th", "col", "colgroup", "img", "style" })
+            "tfoot", "tr", "td", "th", "col", "colgroup", "img", "style",
+            // more of what newsletters and receipts use (all plain layout, nothing that loads or runs anything)
+            "sup", "sub", "strike", "del", "ins", "mark", "abbr", "acronym", "address", "cite", "q", "tt", "kbd", "samp", "var", "wbr",
+            "dl", "dt", "dd", "caption", "section", "article", "header", "footer", "main", "nav", "aside", "figure", "figcaption",
+            "picture", "label", "time", "nobr" })
             sanitizer.AllowedTags.Add(tag);
         sanitizer.AllowedAttributes.Clear();
         foreach (var attribute in new[] { "style", "class", "id", "align", "valign", "width", "height", "bgcolor", "color",
-            "face", "size", "cellpadding", "cellspacing", "colspan", "rowspan", "border", "alt", "title", "src" })
+            "face", "size", "cellpadding", "cellspacing", "colspan", "rowspan", "border", "alt", "title", "src",
+            "dir", "lang", "nowrap", "rules", "frame", "summary", "start", "type", "reversed", "scope", "headers", "abbr",
+            "bordercolor", "hspace", "vspace", "span", "role", "clear", "noshade" })
             sanitizer.AllowedAttributes.Add(attribute);
         sanitizer.AllowedSchemes.Clear();
         sanitizer.AllowedSchemes.Add("data");
+        // Responsive mail keeps its desktop/phone rules in @media blocks of a <style> element; without them the layout falls back to whatever
+        // the inline styles alone give.
+        sanitizer.AllowedAtRules.Add(AngleSharp.Css.Dom.CssRuleType.Media);
         sanitizer.AllowedCssProperties.Clear();
-        foreach (var property in new[] { "background", "background-color", "background-image", "color", "display",
-            "font", "font-family", "font-size", "font-weight", "font-style", "line-height", "letter-spacing",
-            "text-align", "text-decoration", "text-transform", "vertical-align", "white-space", "width", "height",
-            "max-width", "min-width", "max-height", "min-height", "margin", "margin-top", "margin-right",
-            "margin-bottom", "margin-left", "padding", "padding-top", "padding-right", "padding-bottom",
-            "padding-left", "border", "border-top", "border-right", "border-bottom", "border-left",
-            "border-color", "border-width", "border-style", "border-radius", "box-shadow", "float",
-            "table-layout", "border-collapse", "border-spacing", "opacity" })
-            sanitizer.AllowedCssProperties.Add(property);
+        // The CSS parser expands shorthands before checking them (border -> border-top-width / -style / -color ..., border-radius ->
+        // the four corners, background -> background-position / -size / -repeat ..., text-decoration -> text-decoration-line ...).
+        // Listing only the shorthands silently dropped every border, rounded corner and link underline (found 2026-10-15 by rendering
+        // a newsletter both ways); so the longhands are listed too. Nothing here can load content (url() values are rewritten to
+        // approved data URIs before sanitizing, and the page's CSP blocks everything else) or position content over the page.
+        var sides = new[] { "top", "right", "bottom", "left" };
+        var properties = new List<string> { "background", "background-color", "background-image", "background-position",
+            "background-position-x", "background-position-y", "background-size", "background-repeat", "background-repeat-x",
+            "background-repeat-y", "background-origin", "background-clip", "background-attachment", "color", "display",
+            "font", "font-family", "font-size", "font-weight", "font-style", "font-variant", "font-stretch", "line-height", "letter-spacing",
+            "word-spacing", "text-align", "text-decoration", "text-decoration-line", "text-decoration-color", "text-decoration-style",
+            "text-transform", "text-indent", "text-shadow", "text-overflow", "vertical-align", "white-space", "word-break", "word-wrap",
+            "overflow-wrap", "direction", "width", "height", "max-width", "min-width", "max-height", "min-height", "margin", "padding",
+            "border", "border-color", "border-width", "border-style", "border-radius", "box-shadow", "box-sizing", "float", "clear",
+            "table-layout", "border-collapse", "border-spacing", "caption-side", "empty-cells", "opacity", "visibility",
+            "overflow", "overflow-x", "overflow-y", "object-fit", "object-position", "list-style", "list-style-type",
+            "list-style-position", "outline", "outline-color", "outline-style", "outline-width" };
+        foreach (var side in sides)
+        {
+            properties.AddRange(new[] { "margin-" + side, "padding-" + side, "border-" + side, "border-" + side + "-width",
+                "border-" + side + "-style", "border-" + side + "-color" });
+        }
+        foreach (var corner in new[] { "top-left", "top-right", "bottom-right", "bottom-left" })
+            properties.Add("border-" + corner + "-radius");
+        foreach (var property in properties) sanitizer.AllowedCssProperties.Add(property);
         return sanitizer;
     }
 

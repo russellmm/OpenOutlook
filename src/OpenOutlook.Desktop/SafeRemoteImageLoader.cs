@@ -6,6 +6,19 @@ namespace OpenOutlook.Desktop;
 /// <summary>Fetches message images without proxies or private-network access.</summary>
 public static class SafeRemoteImageLoader
 {
+    /// <summary>
+    /// Image servers behind bot protection (Cloudflare and the like) answer 403 to a request without a browser User-Agent: .NET sends
+    /// none by default, so newsletter pictures failed while Outlook and any browser showed them (found 2026-10-15 on a Steelers Now
+    /// newsletter: 5 of 5 images refused, all 200 with a browser User-Agent).
+    /// </summary>
+    public static string BrowserUserAgent =>
+        OperatingSystem.IsWindows() ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+        : OperatingSystem.IsMacOS() ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+        : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+
+    /// <summary>The formats the reader can check and show; a server that can convert (most CDNs) picks one of them.</summary>
+    public const string AcceptedImageTypes = "image/webp,image/png,image/jpeg,image/gif;q=0.9,image/*;q=0.5";
+
     public static bool TryAcceptUrl(string value, out Uri uri)
     {
         uri = null!;
@@ -42,7 +55,9 @@ public static class SafeRemoteImageLoader
                 catch { socket.Dispose(); throw; }
             }
         };
-        return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
+        var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(BrowserUserAgent);
+        return client;
     }
 
     public static async Task<byte[]> FetchAsync(string value, HttpClient client,
@@ -53,7 +68,8 @@ public static class SafeRemoteImageLoader
         for (var redirect = 0; redirect <= 3; redirect++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.Accept.ParseAdd("image/png, image/jpeg, image/gif");
+            request.Headers.Accept.ParseAdd(AcceptedImageTypes);
+            if (!request.Headers.UserAgent.Any() && !client.DefaultRequestHeaders.UserAgent.Any()) request.Headers.UserAgent.ParseAdd(BrowserUserAgent);
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken).ConfigureAwait(false);
             if (response.RequestMessage?.RequestUri is { } actualUri && actualUri != uri)

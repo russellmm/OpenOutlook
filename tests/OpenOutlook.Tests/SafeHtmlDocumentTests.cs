@@ -170,4 +170,27 @@ public sealed class SafeHtmlDocumentTests
         Assert.Contains("Before", document.Body!.TextContent);
         Assert.Contains("After", document.Body.TextContent);
     }
+
+    [Fact]
+    public void Shorthand_borders_rounded_corners_underlines_cropping_and_media_rules_survive_sanitizing()
+    {
+        // the CSS parser expands shorthands into longhands before the allowlist is checked; these used to vanish
+        var html = "<html><head><style>@media (max-width:600px){.col{width:100% !important}} a.u{text-decoration:underline}</style></head><body>" +
+            "<table style=\"border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:24px\"><tr><td class=\"col\">" +
+            "<img alt=\"x\" style=\"object-fit:cover;width:100%;height:200px\"><div style=\"border-top:1px solid #e5e7eb\">footer</div>" +
+            "<a class=\"u\" href=\"https://example.com\" style=\"text-decoration:underline\">link</a><sup>1</sup></td></tr></table>" +
+            "<div style=\"position:fixed;top:0;left:0\">overlay</div></body></html>";
+        var safe = SafeHtmlDocument.Build(html, new Dictionary<string, byte[]>());
+        var document = new HtmlParser().ParseDocument(safe);
+        var table = document.QuerySelector("table")!.GetAttribute("style")!;
+        Assert.Contains("border: 1px solid", table);                                              // written back as a shorthand once all longhands passed
+        Assert.Contains("border-radius: 8px", table);
+        Assert.Contains("overflow", table);
+        Assert.Contains("object-fit: cover", document.QuerySelector("img")!.GetAttribute("style"));
+        Assert.Contains("border-top: 1px solid", document.QuerySelector("td div")!.GetAttribute("style"));
+        Assert.Contains("underline", document.QuerySelector("a")!.GetAttribute("style"));
+        Assert.NotNull(document.QuerySelector("sup"));
+        Assert.Contains("@media", string.Join(" ", document.QuerySelectorAll("style").Select(s => s.TextContent)));
+        Assert.DoesNotContain("position", safe);                                                   // content still cannot be laid over the page
+    }
 }

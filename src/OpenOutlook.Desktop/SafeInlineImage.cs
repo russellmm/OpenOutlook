@@ -39,10 +39,37 @@ public static class SafeInlineImage
         {
             (width, height) = ReadJpegSize(bytes);
         }
+        else if (IsWebP(bytes))
+        {
+            (width, height) = ReadWebPSize(bytes);
+        }
         else throw new InvalidDataException("Embedded image format is not supported.");
         if (width <= 0 || height <= 0 || width > 8192 || height > 8192 || (long)width * height > MaximumPixels)
             throw new InvalidDataException("Embedded image dimensions exceed the preview limit.");
         return (width, height);
+    }
+
+    private static bool IsWebP(ReadOnlySpan<byte> bytes) =>
+        bytes.Length >= 30 && bytes[..4].SequenceEqual("RIFF"u8) && bytes[8..12].SequenceEqual("WEBP"u8);
+
+    /// <summary>The MIME type of an image Validate accepts (by its signature).</summary>
+    public static string MimeType(ReadOnlySpan<byte> bytes) =>
+        bytes.Length > 0 && bytes[0] == 137 ? "image/png" : bytes.Length > 0 && bytes[0] == 0xff ? "image/jpeg" : IsWebP(bytes) ? "image/webp" : "image/gif";
+
+    /// <summary>Canvas size of a WebP file: lossy ("VP8 "), lossless ("VP8L") or extended ("VP8X") header.</summary>
+    private static (int Width, int Height) ReadWebPSize(ReadOnlySpan<byte> bytes)
+    {
+        var chunk = bytes[12..16];
+        if (chunk.SequenceEqual("VP8X"u8))
+            return (1 + (bytes[24] | bytes[25] << 8 | bytes[26] << 16), 1 + (bytes[27] | bytes[28] << 8 | bytes[29] << 16));
+        if (chunk.SequenceEqual("VP8L"u8) && bytes[20] == 0x2f)
+        {
+            var bits = BinaryPrimitives.ReadUInt32LittleEndian(bytes[21..25]);
+            return ((int)(bits & 0x3fff) + 1, (int)((bits >> 14) & 0x3fff) + 1);
+        }
+        if (chunk.SequenceEqual("VP8 "u8) && bytes[23] == 0x9d && bytes[24] == 0x01 && bytes[25] == 0x2a)
+            return (BinaryPrimitives.ReadUInt16LittleEndian(bytes[26..28]) & 0x3fff, BinaryPrimitives.ReadUInt16LittleEndian(bytes[28..30]) & 0x3fff);
+        throw new InvalidDataException("Embedded WebP header is invalid.");
     }
 
     private static (int Width, int Height) ReadJpegSize(ReadOnlySpan<byte> bytes)

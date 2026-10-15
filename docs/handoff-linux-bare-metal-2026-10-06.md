@@ -113,3 +113,10 @@ Secrets on this machine: the sudo password for the bare-metal box is in `/mnt/SO
 - **Engine fix: message index past 8 heap blocks** (design rule 28). A Hotmail mirror stopped syncing with "the heap needs a block kind that is not supported yet" once node 0xE01 outgrew 8 blocks; `heap_append_item` now writes the HN bitmap blocks. Verified with the Linux engine: `MailSmoke mkmany <file> 6000` gives a PST that SCANPST (Windows) reports NO_ERRORS. If a mailbox copy on Linux already shows "Sync problem", update and click Sync now.
 - **Junk Cleaner keyword Export / Import** (Account Settings > Junk Cleaner). Settings are per machine, so the keyword list built on Linux must be exported there (`Export keywords...`, save under `/mnt/SOLIDIGM/Claude/`) and imported on Windows (`Import keywords...`). Linux's `~/.config/OpenOutlook/junk-cleaner.json` is not reachable from Windows.
 - Re-check item 10 of section 3 with the new package: copy the Linux mailbox copy to Windows and scan it with SCANPST (the hotmail mirror built on Windows was NO_ERRORS).
+
+## 10. Current package (2026-10-15)
+
+- **Install 0.1.25** (supersedes 0.1.23 / 0.1.24 above): `sudo apt install /mnt/SOLIDIGM/Claude/OpenOutlook/publish/openoutlook_0.1.25_amd64.deb`. Built from `093b112` (= GitHub and the Windows build): everything in section 9 plus Data Files > New, copy/move between stores, the Hotmail calendar, reading-pane changes, Folder and Message Properties (raw headers), the junk keyword file with its edit box, Outlook-style rail icons, the rebuilt appointment window and the Trust Center Automatic Download page.
+- **Junk keywords:** the list now lives in `~/.config/OpenOutlook/junk-keywords.json` (one comma-separated line, shared by all accounts). Copy the Windows file (`C:\Users\russell\.config\OpenOutlook\junk-keywords.json`, 145 keywords) there, or edit the list in Account Settings > Junk Cleaner and press Save keywords. The Export button of section 9 is gone (the file is the export).
+- Not yet exercised on Linux at all: Folder/Message Properties, the calendar and appointment window, copy/move, Trust Center. Add them to the section 3 walk-through.
+

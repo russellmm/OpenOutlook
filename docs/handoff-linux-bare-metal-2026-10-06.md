@@ -116,7 +116,7 @@ Secrets on this machine: the sudo password for the bare-metal box is in `/mnt/SO
 
 ## 10. Current package (2026-10-15)
 
-- **Install 0.1.25** (supersedes 0.1.23 / 0.1.24 above): `sudo apt install /mnt/SOLIDIGM/Claude/OpenOutlook/publish/openoutlook_0.1.25_amd64.deb`. Built from `093b112` (= GitHub and the Windows build): everything in section 9 plus Data Files > New, copy/move between stores, the Hotmail calendar, reading-pane changes, Folder and Message Properties (raw headers), the junk keyword file with its edit box, Outlook-style rail icons, the rebuilt appointment window and the Trust Center Automatic Download page.
+- **Install 0.1.26** (supersedes 0.1.23 - 0.1.25): `sudo apt install /mnt/SOLIDIGM/Claude/OpenOutlook/publish/openoutlook_0.1.26_amd64.deb`. Built from `10741f1` (adds the reader picture and formatting fixes of 2026-10-15 to `093b112`) (= GitHub and the Windows build): everything in section 9 plus Data Files > New, copy/move between stores, the Hotmail calendar, reading-pane changes, Folder and Message Properties (raw headers), the junk keyword file with its edit box, Outlook-style rail icons, the rebuilt appointment window and the Trust Center Automatic Download page.
 - **Junk keywords:** the list now lives in `~/.config/OpenOutlook/junk-keywords.json` (one comma-separated line, shared by all accounts). Copy the Windows file (`C:\Users\russell\.config\OpenOutlook\junk-keywords.json`, 145 keywords) there, or edit the list in Account Settings > Junk Cleaner and press Save keywords. The Export button of section 9 is gone (the file is the export).
 - Not yet exercised on Linux at all: Folder/Message Properties, the calendar and appointment window, copy/move, Trust Center. Add them to the section 3 walk-through.
 

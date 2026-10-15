@@ -31,6 +31,8 @@ cp src/OpenOutlook.Desktop/runtimes/win-x64/native/openpst.dll /f/Claude/OpenOut
 - **Push:** this repo has its own credential helper (`.git/config`, `F:\Claude\git-cred-ghtoken.sh`) that reads the GitHub token from `F:\Claude\gh_token`, so Git Credential Manager never opens a sign-in window. Use `GCM_INTERACTIVE=never GIT_TERMINAL_PROMPT=0 git push origin native-engine-phase0:main`. If a push hangs, a stuck `git-credential-manager` process is waiting for a GUI sign-in: kill it. Never commit `gh_token`, `.secrets/`, or `openoutlook-oauth.json` (all ignored).
 - Credentials: Google client id/secret were provided in `.secrets/` and merged into `openoutlook-oauth.json` (source tree and next to the exe). The consent screen is in Testing mode: refresh tokens last 7 days, the Gmail address must be a test user.
 
+**Edge cases and caveats:** `docs/EDGE_CASES.md` lists every deliberate edge case with its reason, code and test, plus manual-only checks, known gaps and test-environment traps. Add a row with every new edge-case test; `python scripts/check-edge-cases.py` checks it against the tests.
+
 ## Gotchas learned
 - The bash tool collapses backslashes in heredocs (`\\n` becomes a newline, `\\0` a NUL): write files with the Write tool, or build escapes with `chr(92)` in Python. Large heredocs also break on quotes: use the Write tool for scripts.
 - Python on Windows does not understand Git-Bash `/f/...` paths: use `F:/...`.

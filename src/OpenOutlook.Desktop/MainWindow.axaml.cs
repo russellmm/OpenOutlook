@@ -2229,25 +2229,41 @@ public sealed partial class MainWindow : Window
                         : SafeHtmlDocument.DecodeDataImage(source),
                 (source, bytes) =>
                 {
-                    if (totalBytes + bytes.Length > 48 * 1024 * 1024) return false;
+                    if (totalBytes + bytes.Length > 48 * 1024 * 1024)
+                    {
+                        AppLog.Note("reader", $"picture not shown ({DescribePictureSource(source)}): the message's pictures passed 48 MB");
+                        return false;
+                    }
                     try
                     {
                         var declared = SafeInlineImage.Validate(bytes);
                         var decodeSize = SafeInlineImage.PreviewSize(declared);
                         if (!pixelBudget.TryReserve(decodeSize.Width * (long)decodeSize.Height))
-                        { memoryLimited++; return false; }
+                        {
+                            AppLog.Note("reader", $"picture not shown ({DescribePictureSource(source)}): {declared.Width}x{declared.Height} is past the picture memory");
+                            memoryLimited++;
+                            return false;
+                        }
                         var bitmap = declared.Width > SafeInlineImage.PreviewDecodeWidth
                             ? Bitmap.DecodeToWidth(new MemoryStream(bytes, writable: false), SafeInlineImage.PreviewDecodeWidth)
                             : new Bitmap(new MemoryStream(bytes, writable: false));
                         if (bitmap.PixelSize.Width * (long)bitmap.PixelSize.Height > SafeInlineImage.MaximumPixels)
-                        { bitmap.Dispose(); return false; }
+                        {
+                            AppLog.Note("reader", $"picture not shown ({DescribePictureSource(source)}): decoded {bitmap.PixelSize.Width}x{bitmap.PixelSize.Height} is past the per-picture limit");
+                            bitmap.Dispose();
+                            return false;
+                        }
                         _inlineImages[source.Key] = bitmap;
                         _inlineImageBytes[source.Key] = bytes;
                         totalBytes += bytes.Length;
                         loaded++;
                         return true;
                     }
-                    catch (Exception) { return false; }      // damaged image: leave its placeholder
+                    catch (Exception ex)                     // damaged image: leave its placeholder
+                    {
+                        AppLog.Note("reader", $"picture not shown ({DescribePictureSource(source)}): {ex.GetType().Name}: {ex.Message}");
+                        return false;
+                    }
                 },
                 () =>
                 {
@@ -2255,7 +2271,9 @@ public sealed partial class MainWindow : Window
                     _ = RenderBrowserHtmlAsync(version);
                 },
                 () => version == _messageVersion,
-                concurrency: 6, FirstPaintDelay, loadLimit.Token);
+                concurrency: 6, FirstPaintDelay, loadLimit.Token,
+                (source, error) => AppLog.Note("reader", $"picture not loaded ({DescribePictureSource(source)}): " +
+                    (error is null ? "no data" : error.GetType().Name + ": " + error.Message)));
             if (!result.Completed) return;
             if (!result.NeedsFinalLayout)
             {
@@ -2285,6 +2303,15 @@ public sealed partial class MainWindow : Window
                 _inlineImageLoadCancellation = null;
             loadLimit.Dispose();
         }
+    }
+
+    /// <summary>A picture for the log: scheme, host and path of a remote one (no query, which often carries tracking ids), else its kind.</summary>
+    internal static string DescribePictureSource(HtmlImageSource source)
+    {
+        if (source.Key.StartsWith("cid:", StringComparison.Ordinal)) return "embedded " + source.Key;
+        if (!source.ContactsExternalSite) return "inline data";
+        var where = Uri.TryCreate(source.Value, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Path) : "remote";
+        return source.Origin.Length == 0 ? where : where + ", " + source.Origin;
     }
 
     private static string ImageKey(HtmlPreviewRun run) => run.ImageContentId is { } cid ? "cid:" + cid.ToLowerInvariant() :

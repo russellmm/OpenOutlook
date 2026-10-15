@@ -6,7 +6,11 @@ using Ganss.Xss;
 
 namespace OpenOutlook.Desktop;
 
-public sealed record HtmlImageSource(string Key, string Value, bool ContactsExternalSite);
+public sealed record HtmlImageSource(string Key, string Value, bool ContactsExternalSite)
+{
+    /// <summary>Where the message referenced it (an img element, a style sheet, a style attribute ...), for the log.</summary>
+    public string Origin { get; init; } = "";
+}
 
 /// <summary>
 /// Turns email HTML into a bounded, inert browser document. All image URLs are removed before
@@ -25,24 +29,36 @@ public static partial class SafeHtmlDocument
         var document = Parse(html);
         var sources = new Dictionary<string, HtmlImageSource>(StringComparer.Ordinal);
         foreach (var image in document.QuerySelectorAll("img[src]"))
-            if (!IsHiddenImage(image)) Add(image.GetAttribute("src"));
-        foreach (var element in document.QuerySelectorAll("[background]")) Add(element.GetAttribute("background"));
+            if (!IsHiddenImage(image)) Add(image.GetAttribute("src"), "img" + Describe(image));
+        foreach (var element in document.QuerySelectorAll("[background]")) Add(element.GetAttribute("background"), "background attribute on " + element.LocalName + Describe(element));
         foreach (var element in document.QuerySelectorAll("[style], style"))
         {
-            // A style sheet's pictures count only where they can be drawn: rules for print, and rules whose selector matches nothing in
-            // this message (American Express puts "printed" and "forwarded" tracking beacons in such rules), are not fetched.
-            var css = element.LocalName == "style" ? ScreenRulesWithPictures(document, element.TextContent) : element.GetAttribute("style") ?? "";
-            // Web fonts are not pictures: an @font-face src (a .woff from the sender's site) was counted as a picture that "could not be
-            // loaded" (a Delta mailing, 2026-10-15). Fonts stay blocked by the page's CSP; they are just not reported any more.
-            css = FontFaceRule().Replace(css, "");
-            foreach (Match match in CssUrl().Matches(css))
-                if (!IsFontFile(match.Groups[2].Value)) Add(match.Groups[2].Value);
+            // A style sheet's pictures count only where they can be drawn: rules for print, and rules whose selector matches nothing
+            // that can show a background (American Express puts "printed" and "forwarded" tracking beacons in such rules), are not
+            // fetched. Web fonts are not pictures: an @font-face src (a .woff from the sender's site) was counted as a picture that
+            // "could not be loaded" (a Delta mailing, 2026-10-15); fonts stay blocked by the page's CSP, they are just not reported.
+            var rules = element.LocalName == "style"
+                ? ScreenRulesWithPictures(document, element.TextContent)
+                : [(Selector: "", Body: element.GetAttribute("style") ?? "")];
+            foreach (var (selector, body) in rules)
+                foreach (Match match in CssUrl().Matches(FontFaceRule().Replace(body, "")))
+                    if (!IsFontFile(match.Groups[2].Value))
+                        Add(match.Groups[2].Value, element.LocalName == "style"
+                            ? "style sheet rule " + (selector.Length > 80 ? selector[..80] + "..." : selector)
+                            : "style attribute on " + element.LocalName + Describe(element));
         }
         return sources.Values.Take(MaximumImageSources).ToArray();
 
-        void Add(string? value)
+        void Add(string? value, string origin)
         {
-            if (TrySource(value, out var source)) sources.TryAdd(source.Key, source);
+            if (TrySource(value, out var source)) sources.TryAdd(source.Key, source with { Origin = origin });
+        }
+
+        static string Describe(IElement element)
+        {
+            var id = element.Id is { Length: > 0 and <= 40 } i ? " #" + i : "";
+            var size = element.LocalName == "img" ? $" {element.GetAttribute("width") ?? "?"}x{element.GetAttribute("height") ?? "?"}" : "";
+            return id + size;
         }
     }
 
@@ -51,11 +67,14 @@ public static partial class SafeHtmlDocument
     /// at-rules are skipped, and a rule is kept only when one of its selectors matches an element of the message (a selector
     /// AngleSharp cannot evaluate counts as matching).
     /// </summary>
-    internal static string ScreenRulesWithPictures(IParentNode document, string css)
+    internal static IReadOnlyList<(string Selector, string Body)> ScreenRulesWithPictures(IParentNode document, string css)
     {
-        var kept = new StringBuilder();
+        var kept = new List<(string Selector, string Body)>();
+        // "<!--" and "-->" around a style sheet are legal CSS and ignored by browsers (mail bodies from Outlook.com have them); left in,
+        // "<!-- @media print" read as a selector, and a selector that cannot be evaluated counts as matching.
+        css = Regex.Replace(css, @"/\*.*?\*/", " ", RegexOptions.Singleline).Replace("<!--", " ").Replace("-->", " ");
         Scan(css, 0, css.Length);
-        return kept.ToString();
+        return kept;
 
         void Scan(string text, int start, int end)
         {
@@ -79,7 +98,7 @@ public static partial class SafeHtmlDocument
                 {
                     var body = text[(open + 1)..close];
                     if (body.Contains("url(", StringComparison.OrdinalIgnoreCase) && AnyMatch(prelude))
-                        kept.Append(body).Append(';');
+                        kept.Add((prelude, body));
                 }
                 i = close + 1;
             }
@@ -91,10 +110,21 @@ public static partial class SafeHtmlDocument
             {
                 var plain = Regex.Replace(selector, @"::?[a-zA-Z-]+(\([^)]*\))?", "").Trim();       // :hover, ::before -> the element itself
                 if (plain.Length == 0) return true;
-                try { if (document.QuerySelector(plain) is not null) return true; }
+                try { if (document.QuerySelectorAll(plain).Any(CanShowBackground)) return true; }
                 catch (Exception) { return true; }
             }
             return false;
+        }
+
+        // An element with no content and no size of its own (AmEx's <div id="_two50"></div>, the target of its "printed" and
+        // "forwarded" beacons) has nothing to paint a background on.
+        static bool CanShowBackground(IElement element)
+        {
+            if (element.Children.Length > 0 || !string.IsNullOrWhiteSpace(element.TextContent)) return true;
+            if (element.HasAttribute("width") || element.HasAttribute("height")) return true;
+            var style = element.GetAttribute("style") ?? "";
+            return Regex.IsMatch(style, @"(?:^|[;\s])(?:min-)?(?:width|height)\s*:\s*[1-9]|(?:^|[;\s])padding[a-z-]*\s*:\s*[1-9]",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
         static bool IsPrintOnly(string media) =>

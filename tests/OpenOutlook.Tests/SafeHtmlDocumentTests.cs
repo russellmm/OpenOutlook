@@ -54,6 +54,41 @@ public sealed class SafeHtmlDocumentTests
     }
 
     [Fact]
+    public void Html_comment_markers_and_css_comments_around_a_style_sheet_do_not_hide_print_rules()
+    {
+        // The AmEx mailing as the app read it: the style sheet wrapped in <!-- -->, so "<!-- @media print" looked like a selector.
+        var html = """
+            <html><head><style><!--
+            /* 250ok */ @media print{ #_two50 { background-image:url("http://analytics.example/ea/?t=p"); } }
+            .hero { background:url('https://images.example/hero.jpg'); }
+            --></style></head><body><div id="_two50">x</div><div class="hero">Hi</div></body></html>
+            """;
+        var sources = SafeHtmlDocument.FindImages(html);
+        Assert.Equal(new[] { "https://images.example/hero.jpg" }, sources.Select(s => s.Value));
+        Assert.Equal("style sheet rule .hero", sources[0].Origin);
+    }
+
+    [Fact]
+    public void A_style_sheet_picture_for_an_empty_element_with_no_size_is_not_fetched()
+    {
+        // The app showed the AmEx mailing with its beacon rule outside @media print and with a selector that matched: the target is
+        // still an empty <div id="_two50"></div>, which has nothing to paint a background on.
+        var html = """
+            <html><head><style>
+            #_two50 { background-image:url("http://analytics.example/ea/?t=p"); }
+            .banner { background-image:url('https://images.example/banner.jpg'); }
+            .spacer { background-image:url('https://images.example/spacer.png'); }
+            </style></head><body><div id="_two50"></div><div class="banner"></div><div class="spacer" style="height:20px"></div>
+            <table><tr><td class="banner">Sale</td></tr></table></body></html>
+            """;
+        var urls = SafeHtmlDocument.FindImages(html).Select(s => s.Value).ToArray();
+        Assert.DoesNotContain(urls, u => u.Contains("analytics.example", StringComparison.Ordinal));
+        Assert.Contains("https://images.example/banner.jpg", urls);    // one of the matching elements has content
+        Assert.Contains("https://images.example/spacer.png", urls);    // empty but given a height
+        Assert.Equal("style sheet rule .banner", SafeHtmlDocument.FindImages(html).First(s => s.Value.EndsWith("banner.jpg", StringComparison.Ordinal)).Origin);
+    }
+
+    [Fact]
     public void KeepsTableLayoutAndColorsWithoutBrowserNetworkUrls()
     {
         var html = """
@@ -235,7 +270,7 @@ public sealed class SafeHtmlDocumentTests
     {
         var html = "<html><head><style>@font-face{font-family:X;src:url('https://a.example.com/f/brand.woff2') format('woff2')}" +
             ".hero{background:url('https://img.example.com/hero.png')}</style></head><body style=\"background-image:url(https://a.example.com/x.ttf?v=2)\">" +
-            "<div class=\"hero\"></div><img src=\"https://img.example.com/logo.png\" alt=\"logo\"></body></html>";
+            "<div class=\"hero\">Hello</div><img src=\"https://img.example.com/logo.png\" alt=\"logo\"></body></html>";
         var found = SafeHtmlDocument.FindImages(html).Select(i => i.Value).ToList();
         Assert.Equal(2, found.Count);
         Assert.Contains("https://img.example.com/hero.png", found);

@@ -31,7 +31,8 @@ public static class ProgressivePictureLoader
         Func<bool> isCurrent,
         int concurrency,
         TimeSpan firstLayoutDelay,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<T, Exception?>? failed = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(concurrency, 1);
         // Not disposed: fetches still running after a cancel release it later (a SemaphoreSlim without its wait handle needs no disposal).
@@ -39,8 +40,9 @@ public static class ProgressivePictureLoader
         var remaining = sources.Select(async source =>
         {
             await gate.WaitAsync(cancellationToken);
-            try { return (Source: source, Bytes: await fetch(source, cancellationToken)); }
-            catch (Exception) { return (Source: source, Bytes: (byte[]?)null); }      // a failed picture keeps its placeholder
+            try { return (Source: source, Bytes: await fetch(source, cancellationToken), Error: (Exception?)null); }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            { return (Source: source, Bytes: (byte[]?)null, Error: ex); }          // a failed picture keeps its placeholder
             finally { gate.Release(); }
         }).ToList();
         var firstLayout = Task.Delay(firstLayoutDelay, cancellationToken);
@@ -64,10 +66,11 @@ public static class ProgressivePictureLoader
                     }
                     continue;
                 }
-                var finished = (Task<(T Source, byte[]? Bytes)>)next;
+                var finished = (Task<(T Source, byte[]? Bytes, Exception? Error)>)next;
                 remaining.Remove(finished);
-                var (source, bytes) = await finished;
-                if (bytes is not null && accept(source, bytes)) arrived++;
+                var (source, bytes, error) = await finished;
+                if (bytes is null) failed?.Invoke(source, error);
+                else if (accept(source, bytes)) arrived++;
             }
         }
         catch (OperationCanceledException) { return new Result(false, laidOut, arrived, false); }

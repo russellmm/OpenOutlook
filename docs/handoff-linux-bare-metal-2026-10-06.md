@@ -67,8 +67,8 @@ Headless tests (21 UI tests) run under Xvfb: `scripts/headless-smoke.sh`. The `c
 ## 5. State of the engine on Linux
 
 - OpenPST (`native/openpst`, plain C) compiles unchanged on Linux; ctest 3/3, unit tests 533/533 in WSL on 2026-10-06 including the new display-to change.
-- **Shared display-to data tree (design rule 27)**: a long PidTagDisplayTo/DisplayCc is stored once and referenced by both the message and the contents-table cell, otherwise SCANPST reports MINOR. Linux check: `scripts/wsl-share-matrix.sh` builds 9 PSTs (60/90/100/200/400 recipients, display-to 100-3000 characters, plus after flag/read/move) with the Linux engine, and SCANPST on Windows said NO_ERRORS for all 9.
-- Details and the investigation: `docs/native-engine-status.md` ("SCANPST minor ... found and fixed"), `docs/scanpst-hotmail-root-cause-2026-10-06.md`, `docs/OpenOutlook_Design_Document.md` rule 27.
+- **Shared display-to data tree (design rule 39)**: a long PidTagDisplayTo/DisplayCc is stored once and referenced by both the message and the contents-table cell, otherwise SCANPST reports MINOR. Linux check: `scripts/wsl-share-matrix.sh` builds 9 PSTs (60/90/100/200/400 recipients, display-to 100-3000 characters, plus after flag/read/move) with the Linux engine, and SCANPST on Windows said NO_ERRORS for all 9.
+- Details and the investigation: `docs/native-engine-status.md` ("SCANPST minor ... found and fixed"), `docs/scanpst-hotmail-root-cause-2026-10-06.md`, `docs/OpenOutlook_Design_Document.md` rule 39.
 
 ## 6. Known issues / not done
 
@@ -110,7 +110,7 @@ Secrets on this machine: the sudo password for the bare-metal box is in `/mnt/SO
 ## 9. Updates after the first bare-metal session (2026-10-06, evening, from Windows/WSL)
 
 - **Package 0.1.23** (`publish/openoutlook_0.1.23_amd64.deb`, tar.gz) replaces 0.1.22 on the Linux box: `sudo apt install /mnt/SOLIDIGM/Claude/OpenOutlook/publish/openoutlook_0.1.23_amd64.deb`. It has the engine fixes below and the new Junk Cleaner buttons; the AppArmor profile and packaging from section 8 are included (built from the same source in WSL).
-- **Engine fix: message index past 8 heap blocks** (design rule 28). A Hotmail mirror stopped syncing with "the heap needs a block kind that is not supported yet" once node 0xE01 outgrew 8 blocks; `heap_append_item` now writes the HN bitmap blocks. Verified with the Linux engine: `MailSmoke mkmany <file> 6000` gives a PST that SCANPST (Windows) reports NO_ERRORS. If a mailbox copy on Linux already shows "Sync problem", update and click Sync now.
+- **Engine fix: message index past 8 heap blocks** (design rule 40). A Hotmail mirror stopped syncing with "the heap needs a block kind that is not supported yet" once node 0xE01 outgrew 8 blocks; `heap_append_item` now writes the HN bitmap blocks. Verified with the Linux engine: `MailSmoke mkmany <file> 6000` gives a PST that SCANPST (Windows) reports NO_ERRORS. If a mailbox copy on Linux already shows "Sync problem", update and click Sync now.
 - **Junk Cleaner keyword Export / Import** (Account Settings > Junk Cleaner). Settings are per machine, so the keyword list built on Linux must be exported there (`Export keywords...`, save under `/mnt/SOLIDIGM/Claude/`) and imported on Windows (`Import keywords...`). Linux's `~/.config/OpenOutlook/junk-cleaner.json` is not reachable from Windows.
 - Re-check item 10 of section 3 with the new package: copy the Linux mailbox copy to Windows and scan it with SCANPST (the hotmail mirror built on Windows was NO_ERRORS).
 

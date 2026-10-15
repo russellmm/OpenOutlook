@@ -62,7 +62,7 @@ Contents: [Reading pane: HTML safety](#reading-pane-html-safety) · [Pictures](#
 
 ## PST engine and SCANPST
 
-Format rules 1-38 (what SCANPST requires) are in `docs/OpenOutlook_Design_Document.md` sections 3.4 and 15; fixer rules R1-R12 in section 6.6. They are guarded by the native checker (`opst_check`), byte-identity runs against the Python reference (`tests/pyops.py`), the fixer test (`tests/pydamage.py`) and SCANPST runs on written files (`tools/python/run_scanpst2.ps1`). Note: the rule numbers **27 and 28 are each used twice** (section 3.4 rule 27 "shared display-to data tree" vs section 15 rule 27 "allocation maps"; section 15 has two rule 28s, "heap bitmap blocks" and "folders are complete") -- renumber when next editing that document.
+Format rules 1-40 (what SCANPST requires) are in `docs/OpenOutlook_Design_Document.md` sections 3.4 and 15; fixer rules R1-R12 in section 6.6. They are guarded by the native checker (`opst_check`), byte-identity runs against the Python reference (`tests/pyops.py`), the fixer test (`tests/pydamage.py`) and SCANPST runs on written files (`tools/python/run_scanpst2.ps1`).
 
 | Case | Why | Handled in | Test |
 |---|---|---|---|
@@ -71,8 +71,8 @@ Format rules 1-38 (what SCANPST requires) are in `docs/OpenOutlook_Design_Docume
 | Crash during a write rolls back byte for byte | Power loss | journal | `test_write.c` crash-recovery section *(native)* |
 | ANSI and 4K-page files are read and stay read-only | Old Outlook formats | engine | `PstEngineFormatTests.*` |
 | Very long property values are stored and the file stays clean | | data trees | `PstBigValueTests.Very_long_values_are_stored_and_the_file_stays_clean` |
-| A long display-to (> ~2 KB) is one data tree shared by the message and its row (rule 27 of 3.4, cRef 3) | 2026-10-15: SCANPST minor on big recipient lists | `op_edit2.c` `tcbig_put` | MailSmoke `mkbigrecips` + SCANPST (**manual**) |
-| A heap past 8 blocks gets HNBITMAPHDR blocks at 8, 136, ... (66-byte header) | 2026-10-15: mailbox-copy sync failed on a big message index | `op_edit.c` `heap_append_item` | soak / SCANPST (**manual**); no unit test |
+| A long display-to (> ~2 KB) is one data tree shared by the message and its row (rule 39, cRef 3) | 2026-10-15: SCANPST minor on big recipient lists | `op_edit2.c` `tcbig_put` | MailSmoke `mkbigrecips` + SCANPST (**manual**) |
+| A heap past 8 blocks gets HNBITMAPHDR blocks at 8, 136, ... (66-byte header; rule 40) | 2026-10-15: mailbox-copy sync failed on a big message index | `op_edit.c` `heap_append_item` | soak / SCANPST (**manual**); no unit test |
 | A new PST is a clean empty store; never overwrites | | `opst_create` | `PstCreateTests.*` (5) |
 | Imported messages read back complete; scan works read-only, repair needs write | | importer | `PstImportTests.*` (5) |
 | Checker catches the importer's old defects (padded attach size, NID counters, missing row cells, AMap bits, incomplete folders) | SCANPST found them first | `opst_check` / `opst_fix` | `test_write.c` (test hooks `OPST_TEST_BAD_ATTSIZE`, `..._BAD_NIDCOUNTER`, `..._NO_ROWCELLS`) *(native)*, `pydamage.py` |
@@ -231,7 +231,7 @@ These have no automated test; they were verified in the app or with a tool, and 
 - **Bcc recipients give a real SCANPST error** in files the importer writes (deferred; repro with MailSmoke `mkbigrecips` `1:bccL`).
 - A single recipient *name* of 5,000+ characters still gives a SCANPST error (not a real-world case).
 - No checker/fixer rule for PSTs written with the old independent display-to copy (recreate the mailbox copy).
-- Heap bitmap blocks (rule 28) have no unit test; only soak + SCANPST.
+- Heap bitmap blocks (rule 40) have no unit test; only soak + SCANPST.
 - Flag status and categories do not travel through MIME; messages with an embedded message cannot go to a mailbox; moving out of a read-only data file is refused (copy works).
 - Gmail live copy/move, calendar invitations, Linux calendar, People against the live account: unverified.
 - WebKitGTK file navigation for > 2 MB messages (X11 Linux): untested.

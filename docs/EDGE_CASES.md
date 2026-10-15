@@ -111,6 +111,7 @@ Format rules 1-40 (what SCANPST requires) are in `docs/OpenOutlook_Design_Docume
 | Case | Why | Handled in | Test |
 |---|---|---|---|
 | First sync builds the tree; a second sync without changes downloads nothing; server changes arrive and the copy stays clean | | `MirrorSync` | `MirrorSyncTests.*` (7) |
+| Times from the copy keep their instant (the engine hands out local times; relabelling them as UTC showed Hotmail mail 7 h early in Pacific daylight time) and the server's received time wins over the message headers, as in Outlook | 2026-10-15: 3:16 PM shown as 8:16 AM since 2026-10-05; some messages a minute early | `LocalMailboxReader.ToInstant`, `MirrorSyncEngine` | `MirrorSyncTests.Engine_times_are_local_and_keep_their_instant`, `.The_local_copy_answers_a_folder_in_the_shape_of_the_server_list` (the shift only shows on a machine whose zone is not UTC: CI runs in UTC) |
 | Messages older than the keep window are not mirrored and age out; a huge message is skipped once; failing downloads retried | | `MirrorSync` | `MirrorSyncTests.Messages_older_than_the_keep_window_are_not_mirrored_and_age_out`, `.A_failing_download_is_retried_next_time_and_a_huge_message_is_skipped_once` |
 | Folder-name clash gets a suffix | | `MirrorSync` | `MirrorSyncTests.A_folder_name_that_clashes_gets_a_suffix` |
 | Local changes reach the server; on a conflict the server wins; offline changes wait; refused changes are counted and retried | | `MirrorPush` | `MirrorPushTests.*` (7) |
@@ -247,9 +248,11 @@ These have no automated test; they were verified in the app or with a tool, and 
 - **Headless input**: `MouseMove` needs `RawInputModifiers.LeftMouseButton` to count as a held button; drags need `DragEnter` before `DragOver`.
 - **Five `OfflineMessageCacheTests` fail on Windows** (`PlatformNotSupportedException`, a Unix-only API in setup); they pass on Linux. The Windows baseline is "N pass + 5 known".
 - **`GraphAccountVerification.CacheEnabled` is a static switch**: its tests run in a non-parallel collection; a test that relies on the cache being off or on must join that collection, or Graph tests become flaky.
+- **Time-zone bugs are invisible on a UTC machine** (CI, most containers): a test of local-time handling only fails where the zone has an offset (the owner's PC). Run time tests on Windows too.
 - **Real-Chrome tests return early when no browser is installed** (`BrowserHtmlRendererTests`): on such a machine they pass without checking anything.
 - **Native tests need a real small PST**: `OPST_TEST_PST=small.pst ctest`; headless tests need `OPENOUTLOOK_TEST_PST`. Always copies, never the owner's files.
 - **MailSmoke live steps touch the real accounts** and `sendtest` sends real mail (it happened four times on 2026-10-15 when an unknown step fell through). Only offline steps without the owner's say-so; confirm `0 Error(s)` before running a newly added step; run WebView probes as `MailSmoke.exe`.
+- **The deb smoke waits for the self-test line, not a fixed time**: a CI runner once needed 20 s to start the single-file program (run 38814882482).
 - **dotnet keeps stdout pipes open** after build/test (msbuild server): piping into `grep` can look hung on Linux; use `DOTNET_CLI_USE_MSBUILD_SERVER=0` and redirect to a file.
 - **Two drag systems in the folder pane** (folder reorder, message drops): a handler must not touch drags that are not its own.
 - **Editing sources on Windows**: never with PowerShell 5.1 `Get-Content`/`Set-Content` (UTF-8 read as ANSI); Bash heredocs collapse backslashes, so write scripts with the Write tool.

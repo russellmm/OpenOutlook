@@ -33,8 +33,9 @@ public sealed class CalendarEditorWindow : Window
     private readonly ComboBox _reminder = new() { MinWidth = 120 };
     private bool _isMeeting;
 
-    public CalendarEditorWindow(DateOnly day, bool meeting)
+    public CalendarEditorWindow(DateOnly day, bool meeting, string? attendees = null)
     {
+        _attendees.Text = attendees ?? "";
         _isMeeting = meeting;
         Title = meeting ? "Untitled - Meeting" : "Untitled - Appointment";
         Width = 1040;

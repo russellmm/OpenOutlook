@@ -69,7 +69,7 @@
           <Button Name="CalendarNavButton" Classes="olRail" Click="ShowCalendarClicked" ToolTip.Tip="Calendar">
             <ContentControl Template="{StaticResource OlIconRailCalendar}" Width="22" Height="22" />
           </Button>
-          <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="People" ToolTip.Tip="People — planned">
+          <Button Name="PeopleNavButton" Classes="olRail" Click="ShowPeopleClicked" ToolTip.Tip="People">
             <ContentControl Template="{StaticResource OlIconRailPeople}" Width="22" Height="22" />
           </Button>
           <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="Tasks" ToolTip.Tip="Tasks — planned">
@@ -405,6 +405,9 @@
         <Border Name="CalendarToolbarBand" Grid.Row="0" IsVisible="False" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,0,0,0">
           <ContentControl Name="CalendarRibbonContent" />
         </Border>
+        <Border Name="PeopleToolbarBand" Grid.Row="0" IsVisible="False" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,0,0,0">
+          <ContentControl Name="PeopleRibbonContent" />
+        </Border>
 
         <!-- Panes: one white card divided by hairlines, like classic Outlook's folder / list / reading panes -->
         <Border Name="MailContentBorder" Grid.Row="1" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,6,0,0" ClipToBounds="True">
@@ -557,6 +560,9 @@
         </Border>
         <Border Name="CalendarContentBorder" Grid.Row="1" IsVisible="False" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,6,0,0" ClipToBounds="True">
           <ContentControl Name="CalendarContent" />
+        </Border>
+        <Border Name="PeopleContentBorder" Grid.Row="1" IsVisible="False" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="1" CornerRadius="4" Margin="6,6,0,0" ClipToBounds="True">
+          <ContentControl Name="PeopleContent" />
         </Border>
       </Grid>
     </Grid>

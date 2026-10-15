@@ -10,6 +10,7 @@ public sealed partial class MainWindow
     private async void ShowCalendarClicked(object? sender, RoutedEventArgs e)
     {
         CloseBackstage();
+        HidePeople();
         ToolbarBand.IsVisible = false;
         CalendarToolbarBand.IsVisible = true;
         MailContentBorder.IsVisible = false;
@@ -31,6 +32,7 @@ public sealed partial class MainWindow
 
     private void ShowMailClicked(object? sender, RoutedEventArgs e)
     {
+        HidePeople();
         _calendarPage?.Deactivate();
         CalendarContentBorder.IsVisible = false;
         MailContentBorder.IsVisible = true;

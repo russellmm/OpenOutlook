@@ -50,9 +50,9 @@ Details and the file-format rules: `native-engine-status.md`, `OpenOutlook_Desig
 | Folder Properties (right-click a folder, data file or account row) | Yes | Yes | Read-only sheet: name, kind (PST folder / mailbox copy / Microsoft folder / Gmail label / data file), folder path, data file, item and unread counts, subfolders, size of the messages (PST folders, read when the sheet opens), folder or label ID; a data-file row shows file size and whether it is editable. Microsoft and Gmail counts are those of the last folder-list load. `MainWindow.FolderProperties.cs`. |
 | Account Settings (File > Info): Email tab, Data Files tab, Junk Cleaner tab | Yes | Yes | Email: New, Repair, Set as Default, Remove (Change and the arrows are placeholders). |
 | Opening sign-in pages | system browser | system browser; under WSL the launcher sets `BROWSER` to the Windows browser | |
-| Microsoft contacts / address book | No | No | The permission is requested; there is no UI. |
+| Microsoft contacts (People) | Yes | Yes | People on the rail: My Contacts folders, A-Z index, avatars with pictures, details card, search, People / List views, New / Edit / Delete in an Outlook-style contact window, Email and Meeting from a contact. Unbuilt ribbon buttons say "Planned feature". Address book / autocomplete not yet. See `docs/people.md`. |
 | Hotmail/Outlook.com calendar | Partly | Untested (shared code) | Graph calendar list and event view; Home/View ribbon, two mini months, Month grid, timed Day/Work Week/Week views, and appointment/meeting creation with attendees, all-day, location, and notes. The owner created an appointment in OpenOutlook and confirmed it in Outlook on Windows (2026-10-09). One calendar is shown at a time. Side-by-side/overlay, event details, offline access, and scheduling tools remain; planned ribbon commands are disabled. Gmail and iCloud calendars are outside scope. See [calendar.md](calendar.md). |
-| Tasks, people UI | No | No | Navigation rail items are placeholders. |
+| Tasks | No | No | The rail item is a placeholder. |
 
 ## 4. Mailbox copies (offline mirror) and local-first reading
 

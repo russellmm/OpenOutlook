@@ -4,6 +4,11 @@ using OpenOutlook.Providers.Microsoft;
 
 namespace OpenOutlook.Tests;
 
+/// <summary>These tests switch the process-wide verification cache on. Every other Graph test counts its /me requests with the cache off,
+/// so this collection runs on its own, after the parallel tests, instead of beside them (that overlap made Graph tests fail at random).</summary>
+[CollectionDefinition("GraphVerificationCache", DisableParallelization = true)]
+public sealed class GraphVerificationCacheCollection;
+
 [Collection("GraphVerificationCache")]
 public sealed class GraphAccountVerificationTests
 {

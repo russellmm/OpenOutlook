@@ -712,7 +712,8 @@ public sealed partial class MainWindow : Window
         ClearReader();
         RefreshConnectedAccounts();
         RefreshCalendarAccounts();
-        StatusText.Text = CalendarContentBorder.IsVisible
+        RefreshPeopleAccounts();
+        StatusText.Text = PeopleContentBorder.IsVisible ? "Account settings updated." : CalendarContentBorder.IsVisible
             ? "Account settings updated. Select a calendar to continue."
             : "Account settings updated. Select a mailbox folder to continue.";
     }

@@ -123,6 +123,7 @@ public sealed partial class CalendarPage
         var button = RibbonButton(caption, icon);
         button.IsEnabled = false;
         ToolTip.SetTip(button, "Planned feature");
+        ToolTip.SetShowOnDisabled(button, true);
         return button;
     }
 

@@ -104,7 +104,8 @@ public partial class MainWindow
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException) { }
         var previous = BackstageAccounts.SelectedItem as BackstageAccountOption;
         BackstageAccounts.ItemsSource = options;
-        var calendarAccountId = CalendarContentBorder.IsVisible ? _calendarPage?.SelectedAccountId : null;
+        var calendarAccountId = CalendarContentBorder.IsVisible ? _calendarPage?.SelectedAccountId
+            : PeopleContentBorder.IsVisible ? _peoplePage?.SelectedAccountId : null;
         BackstageAccounts.SelectedItem = options.FirstOrDefault(option => option.AccountId == calendarAccountId) ??
             (previous is not null && options.Contains(previous) ? previous : options.FirstOrDefault());
     }

@@ -197,7 +197,7 @@ if (step == "wvprobe")
     });
     Avalonia.Threading.Dispatcher.UIThread.MainLoop(done.Token);
     });
-    ui.SetApartmentState(ApartmentState.STA);                           // WebView2 refuses to start on a multithreaded-apartment thread
+    if (OperatingSystem.IsWindows()) ui.SetApartmentState(ApartmentState.STA);       // WebView2 refuses to start on a multithreaded-apartment thread
     ui.Start();
     ui.Join();
     foreach (var line in log) Console.WriteLine(line);

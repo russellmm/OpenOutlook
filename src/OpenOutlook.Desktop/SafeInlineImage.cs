@@ -18,6 +18,18 @@ public static class SafeInlineImage
     /// </summary>
     public const long MaximumMessagePixels = 64L * 1024 * 1024;
 
+    /// <summary>
+    /// The reader decodes pictures for the app at no more than this width (the reading pane is never wider); the browser view still gets the
+    /// original file. Newsletters send camera-size photos (a Delta mailing: 5700x2560 and 4914x3276, 68 million pixels in all) that are shown a
+    /// few hundred pixels wide; counting their full size against the message budget dropped the last pictures of such mail (2026-10-15).
+    /// </summary>
+    public const int PreviewDecodeWidth = 1600;
+
+    /// <summary>The size a picture is decoded at for the reader: the declared size, scaled down to <see cref="PreviewDecodeWidth"/> when wider.</summary>
+    public static (int Width, int Height) PreviewSize((int Width, int Height) declared) =>
+        declared.Width <= PreviewDecodeWidth ? declared
+            : (PreviewDecodeWidth, Math.Max(1, (int)Math.Round(declared.Height * (double)PreviewDecodeWidth / declared.Width)));
+
     public static (int Width, int Height) Validate(ReadOnlySpan<byte> bytes)
     {
         if (bytes.Length is 0 or > MaximumBytes)

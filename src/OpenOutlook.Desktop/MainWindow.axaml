@@ -1240,6 +1240,15 @@
                           <CheckBox Name="TcDontDownloadSignedPictures" Margin="0,10,0,0"
                                     Content="Don't download pictures in encrypted or signed HTML email messages"
                                     ToolTip.Tip="Unchecked by default: pictures download in signed or encrypted mail too. Detection of signed and encrypted messages is a Planned Feature; the choice is stored either way." />
+                          <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,16,0,0">
+                            <TextBlock Text="Memory for the pictures of one message:" VerticalAlignment="Center" />
+                            <ComboBox Name="TcPictureMemory" MinWidth="300"
+                                      ToolTip.Tip="Wide pictures are shrunk to the reading pane's width before they count. If a picture-heavy message still says the largest pictures were skipped to limit memory, choose a larger size.">
+                              <ComboBoxItem Tag="64" Content="Standard (64 million pixels, about 256 MB)" />
+                              <ComboBoxItem Tag="128" Content="Large (128 million pixels, about 512 MB)" />
+                              <ComboBoxItem Tag="256" Content="Very large (256 million pixels, about 1 GB)" />
+                            </ComboBox>
+                          </StackPanel>
                         </StackPanel>
                     </Grid>
                   </Border>

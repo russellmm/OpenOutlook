@@ -193,4 +193,17 @@ public sealed class SafeHtmlDocumentTests
         Assert.Contains("@media", string.Join(" ", document.QuerySelectorAll("style").Select(s => s.TextContent)));
         Assert.DoesNotContain("position", safe);                                                   // content still cannot be laid over the page
     }
+
+    [Fact]
+    public void Web_fonts_are_not_counted_as_pictures()
+    {
+        var html = "<html><head><style>@font-face{font-family:X;src:url('https://a.example.com/f/brand.woff2') format('woff2')}" +
+            ".hero{background:url('https://img.example.com/hero.png')}</style></head><body style=\"background-image:url(https://a.example.com/x.ttf?v=2)\">" +
+            "<img src=\"https://img.example.com/logo.png\" alt=\"logo\"></body></html>";
+        var found = SafeHtmlDocument.FindImages(html).Select(i => i.Value).ToList();
+        Assert.Equal(2, found.Count);
+        Assert.Contains("https://img.example.com/hero.png", found);
+        Assert.Contains("https://img.example.com/logo.png", found);
+    }
 }
+

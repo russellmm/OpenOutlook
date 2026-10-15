@@ -98,6 +98,13 @@ public sealed record OptionsSettings
     public bool TrustDontDownloadPictures { get; init; }
     /// <summary>"Don't download pictures in encrypted or signed HTML email messages". Unchecked by default; enforcement follows signed/encrypted message detection.</summary>
     public bool TrustDontDownloadSignedPictures { get; init; }
+    /// <summary>How many decoded pixels the reader may hold for the pictures of one message, in millions: 64 (standard, about 256 MB), 128 or 256.
+    /// Pictures past the limit keep their placeholder ("the largest were skipped to limit memory").</summary>
+    public int TrustPictureMemoryMegapixels { get; init; } = 64;
+
+    /// <summary>The picture budget in pixels; anything other than the three offered sizes counts as the standard one.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public long PictureBudgetPixels => TrustPictureMemoryMegapixels is 128 or 256 ? TrustPictureMemoryMegapixels * 1024L * 1024 : SafeInlineImage.MaximumMessagePixels;
 
     // Reading Pane dialog
     public bool ReadPaneMarkOnView { get; init; } = true;

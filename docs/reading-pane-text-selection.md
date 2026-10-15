@@ -1,5 +1,7 @@
 # Reading pane: HTML rendering, text selection, and why an embedded browser does not work here
 
+> **Windows, 2026-10-15: the embedded reader now really is the default.** Most messages had fallen back to the snapshot (block-only selection) because WebView2 in Avalonia.Controls.WebView 11.4 loads `NavigateToString` documents as a `data:text/html` URL, and the reader's link guard allowed only `about:` and so cancelled the app's own page ("did not reach the web view" / "did not finish loading" in the log). `OwnDocumentNavigation` now lets exactly the requested document through, once. Documents over WebView2's ~2 MB string limit (newsletters with embedded pictures) are written to a private temp file (`%TEMP%\openoutlook-reader-view`, emptied on every write and when the app closes) and loaded from it. Character-level selection and copy were verified in the app on a Gmail and a 6.9 MB Delta message. The analysis below still describes Wayland Linux, where the snapshot remains the fallback.
+
 > **Platform note (2026-10-05).** This analysis was made on a Wayland Linux desktop. On **Windows** the embedded WebView2 view works and is tried first (documents over about 2 MB go to the snapshot); the snapshot reader described here is the fallback there and the default for connected mail everywhere. The layout browser is now a bundled chrome-headless-shell (`DESIGN_SPEC.md` section 16). Under WSLg the interactive WebKitGTK view is available only if `libwebkit2gtk-4.1` is installed and has not been judged on a real desktop.
 
 ## The constraint that decides everything

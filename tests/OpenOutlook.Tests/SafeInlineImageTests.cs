@@ -62,6 +62,28 @@ public sealed class SafeInlineImageTests
     }
 
     [Fact]
+    public void Camera_size_pictures_are_decoded_at_the_preview_width_so_a_newsletter_fits_the_message_budget()
+    {
+        Assert.Equal((800, 444), SafeInlineImage.PreviewSize((800, 444)));                    // small pictures keep their size
+        Assert.Equal((1600, 719), SafeInlineImage.PreviewSize((5700, 2560)));
+        Assert.Equal((1600, 1067), SafeInlineImage.PreviewSize((4914, 3276)));
+        // the Delta mailing: two camera photos, seven 2200x2800 pictures and small ones; 68 million pixels at full size
+        (int, int)[] delta = [(200, 32), (5700, 2560), (4914, 3276), (2200, 2800), (500, 333), (2200, 2800), (2200, 2800), (2200, 2800), (2200, 2800), (2200, 2800), (1, 1)];
+        var budget = new DecodedPixelBudget(SafeInlineImage.MaximumMessagePixels);
+        Assert.All(delta, size => { var p = SafeInlineImage.PreviewSize(size); Assert.True(budget.TryReserve((long)p.Width * p.Height)); });
+    }
+
+    [Fact]
+    public void The_trust_center_picture_memory_choice_sets_the_message_budget()
+    {
+        Assert.Equal(SafeInlineImage.MaximumMessagePixels, new OptionsSettings().PictureBudgetPixels);
+        Assert.Equal(128L * 1024 * 1024, new OptionsSettings { TrustPictureMemoryMegapixels = 128 }.PictureBudgetPixels);
+        Assert.Equal(256L * 1024 * 1024, new OptionsSettings { TrustPictureMemoryMegapixels = 256 }.PictureBudgetPixels);
+        Assert.Equal(SafeInlineImage.MaximumMessagePixels, new OptionsSettings { TrustPictureMemoryMegapixels = 99_999 }.PictureBudgetPixels);   // a hand-edited value cannot raise it further
+        Assert.DoesNotContain("PictureBudgetPixels", System.Text.Json.JsonSerializer.Serialize(new OptionsSettings()));
+    }
+
+    [Fact]
     public void RejectsFormatsThatAreNotPngGifOrJpeg()
     {
         Assert.Throws<InvalidDataException>(() => SafeInlineImage.Validate("not an image"u8));

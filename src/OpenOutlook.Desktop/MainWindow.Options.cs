@@ -95,12 +95,15 @@ public partial class MainWindow
     {
         TcDontDownloadPictures.IsChecked = s.TrustDontDownloadPictures;
         TcDontDownloadSignedPictures.IsChecked = s.TrustDontDownloadSignedPictures;
+        TcPictureMemory.SelectedItem = TcPictureMemory.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == s.TrustPictureMemoryMegapixels.ToString())
+            ?? TcPictureMemory.Items.OfType<ComboBoxItem>().First();
     }
 
     private OptionsSettings CollectTrustCenterOptions(OptionsSettings s) => s with
     {
         TrustDontDownloadPictures = TcDontDownloadPictures.IsChecked == true,
-        TrustDontDownloadSignedPictures = TcDontDownloadSignedPictures.IsChecked == true
+        TrustDontDownloadSignedPictures = TcDontDownloadSignedPictures.IsChecked == true,
+        TrustPictureMemoryMegapixels = int.TryParse((TcPictureMemory.SelectedItem as ComboBoxItem)?.Tag as string, out var megapixels) ? megapixels : 64
     };
 
     // ---- Editor Options dialog ----

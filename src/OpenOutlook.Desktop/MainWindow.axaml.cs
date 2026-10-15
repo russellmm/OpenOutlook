@@ -65,7 +65,8 @@ public sealed partial class MainWindow : Window
     private bool _embeddedHtmlActive;
     private bool _preferSnapshotForMessage;
     private TaskCompletionSource<bool>? _embeddedNavigation;
-    private const int EmbeddedHtmlMaximumCharacters = 8 * 1024 * 1024;
+    /// <summary>Where a message too large for NavigateToString is written for the reading pane (owner-only; emptied on every write and when the app closes).</summary>
+    private static string ReaderViewDirectory => Path.Combine(Path.GetTempPath(), "openoutlook-reader-view");
     private IReadOnlyList<byte[]> _htmlPagePngs = [];
     private double _htmlZoom = 1;
     private CancellationTokenSource? _htmlRenderCancellation;
@@ -89,6 +90,7 @@ public sealed partial class MainWindow : Window
     private bool _mailActionBusy;
     private Task _messageSelectionTask = Task.CompletedTask;
     private readonly List<NativeWebDialog> _interactiveDialogs = [];
+    private readonly OwnDocumentNavigation _readerNavigation = new();
 
     public MainWindow()
     {
@@ -132,7 +134,7 @@ public sealed partial class MainWindow : Window
                 args.Cancel = true;
                 OpenReaderLink(url);
             }
-            else if (args.Request is { Scheme: not "about" }) args.Cancel = true;
+            else if (!_readerNavigation.Allows(args.Request)) args.Cancel = true;
         };
         MainHtmlWebView.NewWindowRequested += (_, args) =>
         {
@@ -161,6 +163,7 @@ public sealed partial class MainWindow : Window
         {
             _layoutSaveTimer.Stop();
             PersistViewLayout();
+            BrowserDocumentWriter.PrunePreviousDocuments(ReaderViewDirectory);       // no copy of the last large message stays behind
         };
         Closed += (_, _) =>
         {
@@ -2095,6 +2098,7 @@ public sealed partial class MainWindow : Window
                 Title = (SubjectText.Text ?? "Message") + " — OpenOutlook",
                 CanUserResize = true
             };
+            var dialogNavigation = new OwnDocumentNavigation();
             dialog.NavigationStarted += (_, args) =>
             {
                 // Fail closed. An unclassifiable target used to fall through without cancelling, so a
@@ -2107,7 +2111,7 @@ public sealed partial class MainWindow : Window
                     args.Cancel = true;
                     OpenExternal(url);
                 }
-                else if (args.Request is { Scheme: not "about" }) args.Cancel = true;
+                else if (!dialogNavigation.Allows(args.Request)) args.Cancel = true;
             };
             dialog.NewWindowRequested += (_, args) =>
             {
@@ -2117,6 +2121,7 @@ public sealed partial class MainWindow : Window
             dialog.Closing += (_, _) => _interactiveDialogs.Remove(dialog);
             _interactiveDialogs.Add(dialog);
             dialog.Show(this);
+            dialogNavigation.Expect();
             dialog.NavigateToString(document);
             StatusText.Text = "Interactive message opened. You can select and copy formatted text.";
         }
@@ -2204,10 +2209,10 @@ public sealed partial class MainWindow : Window
             var memoryLimited = 0;
             // Reserve declared pixels up front: Validate() trusts the size a file declares, and the
             // encoded-byte cap below cannot see a small file that decodes to a huge bitmap.
-            var pixelBudget = new DecodedPixelBudget(SafeInlineImage.MaximumMessagePixels);
+            var pixelBudget = new DecodedPixelBudget(_options.PictureBudgetPixels);           // Options > Trust Center > Automatic Download
             foreach (var bytes in _inlineImageBytes.Values)
             {
-                var size = SafeInlineImage.Validate(bytes);
+                var size = SafeInlineImage.PreviewSize(SafeInlineImage.Validate(bytes));
                 pixelBudget.TryReserve(size.Width * (long)size.Height);
             }
             using var remoteClient = SafeRemoteImageLoader.CreateClient();
@@ -2235,10 +2240,13 @@ public sealed partial class MainWindow : Window
                     try
                     {
                         var declared = SafeInlineImage.Validate(bytes);
-                        if (!pixelBudget.TryReserve(declared.Width * (long)declared.Height))
+                        var decodeSize = SafeInlineImage.PreviewSize(declared);
+                        if (!pixelBudget.TryReserve(decodeSize.Width * (long)decodeSize.Height))
                         { memoryLimited++; continue; }
                         if (totalBytes + bytes.Length > 48 * 1024 * 1024) break;
-                        var bitmap = new Bitmap(new MemoryStream(bytes, writable: false));
+                        var bitmap = declared.Width > SafeInlineImage.PreviewDecodeWidth
+                            ? Bitmap.DecodeToWidth(new MemoryStream(bytes, writable: false), SafeInlineImage.PreviewDecodeWidth)
+                            : new Bitmap(new MemoryStream(bytes, writable: false));
                         if (bitmap.PixelSize.Width * (long)bitmap.PixelSize.Height > SafeInlineImage.MaximumPixels)
                         { bitmap.Dispose(); continue; }
                         _inlineImages[batch[index].Key] = bitmap;
@@ -2423,10 +2431,12 @@ public sealed partial class MainWindow : Window
         if (!_webViewAvailable) return false;
         if (version != _messageVersion) return false;
         // WebView2's NavigateToString refuses documents over 2 MB (it throws "Value does not fall within the expected range"), and a message whose pictures are
-        // embedded as data URIs passes that easily (a 36-picture Amazon mailing did): such a message goes straight to the snapshot reader.
-        if (document.Length > EmbeddedHtmlMaximumCharacters || (document.Length > 500_000 && System.Text.Encoding.UTF8.GetByteCount(document) > 1_900_000))
+        // embedded as data URIs passes that easily (a 36-picture Amazon mailing did). Such a document is written to the private reader folder and loaded from
+        // there instead, so big newsletters keep real text selection too. The trusted original HTML is never loaded from a file (it may hold scripts).
+        var tooLargeForString = document.Length > 500_000 && System.Text.Encoding.UTF8.GetByteCount(document) > 1_900_000;
+        if (tooLargeForString && (_showOriginalHtml || document.Length > BrowserDocumentWriter.MaximumDocumentCharacters))
         {
-            AppLog.Note("reader", $"interactive reader skipped: the document is {document.Length:N0} characters (WebView2 accepts about 2 MB); using the snapshot reader");
+            AppLog.Note("reader", $"interactive reader skipped: the document is {document.Length:N0} characters; using the snapshot reader");
             _preferSnapshotForMessage = true;
             _embeddedHtmlActive = false;                                  // an earlier layout of this message (before its pictures arrived) may still be showing in the web view: take it away
             MainHtmlWebView.IsVisible = false;
@@ -2444,7 +2454,18 @@ public sealed partial class MainWindow : Window
             // Keep that old page hidden until the new document proves it is the one we requested.
             _embeddedHtmlActive = false;
             MainHtmlWebView.IsVisible = false;
-            MainHtmlWebView.NavigateToString(document);
+            if (tooLargeForString)
+            {
+                var path = BrowserDocumentWriter.Write(document, ReaderViewDirectory);
+                var uri = new Uri(path);
+                _readerNavigation.ExpectFile(uri);
+                MainHtmlWebView.Navigate(uri);
+            }
+            else
+            {
+                _readerNavigation.Expect();
+                MainHtmlWebView.NavigateToString(document);
+            }
             var timeout = Task.Delay(TimeSpan.FromSeconds(6), cancellationToken);
             if (await Task.WhenAny(completed.Task, timeout) != completed.Task ||
                 cancellationToken.IsCancellationRequested || version != _messageVersion)

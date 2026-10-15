@@ -33,9 +33,10 @@ internal static class RichComposeEditor
                 : owner.Position.Y;
             var closing = false;
             var applying = false;
+            var ownDocument = new OwnDocumentNavigation();
             dialog.NavigationStarted += (_, args) =>
             {
-                if (args.Request?.Scheme != "about") args.Cancel = true;
+                if (!ownDocument.Allows(args.Request)) args.Cancel = true;
             };
             dialog.NewWindowRequested += (_, args) => args.Handled = true;
             dialog.WebMessageReceived += (_, args) =>
@@ -69,6 +70,7 @@ internal static class RichComposeEditor
             dialog.Show();
             dialog.Resize(width, height);
             dialog.Move(x, y);
+            ownDocument.Expect();
             dialog.NavigateToString(Document(initial));
             owner.Closed += OwnerClosed;
             return;

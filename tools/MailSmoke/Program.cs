@@ -9,7 +9,7 @@ using OpenOutlook.Providers.Microsoft;
 const string GmailAddress = "russellmarr2012@gmail.com";
 const string HotmailAddress = "rmarrash@hotmail.com";
 var stamp = DateTime.Now.ToString("HHmmss");
-var step = args.Length > 0 ? args[0] : "all";
+var step = args.Length > 0 ? args[0] : "";
 
 if (step == "mkbigrecips")
 {
@@ -114,6 +114,96 @@ if (step == "touchall")
     return 0;
 }
 
+if (step == "wvprobe")
+{
+    // How long the embedded web view takes to load a page in the situations the reader puts it in (opens a real window for a few seconds): MailSmoke wvprobe
+    var log = new List<string>();
+    var ui = new Thread(() =>
+    {
+    Avalonia.AppBuilderDesktopExtensions.UsePlatformDetect(Avalonia.AppBuilder.Configure<Avalonia.Application>()).SetupWithoutStarting();
+    var done = new CancellationTokenSource();
+    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+    {
+        var view = new Avalonia.Controls.NativeWebView();
+        var window = new Avalonia.Controls.Window { Width = 700, Height = 500, Title = "OpenOutlook web view probe", Content = view };
+        TaskCompletionSource<bool>? waiting = null;
+        var guard = new OpenOutlook.Desktop.OwnDocumentNavigation();
+        view.NavigationCompleted += (_, e) => { log.Add("   completed: success=" + e.IsSuccess); waiting?.TrySetResult(true); };
+        view.NavigationStarted += (_, e) =>
+        {
+            var uri = e.Request?.ToString() ?? "(null)";
+            log.Add("   started: " + (uri.Length > 70 ? uri[..70] + "..." : uri) + " scheme=" + e.Request?.Scheme);
+            if (args.Length > 1 && args[1] == "cancelnonabout" && e.Request is { Scheme: not "about" }) e.Cancel = true;     // what the reader's handler did before 2026-10-15
+            if (args.Length > 1 && args[1] == "guard" && !guard.Allows(e.Request)) e.Cancel = true;                       // what it does now
+        };
+        async Task Try(string label, Action before)
+        {
+            before();
+            waiting = new TaskCompletionSource<bool>();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var marker = Guid.NewGuid().ToString("N");
+            guard.Expect();
+            view.NavigateToString("<!doctype html><html><head><meta name='m' content='" + marker + "'></head><body><p>" + label + " - some selectable text</p></body></html>");
+            var finished = await Task.WhenAny(waiting.Task, Task.Delay(8000)) == waiting.Task;
+            string probe;
+            try { probe = (await view.InvokeScript("document.querySelector('meta[name=\"m\"]')?.content === '" + marker + "'")) ?? "null"; }
+            catch (Exception ex) { probe = "probe threw " + ex.GetType().Name; }
+            log.Add($"{label,-55} completed={finished,-5} after {sw.ElapsedMilliseconds,5} ms; marker found={probe}");
+        }
+        view.IsVisible = false;
+        window.Show();
+        await Task.Delay(500);
+        await Try("1 hidden from the start (never shown yet)", () => { });
+        await Try("2 made visible, then navigated", () => view.IsVisible = true);
+        await Try("3 visible, navigated again", () => { });
+        await Try("4 hidden again, then navigated (what the reader does)", () => view.IsVisible = false);
+        await Try("5 still hidden, navigated again", () => { });
+        await Try("6 visible again", () => view.IsVisible = true);
+        await Try("7 opacity 0 instead of hidden", () => view.Opacity = 0);
+        view.Opacity = 1;
+        // a page script that tries to navigate itself to a data: document must be refused
+        waiting = new TaskCompletionSource<bool>();
+        try { await view.InvokeScript("location.href = 'data:text/html,<p>sneaky</p>'; 'ok'"); } catch { }
+        await Task.WhenAny(waiting.Task, Task.Delay(1500));
+        string still;
+        try { still = (await view.InvokeScript("document.body ? document.body.innerText : ''")) ?? "null"; } catch (Exception ex) { still = ex.GetType().Name; }
+        log.Add("script navigation to data: -> page now says: " + still);
+        if (args.Length > 3)
+        {
+            // a real message, built the way the reader builds it (pictures loaded through the reader's loader)
+            using var e = OpenOutlook.PstNative.PstEngineFactory.Open(Path.GetFullPath(args[2]));
+            var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).First(m => m.Subject.Contains(args[3], StringComparison.OrdinalIgnoreCase));
+            var html = e.OpenMessage(hit).BodyHtml;
+            var images = new Dictionary<string, byte[]>();
+            using var client = OpenOutlook.Desktop.SafeRemoteImageLoader.CreateClient();
+            foreach (var source in SafeHtmlDocument.FindImages(html).Where(x => x.ContactsExternalSite))
+                try { images[source.Key] = await OpenOutlook.Desktop.SafeRemoteImageLoader.FetchAsync(source.Value, client); } catch { }
+            var doc = SafeHtmlDocument.BuildInteractive(html, images);
+            log.Add($"message: {hit.Subject} - interactive document {doc.Length:N0} chars, {images.Count} pictures");
+            waiting = new TaskCompletionSource<bool>();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            view.IsVisible = true;
+            guard.Expect();
+            view.NavigateToString(doc);
+            var finished = await Task.WhenAny(waiting.Task, Task.Delay(10000)) == waiting.Task;
+            string text;
+            try { text = (await view.InvokeScript("document.body ? document.body.innerText.length : -1")) ?? "null"; }
+            catch (Exception ex) { text = "probe threw " + ex.GetType().Name; }
+            log.Add($"real message                                            completed={finished,-5} after {sw.ElapsedMilliseconds,5} ms; body text length={text}");
+            await Task.Delay(1500);
+        }
+        window.Close();
+        done.Cancel();
+    });
+    Avalonia.Threading.Dispatcher.UIThread.MainLoop(done.Token);
+    });
+    ui.SetApartmentState(ApartmentState.STA);                           // WebView2 refuses to start on a multithreaded-apartment thread
+    ui.Start();
+    ui.Join();
+    foreach (var line in log) Console.WriteLine(line);
+    return 0;
+}
+
 if (step == "compare")
 {
     // renders one message the way the reader does (sanitized + loaded pictures) and as the original HTML, side by side PNGs: MailSmoke compare <copy of a pst> <subject part> <out dir> [width]
@@ -188,8 +278,7 @@ if (step == "imgprobe")
     var html = msg.BodyHtml;
     File.WriteAllText(Path.ChangeExtension(args[1], ".html"), html);
     Console.WriteLine($"{hit.Subject} | html {html.Length} chars | attachments {msg.Attachments.Count}");
-    var urls = System.Text.RegularExpressions.Regex.Matches(html, "<img[^>]*?\\ssrc\\s*=\\s*[\"']([^\"']+)[\"']", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-        .Select(m => System.Net.WebUtility.HtmlDecode(m.Groups[1].Value)).Distinct().ToList();
+    var urls = SafeHtmlDocument.FindImages(html).Where(x => x.ContactsExternalSite).Select(x => x.Value).ToList();     // exactly what the reader loads (img, background=, CSS url())
     var bg = System.Text.RegularExpressions.Regex.Matches(html, "(?:background(?:-image)?\\s*:[^;\"]*url\\(|background\\s*=\\s*[\"'])\\s*['\"]?([^'\")]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count;
     Console.WriteLine($"{urls.Count} img sources, {bg} CSS/attribute background images");
     using var client = OpenOutlook.Desktop.SafeRemoteImageLoader.CreateClient();
@@ -226,6 +315,18 @@ if (step == "openeditable")
     }
     catch (Exception e) { Console.WriteLine("open failed: " + e.GetType().Name + ": " + e.Message); }
     return 0;
+}
+
+// Everything below signs in to the owner's real accounts, and the end of the file SENDS MAIL between them. It runs only for a step named
+// explicitly ("sendtest" for the send / reply / forward test). An unknown or missing step used to fall through to that test: a typo, or an
+// old build that did not have a new step yet, sent real messages (it happened four times on 2026-10-15).
+var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rendergmail", "renderlive", "livegmail", "livepush", "scanlocal", "launchtest", "render", "localfolder", "mirror", "gmailtiming", "openpath", "gmailsync", "timing", "junkscan", "attach" };
+if (!liveSteps.Contains(step))
+{
+    Console.Error.WriteLine(step.Length == 0 ? "MailSmoke: name a step." : $"MailSmoke: unknown step '{step}'.");
+    Console.Error.WriteLine("Offline steps: mkbigrecips, mkmulti, mkmany, touchall, wvprobe, compare, imgsurvey, imgprobe, openeditable.");
+    Console.Error.WriteLine("Live steps (use the real accounts): " + string.Join(", ", liveSteps.Order()) + ". 'sendtest' sends real mail.");
+    return 2;
 }
 
 OAuthClientConfiguration.Load();   // applies the Google client secret

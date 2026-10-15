@@ -30,7 +30,11 @@ public static partial class SafeHtmlDocument
         foreach (var element in document.QuerySelectorAll("[style], style"))
         {
             var css = element.LocalName == "style" ? element.TextContent : element.GetAttribute("style") ?? "";
-            foreach (Match match in CssUrl().Matches(css)) Add(match.Groups[2].Value);
+            // Web fonts are not pictures: an @font-face src (a .woff from the sender's site) was counted as a picture that "could not be
+            // loaded" (a Delta mailing, 2026-10-15). Fonts stay blocked by the page's CSP; they are just not reported any more.
+            css = FontFaceRule().Replace(css, "");
+            foreach (Match match in CssUrl().Matches(css))
+                if (!IsFontFile(match.Groups[2].Value)) Add(match.Groups[2].Value);
         }
         return sources.Values.Take(MaximumImageSources).ToArray();
 
@@ -285,6 +289,17 @@ public static partial class SafeHtmlDocument
         foreach (var property in properties) sanitizer.AllowedCssProperties.Add(property);
         return sanitizer;
     }
+
+    private static bool IsFontFile(string url)
+    {
+        var path = url.Split('?', '#')[0];
+        return path.EndsWith(".woff", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".woff2", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".otf", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".eot", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [GeneratedRegex(@"@font-face\s*\{[^}]*\}", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 100)]
+    private static partial Regex FontFaceRule();
 
     [GeneratedRegex("url\\(\\s*(['\"]?)(.*?)\\1\\s*\\)", RegexOptions.IgnoreCase | RegexOptions.Singleline,
         matchTimeoutMilliseconds: 100)]

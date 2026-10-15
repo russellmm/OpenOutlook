@@ -44,7 +44,8 @@ public static class BrowserProcessTracker
                     var browser = await Puppeteer.LaunchAsync(new LaunchOptions
                     {
                         ExecutablePath = executable, Headless = true, Timeout = 15_000,
-                        Args = ["--disable-background-networking", "--disable-extensions"]
+                        // The snapshot is a picture Avalonia draws without colour management, so it must hold the colours as written.
+                        Args = ["--disable-background-networking", "--disable-extensions", ReaderColorProfile.SrgbFlag]
                     }).ConfigureAwait(false);
                     if (!string.Equals(_lastGood, executable, StringComparison.OrdinalIgnoreCase)) WriteLastGood(executable);
                     _lastGood = executable;

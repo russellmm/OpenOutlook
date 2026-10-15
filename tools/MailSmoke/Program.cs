@@ -114,6 +114,50 @@ if (step == "touchall")
     return 0;
 }
 
+if (step == "colorprobe")
+{
+    // Offline, Windows. Does the embedded web view change colours? Shows bands of #D9D9D6, #FFFFFF and #006FCF (the AmEx mailing's frame,
+    // card and logo) and reads the screen pixels back. Set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS before running to compare flags.
+    if (!OperatingSystem.IsWindows()) { Console.Error.WriteLine("colorprobe reads screen pixels with GDI: Windows only."); return 2; }
+    var log = new List<string>();
+    var ui = new Thread(() =>
+    {
+    Avalonia.AppBuilderDesktopExtensions.UsePlatformDetect(Avalonia.AppBuilder.Configure<Avalonia.Application>()).SetupWithoutStarting();
+    var done = new CancellationTokenSource();
+    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+    {
+        var view = new Avalonia.Controls.NativeWebView();
+        var window = new Avalonia.Controls.Window { Width = 600, Height = 480, Title = "OpenOutlook colour probe", Content = view, Topmost = true,
+            WindowStartupLocation = Avalonia.Controls.WindowStartupLocation.CenterScreen };
+        var loaded = new TaskCompletionSource<bool>();
+        view.NavigationCompleted += (_, _) => loaded.TrySetResult(true);
+        window.Show();
+        await Task.Delay(500);
+        view.NavigateToString("<!doctype html><html><body style='margin:0'><div style='height:160px;background:#D9D9D6'></div>" +
+            "<div style='height:160px;background:#FFFFFF'></div><div style='height:160px;background:#006FCF'></div></body></html>");
+        await Task.WhenAny(loaded.Task, Task.Delay(8000));
+        await Task.Delay(1500);
+        var scaling = window.RenderScaling;
+        foreach (var (name, y) in new[] { ("#D9D9D6 frame", 80), ("#FFFFFF card", 240), ("#006FCF logo", 400) })
+        {
+            var at = Avalonia.VisualExtensions.PointToScreen(window, new Avalonia.Point(300, y));
+            var hdc = ColorProbe.GetDC(IntPtr.Zero);
+            var c = ColorProbe.GetPixel(hdc, at.X, at.Y);
+            ColorProbe.ReleaseDC(IntPtr.Zero, hdc);
+            log.Add($"{name,-14} -> #{c & 0xFF:X2}{(c >> 8) & 0xFF:X2}{(c >> 16) & 0xFF:X2}");
+        }
+        log.Add("scaling " + scaling + ", WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=" + (Environment.GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") ?? "(unset)"));
+        window.Close();
+        done.Cancel();
+    });
+    Avalonia.Threading.Dispatcher.UIThread.MainLoop(done.Token);
+    });
+    ui.SetApartmentState(ApartmentState.STA);
+    ui.Start();
+    ui.Join();
+    foreach (var line in log) Console.WriteLine(line);
+    return 0;
+}
 if (step == "wvprobe")
 {
     // How long the embedded web view takes to load a page in the situations the reader puts it in (opens a real window for a few seconds): MailSmoke wvprobe
@@ -359,7 +403,7 @@ var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rende
 if (!liveSteps.Contains(step))
 {
     Console.Error.WriteLine(step.Length == 0 ? "MailSmoke: name a step." : $"MailSmoke: unknown step '{step}'.");
-    Console.Error.WriteLine("Offline steps: mkbigrecips, mkmulti, mkmany, touchall, wvprobe, compare, imgsurvey, imgprobe, openeditable, selprobe.");
+    Console.Error.WriteLine("Offline steps: mkbigrecips, mkmulti, mkmany, touchall, wvprobe, compare, imgsurvey, imgprobe, openeditable, selprobe, colorprobe.");
     Console.Error.WriteLine("Live steps (use the real accounts): " + string.Join(", ", liveSteps.Order()) + ". 'sendtest' sends real mail.");
     return 2;
 }
@@ -816,3 +860,10 @@ if (mAcc is not null && mAcc.CanSendMicrosoftMail)
 File.Delete(attachPath);
 Console.WriteLine(failures == 0 ? "ALL STEPS OK" : failures + " STEP(S) FAILED");
 return failures;
+
+static class ColorProbe
+{
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr window);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr window, IntPtr dc);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern uint GetPixel(IntPtr dc, int x, int y);
+}

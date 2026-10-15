@@ -1191,6 +1191,8 @@
                       </StackPanel>
                       <CheckBox Name="OptMarkReadDeleted" Content="_Mark messages as read when deleted" />
                       <CheckBox Name="OptHighlightFlagged" Content="_Highlight flagged items in the message list" />
+                      <CheckBox Name="OptColorsAsWritten" Content="Show message _colors exactly as the sender wrote them (like Outlook)"
+                                ToolTip.Tip="Checked (standard): white stays white and greys stay grey. Unchecked: the reading pane adjusts message colors to your monitor's color profile, which on some monitors tints white and grey toward cream or beige. Takes effect the next time OpenOutlook starts." />
                     </StackPanel>
                   </Grid>
                 </StackPanel>

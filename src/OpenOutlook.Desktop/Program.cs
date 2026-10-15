@@ -27,6 +27,9 @@ internal static class Program
             catch (IOException) { SecondInstance = true; }
             catch (UnauthorizedAccessException) { SecondInstance = true; }
         }
+        // Message colours as written, like Outlook (Options > Mail > Message colors): WebView2 reads this once per process.
+        try { ReaderColorProfile.Apply(new OptionsSettingsStore().Load().ReaderColorsAsWritten); }
+        catch (Exception) { /* settings trouble must never stop startup */ }
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

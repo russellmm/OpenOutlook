@@ -88,6 +88,9 @@ public sealed record OptionsSettings
     public string AfterMoveOrDelete { get; init; } = "return to the current folder";
     public bool MarkReadWhenDeleted { get; init; }
     public bool HighlightFlaggedItems { get; init; } = true;
+    /// <summary>Show message colours exactly as written (like Outlook); off = the embedded reader adjusts them to the monitor's colour
+    /// profile (<see cref="ReaderColorProfile"/>). Applies after a restart.</summary>
+    public bool ReaderColorsAsWritten { get; init; } = true;
 
     // Trust Center > Automatic Download. Both checkboxes start unchecked, exactly like Outlook's
     // dialog: pictures are downloaded automatically by default, and the owner checks a box to block

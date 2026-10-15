@@ -266,6 +266,7 @@ public partial class MainWindow
         SetComboText(OptAfterMoveDelete, s.AfterMoveOrDelete);
         OptMarkReadDeleted.IsChecked = s.MarkReadWhenDeleted;
         OptHighlightFlagged.IsChecked = s.HighlightFlaggedItems;
+        OptColorsAsWritten.IsChecked = s.ReaderColorsAsWritten;
         OptBackupBeforeEditing.IsChecked = s.PstBackupBeforeEditing;
     }
 
@@ -328,6 +329,7 @@ public partial class MainWindow
         AfterMoveOrDelete = ComboText(OptAfterMoveDelete, s.AfterMoveOrDelete),
         MarkReadWhenDeleted = OptMarkReadDeleted.IsChecked == true,
         HighlightFlaggedItems = OptHighlightFlagged.IsChecked == true,
+        ReaderColorsAsWritten = OptColorsAsWritten.IsChecked == true,
         PstBackupBeforeEditing = OptBackupBeforeEditing.IsChecked == true
     };
 

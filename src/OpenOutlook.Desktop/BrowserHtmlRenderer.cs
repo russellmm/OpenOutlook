@@ -9,17 +9,20 @@ public static class BrowserHtmlRenderer
     public sealed record LinkArea(string Url, double X, double Y, double Width, double Height);
 
     /// <summary>
-    /// One selectable block of text and the rectangle Chrome laid it out in. The snapshot reader is a
-    /// bitmap, so nothing in it can be highlighted; these rectangles let the reading pane place an
-    /// invisible selectable control over each block and recover selection without embedding a browser
-    /// (which cannot composite into an Avalonia window under Wayland). Granularity is deliberately the
-    /// element -- paragraph, list item, table cell -- because mapping substrings of one text node to
-    /// the several line boxes it may span needs font metrics we do not share with Chrome.
+    /// One line's worth of one text node, as Chrome laid it out: the text (collapsed whitespace already removed), the line box
+    /// (<see cref="X"/>, <see cref="Y"/>, <see cref="Height"/>) and the x position of every character boundary
+    /// (<see cref="Edges"/>, relative to <see cref="X"/>, one more than the text's length). The snapshot reader is a bitmap; these
+    /// runs let it select by character, word and line the way a browser does, while everything is still drawn by Avalonia (the
+    /// embedded web view cannot composite into an Avalonia window under Wayland). <see cref="Block"/> numbers the nearest
+    /// block-level element (paragraph, list item, table cell; <see cref="Cell"/> when it is a cell) so copied text gets line breaks
+    /// and tabs; <see cref="HardBreak"/> means a &lt;br&gt; or a preformatted newline came first, <see cref="SpaceBefore"/> that
+    /// whitespace collapsed away just before it.
     /// </summary>
-    public sealed record TextArea(string Text, double X, double Y, double Width, double Height);
+    public sealed record TextRun(string Text, double X, double Y, double Height, IReadOnlyList<double> Edges,
+        int Block, bool Cell, bool HardBreak, bool SpaceBefore);
 
     public sealed record RenderedDocument(IReadOnlyList<byte[]> Pages, IReadOnlyList<LinkArea> Links,
-        IReadOnlyList<TextArea> Text);
+        IReadOnlyList<TextRun> Text);
     public const int MaximumScreenshotBytes = 32 * 1024 * 1024;
     private const int MaximumHeight = 60_000;
     private const int TileHeight = 3_000;
@@ -193,27 +196,10 @@ public static class BrowserHtmlRenderer
             double.IsFinite(link.Height) && link.X >= 0 && link.Y >= 0 && link.Width > 0 && link.Height > 0 &&
             link.X < width && link.Y < height && link.Width <= width && link.Height <= height)
             .Take(1000).Select(link => new LinkArea(link.Url, link.X, link.Y, link.Width, link.Height)).ToArray();
-        // Text geometry for the selectable overlay. Runs over every element and keeps those holding
-        // direct text, unioning the client rectangles of that element's own text nodes so nested
-        // markup (a bold word inside a paragraph) becomes its own block rather than being counted
-        // twice. Hidden elements return no rectangles and drop out. This reads layout only; it does
-        // not enable scripting in the document, which stays off for untrusted mail.
-        var textJson = await page.EvaluateFunctionAsync<string>(
-            "() => JSON.stringify((()=>{const out=[];if(!document.body)return out;" +
-            "const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_ELEMENT);let e;" +
-            "while((e=walker.nextNode())&&out.length<4000){let text='';let x=Infinity,y=Infinity," +
-            "right=-Infinity,bottom=-Infinity,found=false;" +
-            "for(const n of Array.from(e.childNodes)){if(n.nodeType!==3)continue;const t=n.nodeValue;" +
-            "if(!t||!t.trim())continue;const range=document.createRange();range.selectNodeContents(n);" +
-            "for(const rect of Array.from(range.getClientRects())){if(rect.width<1||rect.height<1)continue;" +
-            "found=true;if(rect.left<x)x=rect.left;if(rect.top<y)y=rect.top;" +
-            "if(rect.right>right)right=rect.right;if(rect.bottom>bottom)bottom=rect.bottom;}" +
-            "text+=' '+t.replace(/\\s+/g,' ');}" +
-            "if(!found)continue;out.push({Text:text.trim(),X:x+window.scrollX,Y:y+window.scrollY," +
-            "Width:right-x,Height:bottom-y});}" +
-            "return out;})())")
-            .ConfigureAwait(false);
-        var textAreas = ReadTextAreas(textJson, width, height);
+        // Character geometry for the selectable overlay (TextRunScript). This reads layout only; it does not enable scripting in
+        // the document, which stays off for untrusted mail.
+        var textJson = await page.EvaluateFunctionAsync<string>(TextRunScript).ConfigureAwait(false);
+        var textRuns = ReadTextRuns(textJson, width, height);
         var pages = new List<byte[]>();
         var totalBytes = 0L;
         for (var y = 0; y < height; y += TileHeight)
@@ -234,7 +220,7 @@ public static class BrowserHtmlRenderer
             pages.Add(png);
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return new RenderedDocument(pages, links, textAreas);
+        return new RenderedDocument(pages, links, textRuns);
     }
 
     private sealed class BrowserLink
@@ -246,47 +232,175 @@ public static class BrowserHtmlRenderer
         public double Height { get; set; }
     }
 
-    private sealed class BrowserTextBlock
+    private sealed class BrowserTextRun
     {
-        public string Text { get; set; } = "";
+        public string T { get; set; } = "";
         public double X { get; set; }
         public double Y { get; set; }
-        public double Width { get; set; }
-        public double Height { get; set; }
+        public double H { get; set; }
+        public double[] E { get; set; } = [];
+        public int B { get; set; }
+        public int C { get; set; }
+        public int P { get; set; }
+        public int S { get; set; }
     }
 
     /// <summary>Maximum characters of message text the selectable overlay will carry.</summary>
     public const int MaximumOverlayTextCharacters = 400_000;
 
+    /// <summary>Maximum number of text runs (about one per line per text node) the overlay will carry.</summary>
+    public const int MaximumOverlayRuns = 60_000;
+
     /// <summary>
-    /// Validates the geometry Chrome reported before anything is placed on screen. Rectangles come
-    /// from a rendered untrusted document, so sizes are bounded and non-finite or off-page entries
-    /// are dropped rather than trusted; text is capped so a pathological message cannot balloon the
-    /// reading pane's memory.
+    /// Measures every visible character of the laid-out document and returns JSON runs (see <see cref="TextRun"/>): one run per
+    /// text node per line, with each character's boundaries. Whitespace that CSS collapses is dropped (and remembered as "S"),
+    /// &lt;br&gt; and preformatted newlines become "P", hidden text (no boxes, visibility hidden, opacity 0) is skipped. A
+    /// per-character Range is exact but costs time on very long mail, so after 2.5 s the rest is measured per word and the
+    /// word's width shared out between its characters.
     /// </summary>
-    public static IReadOnlyList<TextArea> ReadTextAreas(string json, int pageWidth, int pageHeight)
+    internal const string TextRunScript = """
+        () => {
+          const out = [];
+          if (!document.body) return '[]';
+          const started = performance.now();
+          let total = 0;
+          const styles = new Map();
+          const style = e => { let v = styles.get(e); if (!v) { v = getComputedStyle(e); styles.set(e, v); } return v; };
+          const blocks = new Map();
+          let nextBlock = 0;
+          const blockOf = e => {
+            let b = e;
+            while (b && b !== document.body && style(b).display.startsWith('inline')) b = b.parentElement;
+            if (!b) b = document.body;
+            let v = blocks.get(b);
+            if (v === undefined) { v = [nextBlock++, style(b).display === 'table-cell' ? 1 : 0]; blocks.set(b, v); }
+            return v;
+          };
+          const range = document.createRange();
+          const boxOf = (n, i, k) => {
+            range.setStart(n, i); range.setEnd(n, i + k);
+            const rects = range.getClientRects();
+            for (let j = 0; j < rects.length; j++) if (rects[j].height > 0) return rects[j];
+            return null;
+          };
+          const r1 = v => Math.round(v * 10) / 10;
+          const skipTags = new Set(['STYLE', 'SCRIPT', 'NOSCRIPT', 'TEMPLATE', 'TITLE', 'TEXTAREA', 'SELECT', 'OPTION']);
+          let run = null, hardBreak = false, pendingSpace = false, lastEndsSpace = true;
+          const flush = () => {
+            if (run && run.T.length) {
+              out.push(run); total += run.T.length;
+              lastEndsSpace = /\s$/.test(run.T);
+            }
+            run = null;
+          };
+          const emit = (text, left, right, top, height, block, cell) => {
+            const mid = top + height / 2;
+            if (run && (run.B !== block || mid < run.Y || mid > run.Y + run.H)) flush();
+            if (!run) {
+              run = { T: '', X: left, Y: top, H: height, E: [0], B: block, C: cell,
+                      P: hardBreak ? 1 : 0, S: pendingSpace && !lastEndsSpace ? 1 : 0, L: left };
+              hardBreak = false;
+            }
+            pendingSpace = false;
+            if (top < run.Y) { run.H += run.Y - top; run.Y = top; }
+            if (top + height > run.Y + run.H) run.H = top + height - run.Y;
+            run.T += text;
+            if (text.length === 2) run.E.push(r1(left - run.L));
+            run.E.push(r1(right - run.L));
+          };
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+          let node;
+          while ((node = walker.nextNode()) && total < 400000 && out.length < 60000) {
+            if (node.nodeType === 1) { if (node.tagName === 'BR') { flush(); hardBreak = true; } continue; }
+            const p = node.parentElement, s = node.nodeValue;
+            if (!p || !s || skipTags.has(p.tagName)) continue;
+            range.selectNodeContents(node);
+            if (range.getClientRects().length === 0) continue;
+            const cs = style(p);
+            if (cs.visibility !== 'visible' || cs.opacity === '0') continue;
+            const ws = cs.whiteSpace;
+            const pre = ws.startsWith('pre') || ws === 'break-spaces';
+            const [block, cell] = blockOf(p);
+            const fast = performance.now() - started > 2500;
+            const sx = window.scrollX, sy = window.scrollY;
+            let prevSpace = false;
+            for (let i = 0; i < s.length;) {
+              const c = s.charCodeAt(i);
+              const k = c >= 0xD800 && c < 0xDC00 && i + 1 < s.length ? 2 : 1;
+              const ch = s.substr(i, k);
+              if (pre && (ch === '\n' || ch === '\r')) { if (ch === '\n') { flush(); hardBreak = true; } i += 1; continue; }
+              const space = ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f';
+              if (space && !pre && prevSpace) { i += k; continue; }
+              if (fast && !space) {
+                let j = i;
+                while (j < s.length && !/\s/.test(s[j])) j++;
+                range.setStart(node, i); range.setEnd(node, j);
+                const rects = Array.from(range.getClientRects()).filter(q => q.height > 0);
+                if (rects.length === 1 && j - i > 1) {
+                  const q = rects[0], w = q.width / (j - i);
+                  for (let u = i; u < j;) {
+                    const cu = s.charCodeAt(u);
+                    const ku = cu >= 0xD800 && cu < 0xDC00 && u + 1 < j ? 2 : 1;
+                    emit(s.substr(u, ku), q.left + sx + (u - i) * w, q.left + sx + (u - i + ku) * w, q.top + sy, q.height, block, cell);
+                    u += ku;
+                  }
+                  prevSpace = false;
+                  i = j;
+                  continue;
+                }
+              }
+              const box = boxOf(node, i, k);
+              if (!box || (space && !pre && box.width < 0.01)) {
+                if (space) { pendingSpace = true; prevSpace = true; }
+                i += k;
+                continue;
+              }
+              emit(space || ch === '\u00a0' ? (pre && ch === '\t' ? '\t' : ' ') : ch,
+                   box.left + sx, box.right + sx, box.top + sy, box.height, block, cell);
+              prevSpace = space;
+              i += k;
+            }
+          }
+          flush();
+          return JSON.stringify(out.map(q => ({ T: q.T, X: r1(q.L), Y: r1(q.Y), H: r1(q.H), E: q.E, B: q.B, C: q.C, P: q.P, S: q.S })));
+        }
+        """;
+
+    /// <summary>
+    /// Validates the character geometry Chrome reported before anything is placed on screen. Runs come from a rendered untrusted
+    /// document, so sizes are bounded, non-finite or off-page entries are dropped, edges are clamped to the page, and the text is
+    /// capped so a pathological message cannot balloon the reading pane's memory.
+    /// </summary>
+    public static IReadOnlyList<TextRun> ReadTextRuns(string json, int pageWidth, int pageHeight)
     {
         if (string.IsNullOrWhiteSpace(json) || json == "null") return [];
-        BrowserTextBlock[] blocks;
-        try { blocks = System.Text.Json.JsonSerializer.Deserialize<BrowserTextBlock[]>(json) ?? []; }
+        BrowserTextRun[] runs;
+        try { runs = System.Text.Json.JsonSerializer.Deserialize<BrowserTextRun[]>(json) ?? []; }
         catch (System.Text.Json.JsonException) { return []; }
 
-        var result = new List<TextArea>();
+        var result = new List<TextRun>();
         var totalCharacters = 0;
-        foreach (var block in blocks)
+        foreach (var run in runs)
         {
-            var text = block.Text?.Trim() ?? "";
-            if (text.Length == 0 || text.Length > 20_000) continue;
-            if (!double.IsFinite(block.X) || !double.IsFinite(block.Y) ||
-                !double.IsFinite(block.Width) || !double.IsFinite(block.Height)) continue;
-            if (block.X < 0 || block.Y < 0 || block.Width < 1 || block.Height < 2) continue;
-            if (block.X >= pageWidth || block.Y >= pageHeight) continue;
-            if (block.Width > pageWidth || block.Height > pageHeight) continue;
+            var text = run.T ?? "";
+            if (text.Length is 0 or > 20_000 || run.E is null || run.E.Length != text.Length + 1) continue;
+            if (!double.IsFinite(run.X) || !double.IsFinite(run.Y) || !double.IsFinite(run.H)) continue;
+            if (run.X < -1 || run.X >= pageWidth || run.Y < 0 || run.Y >= pageHeight || run.H < 1 || run.H > pageHeight) continue;
+            if (run.B < 0 || string.IsNullOrWhiteSpace(text) && run.E[^1] - run.E[0] < 0.5) continue;
+            var edges = new double[run.E.Length];
+            var valid = true;
+            for (var i = 0; i < edges.Length; i++)
+            {
+                var e = run.E[i];
+                if (!double.IsFinite(e)) { valid = false; break; }
+                edges[i] = Math.Clamp(run.X + e, 0, pageWidth) - Math.Max(0, run.X);
+            }
+            if (!valid) continue;
             totalCharacters += text.Length;
             if (totalCharacters > MaximumOverlayTextCharacters) break;
-            result.Add(new TextArea(text, block.X, block.Y,
-                Math.Min(block.Width, pageWidth - block.X), Math.Min(block.Height, pageHeight - block.Y)));
-            if (result.Count >= 4000) break;
+            result.Add(new TextRun(text, Math.Max(0, run.X), run.Y, Math.Min(run.H, pageHeight - run.Y), edges,
+                run.B, run.C != 0, run.P != 0, run.S != 0));
+            if (result.Count >= MaximumOverlayRuns) break;
         }
         return result;
     }

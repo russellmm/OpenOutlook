@@ -141,11 +141,12 @@ public sealed class MessageWindow : Window
             foreach (var bitmap in _bitmaps) bitmap.Dispose();
             _bitmaps.Clear();
             double top = 0;
+            var selection = new SnapshotSelection(new SnapshotText(rendered.Text));       // one selection across all tiles
             foreach (var bitmap in bitmaps)
             {
                 _bitmaps.Add(bitmap);
                 _pages.Children.Add(new HtmlPageView(bitmap, top, rendered.Links,
-                    message => _status.Text = message, rendered.Text));
+                    message => _status.Text = message, selection));
                 top += bitmap.PixelSize.Height;
             }
             FitPages();

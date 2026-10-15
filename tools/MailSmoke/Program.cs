@@ -303,6 +303,39 @@ if (step == "imgprobe")
     return 0;
 }
 
+if (step == "selprobe")
+{
+    // Offline. Times the snapshot reader's character measurement on real mail: selprobe <copy of a pst> <subject text> [more subjects...]
+    if (args.Length == 2 && File.Exists(args[1]) && args[1].EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+    {
+        var file = SafeHtmlDocument.Build(File.ReadAllText(args[1]), new Dictionary<string, byte[]>());
+        var fileWatch = System.Diagnostics.Stopwatch.StartNew();
+        var fr = await BrowserHtmlRenderer.RenderDocumentAsync(file, 800, CancellationToken.None, trustedOriginal: false);
+        Console.WriteLine($"[{Path.GetFileName(args[1])}] {fileWatch.ElapsedMilliseconds} ms, {fr.Pages.Count} tiles, {fr.Text.Count} runs, {new SnapshotText(fr.Text).Text.Length} chars");
+        return 0;
+    }
+    if (args.Length < 3) { Console.Error.WriteLine("usage: selprobe <copy of a pst> <subject text>... | selprobe <file.html>"); return 2; }
+    using var e = OpenOutlook.PstNative.PstEngineFactory.Open(args[1]);
+    var all = e.AllFolders().SelectMany(f => e.GetMessages(f)).ToList();
+    foreach (var wanted in args.Skip(2))
+    {
+        var hit = all.FirstOrDefault(m => m.Subject.Contains(wanted, StringComparison.OrdinalIgnoreCase));
+        if (hit is null) { Console.WriteLine($"[{wanted}] no such message"); continue; }
+        var msg = e.OpenMessage(hit);
+        if (msg.BodyHtml is not { } html) { Console.WriteLine($"[{wanted}] no HTML body"); continue; }
+        var doc = SafeHtmlDocument.Build(html, new Dictionary<string, byte[]>());
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var r = await BrowserHtmlRenderer.RenderDocumentAsync(doc, 800, CancellationToken.None, trustedOriginal: false);
+            var text = new SnapshotText(r.Text);
+            Console.WriteLine($"[{hit.Subject}] {watch.ElapsedMilliseconds} ms, {r.Pages.Count} tiles, {r.Text.Count} runs, {text.Text.Length} chars");
+            Console.WriteLine("  " + text.Text[..Math.Min(600, text.Text.Length)].Replace("\n", " | ").Replace("\t", " <tab> "));
+        }
+        catch (Exception ex) { Console.WriteLine($"[{wanted}] FAILED after {watch.ElapsedMilliseconds} ms: {ex.Message}"); }
+    }
+    return 0;
+}
 if (step == "openeditable")
 {
     // the way the application opens a data file (editable when it can be, else read-only with a reason); no accounts needed: MailSmoke openeditable <file>
@@ -324,7 +357,7 @@ var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rende
 if (!liveSteps.Contains(step))
 {
     Console.Error.WriteLine(step.Length == 0 ? "MailSmoke: name a step." : $"MailSmoke: unknown step '{step}'.");
-    Console.Error.WriteLine("Offline steps: mkbigrecips, mkmulti, mkmany, touchall, wvprobe, compare, imgsurvey, imgprobe, openeditable.");
+    Console.Error.WriteLine("Offline steps: mkbigrecips, mkmulti, mkmany, touchall, wvprobe, compare, imgsurvey, imgprobe, openeditable, selprobe.");
     Console.Error.WriteLine("Live steps (use the real accounts): " + string.Join(", ", liveSteps.Order()) + ". 'sendtest' sends real mail.");
     return 2;
 }

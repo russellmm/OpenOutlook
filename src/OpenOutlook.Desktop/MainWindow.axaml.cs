@@ -2377,10 +2377,11 @@ public sealed partial class MainWindow : Window
             _htmlPageBitmaps.AddRange(bitmaps);
             _htmlPagePngs = rendered.Pages;
             double top = 0;
+            var selection = new SnapshotSelection(new SnapshotText(rendered.Text));       // one selection across all tiles
             foreach (var bitmap in bitmaps)
             {
                 HtmlPagesPanel.Children.Add(new HtmlPageView(bitmap, top, rendered.Links,
-                    message => StatusText.Text = message, rendered.Text));
+                    message => StatusText.Text = message, selection));
                 top += bitmap.PixelSize.Height;
             }
             FitHtmlPageImage();

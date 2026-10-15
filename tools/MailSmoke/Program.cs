@@ -285,8 +285,10 @@ if (step == "imgprobe")
     foreach (var u in urls)
     {
         string verdict;
+        var fetchWatch = System.Diagnostics.Stopwatch.StartNew();
         try { var bytes = await OpenOutlook.Desktop.SafeRemoteImageLoader.FetchAsync(u, client); verdict = "OK " + bytes.Length; }
         catch (Exception ex) { verdict = "FAIL " + ex.GetType().Name + ": " + ex.Message; }
+        verdict = $"{fetchWatch.ElapsedMilliseconds,6} ms " + verdict;
         // what the server really sends, without the reader's restrictions
         string raw;
         try

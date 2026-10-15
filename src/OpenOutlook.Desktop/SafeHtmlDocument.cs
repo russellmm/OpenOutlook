@@ -29,7 +29,9 @@ public static partial class SafeHtmlDocument
         foreach (var element in document.QuerySelectorAll("[background]")) Add(element.GetAttribute("background"));
         foreach (var element in document.QuerySelectorAll("[style], style"))
         {
-            var css = element.LocalName == "style" ? element.TextContent : element.GetAttribute("style") ?? "";
+            // A style sheet's pictures count only where they can be drawn: rules for print, and rules whose selector matches nothing in
+            // this message (American Express puts "printed" and "forwarded" tracking beacons in such rules), are not fetched.
+            var css = element.LocalName == "style" ? ScreenRulesWithPictures(document, element.TextContent) : element.GetAttribute("style") ?? "";
             // Web fonts are not pictures: an @font-face src (a .woff from the sender's site) was counted as a picture that "could not be
             // loaded" (a Delta mailing, 2026-10-15). Fonts stay blocked by the page's CSP; they are just not reported any more.
             css = FontFaceRule().Replace(css, "");
@@ -44,14 +46,102 @@ public static partial class SafeHtmlDocument
         }
     }
 
+    /// <summary>
+    /// The declarations of a style sheet that can put a picture on screen: rules inside <c>@media print</c> (only) and other
+    /// at-rules are skipped, and a rule is kept only when one of its selectors matches an element of the message (a selector
+    /// AngleSharp cannot evaluate counts as matching).
+    /// </summary>
+    internal static string ScreenRulesWithPictures(IParentNode document, string css)
+    {
+        var kept = new StringBuilder();
+        Scan(css, 0, css.Length);
+        return kept.ToString();
+
+        void Scan(string text, int start, int end)
+        {
+            var i = start;
+            while (i < end)
+            {
+                var open = text.IndexOf('{', i, end - i);
+                if (open < 0) return;
+                var prelude = text[i..open].Trim();
+                var semicolon = prelude.LastIndexOf(';');                        // "@import ...;" or "@charset ...;" before the rule
+                if (semicolon >= 0) prelude = prelude[(semicolon + 1)..].Trim();
+                var close = MatchingBrace(text, open, end);
+                if (close < 0) return;
+                if (prelude.StartsWith('@'))
+                {
+                    if (prelude.StartsWith("@media", StringComparison.OrdinalIgnoreCase) && !IsPrintOnly(prelude))
+                        Scan(text, open + 1, close);
+                    // @font-face, @keyframes, @page and the rest put no picture on the page.
+                }
+                else
+                {
+                    var body = text[(open + 1)..close];
+                    if (body.Contains("url(", StringComparison.OrdinalIgnoreCase) && AnyMatch(prelude))
+                        kept.Append(body).Append(';');
+                }
+                i = close + 1;
+            }
+        }
+
+        bool AnyMatch(string selectors)
+        {
+            foreach (var selector in selectors.Split(','))
+            {
+                var plain = Regex.Replace(selector, @"::?[a-zA-Z-]+(\([^)]*\))?", "").Trim();       // :hover, ::before -> the element itself
+                if (plain.Length == 0) return true;
+                try { if (document.QuerySelector(plain) is not null) return true; }
+                catch (Exception) { return true; }
+            }
+            return false;
+        }
+
+        static bool IsPrintOnly(string media) =>
+            Regex.IsMatch(media, @"\bprint\b", RegexOptions.IgnoreCase) && !Regex.IsMatch(media, @"\b(screen|all)\b", RegexOptions.IgnoreCase);
+
+        static int MatchingBrace(string text, int open, int end)
+        {
+            var depth = 0;
+            for (var j = open; j < end; j++)
+            {
+                if (text[j] == '{') depth++;
+                else if (text[j] == '}' && --depth == 0) return j;
+            }
+            return -1;
+        }
+    }
+
     private static bool IsHiddenImage(IElement image)
     {
         if (image.HasAttribute("hidden") || image.GetAttribute("width")?.Trim() == "0" ||
             image.GetAttribute("height")?.Trim() == "0") return true;
         var style = image.GetAttribute("style");
-        return style is not null && Regex.IsMatch(style,
+        if (style is not null && Regex.IsMatch(style,
             @"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)(?:\s*!important)?\s*(?:;|$)",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) return true;
+        return IsTrackingPixel(image, style);
+    }
+
+    /// <summary>
+    /// A 1 x 1 picture (by attributes or inline style) is a tracking pixel, not content: there is nothing to see, and fetching it only
+    /// tells the sender the message was opened -- and can be slow (an American Express tracking server took 8 s per pixel). It is not
+    /// fetched and not counted as a missing picture.
+    /// </summary>
+    private static bool IsTrackingPixel(IElement image, string? style)
+    {
+        static bool Tiny(string? value) => value is not null &&
+            double.TryParse(value.Trim().TrimEnd('x', 'X', 'p', 'P').Trim(), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var size) && size <= 1;
+        string? StyleValue(string name)
+        {
+            if (style is null) return null;
+            var match = Regex.Match(style, @"(?:^|[;\s])" + name + @"\s*:\s*([0-9.]+)\s*px", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            return match.Success ? match.Groups[1].Value : null;
+        }
+        var width = StyleValue("width") ?? image.GetAttribute("width");
+        var height = StyleValue("height") ?? image.GetAttribute("height");
+        return Tiny(width) && Tiny(height);
     }
 
     public static string Build(string html, IReadOnlyDictionary<string, byte[]> images)

@@ -18,6 +18,42 @@ public sealed class SafeHtmlDocumentTests
     }
 
     [Fact]
+    public void OneByOneTrackingPixelsAreNotFetched()
+    {
+        // The two American Express trackers of 2026-10-15 (one of them took 8 s to send its 47 bytes), plus a real small icon.
+        var html = "<img src='https://click.example/open.aspx?id=1' width='1' height='1' alt=''>" +
+            "<img id='_two50_img' src='http://analytics.example/ea/?e=2' width='1' height='1' " +
+            "style='margin:0 !important; height:1px !important; width:1px !important'>" +
+            "<img src='https://track.example/css-only' style='width:1px;height:1px'>" +
+            "<img src='https://images.example/icon.png' width='16' height='16'>" +
+            "<img src='https://images.example/tall.png' width='1' height='40'>";
+        var sources = SafeHtmlDocument.FindImages(html);
+        Assert.Equal(new[] { "https://images.example/icon.png", "https://images.example/tall.png" }, sources.Select(s => s.Value));
+    }
+
+    [Fact]
+    public void StyleSheetPicturesThatCannotShowAreNotFetched()
+    {
+        // American Express: a "printed" beacon in @media print and a "forwarded" beacon for an element only a forward contains.
+        var html = """
+            <html><head><style>
+            @media print { #_two50 { background-image:url("http://analytics.example/ea/?t=p"); } }
+            blockquote #_two50, div.OutlookMessageHeader { background-image:url("http://analytics.example/ea/?t=f"); }
+            .hero { background:url('https://images.example/hero.jpg') no-repeat; }
+            @media screen and (max-width: 600px) { .hero { background-image:url('https://images.example/hero-mobile.jpg'); } }
+            .unused { background:url('https://images.example/unused.png'); }
+            a:hover .hero, div.hero::before { background:url('https://images.example/hover.png'); }
+            </style></head><body><div id="_two50"></div><div class="hero">Hi</div></body></html>
+            """;
+        var urls = SafeHtmlDocument.FindImages(html).Select(s => s.Value).ToArray();
+        Assert.Contains("https://images.example/hero.jpg", urls);
+        Assert.Contains("https://images.example/hero-mobile.jpg", urls);
+        Assert.Contains("https://images.example/hover.png", urls);
+        Assert.DoesNotContain("https://images.example/unused.png", urls);
+        Assert.DoesNotContain(urls, u => u.Contains("analytics.example", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void KeepsTableLayoutAndColorsWithoutBrowserNetworkUrls()
     {
         var html = """
@@ -199,7 +235,7 @@ public sealed class SafeHtmlDocumentTests
     {
         var html = "<html><head><style>@font-face{font-family:X;src:url('https://a.example.com/f/brand.woff2') format('woff2')}" +
             ".hero{background:url('https://img.example.com/hero.png')}</style></head><body style=\"background-image:url(https://a.example.com/x.ttf?v=2)\">" +
-            "<img src=\"https://img.example.com/logo.png\" alt=\"logo\"></body></html>";
+            "<div class=\"hero\"></div><img src=\"https://img.example.com/logo.png\" alt=\"logo\"></body></html>";
         var found = SafeHtmlDocument.FindImages(html).Select(i => i.Value).ToList();
         Assert.Equal(2, found.Count);
         Assert.Contains("https://img.example.com/hero.png", found);

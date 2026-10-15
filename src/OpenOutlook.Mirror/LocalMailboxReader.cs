@@ -50,11 +50,21 @@ public static class LocalMailboxReader
             var id = known.Id;
             var flagged = flags is not null && flags.TryGetValue(id, out var changed) ? changed : known.Flagged;
             rows.Add(new GraphInboxMessage(id, s.Subject, s.From, s.To,
-                s.Received == default ? null : new DateTimeOffset(DateTime.SpecifyKind(s.Received, DateTimeKind.Utc)),
+                ToInstant(s.Received),
                 s.Size, s.HasAttachment, s.IsRead, "", flagged, false, s.Importance is >= 0 and <= 2 ? s.Importance : 1));
         }
         rows.Sort((a, b) => Nullable.Compare(b.Received, a.Received));
         var unread = rows.Count(r => !r.IsRead);
         return new GraphInboxPage(pstFolder.Name, rows.Count, unread, rows.Take(MaxMessages).ToList(), rows.Count > MaxMessages);
     }
+
+    /// <summary>
+    /// A message time from the PST engine as an instant. The engine hands out local times (<see cref="DateTimeKind.Local"/>); relabelling
+    /// them as UTC (as this reader did from 2026-10-05) shifted every Hotmail message by the UTC offset once the list converted to local
+    /// time again: 3:16 PM showed as 8:16 AM in Pacific daylight time (found 2026-10-15). Only a time without a zone counts as UTC.
+    /// </summary>
+    public static DateTimeOffset? ToInstant(DateTime received) =>
+        received == default ? null
+        : received.Kind == DateTimeKind.Unspecified ? new DateTimeOffset(DateTime.SpecifyKind(received, DateTimeKind.Utc))
+        : new DateTimeOffset(received);
 }

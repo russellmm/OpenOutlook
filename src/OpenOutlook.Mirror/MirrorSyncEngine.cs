@@ -232,7 +232,9 @@ public static class MirrorSyncEngine
                     firstSkipReason ??= e.Message + " (" + System.Text.Encoding.ASCII.GetString(raw, 0, Math.Min(raw.Length, 120)).Replace('\r', ' ').Replace('\n', ' ') + ")";
                     continue;
                 }
-                if (r.Received is { } rec) { mail.Received ??= rec.UtcDateTime; }
+                // The server's own delivery time wins over the message's Received / Date headers, as in Outlook (those headers put some
+                // Hotmail messages a minute early, 2026-10-15). Gmail lists no time, so its messages keep the header time.
+                if (r.Received is { } rec) mail.Received = rec.UtcDateTime;
                 batch.Add((r, mail));
                 batchBytes += raw.Length;
                 if (batch.Count >= BatchMessages || batchBytes >= BatchBytes) Flush();

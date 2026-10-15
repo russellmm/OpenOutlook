@@ -85,11 +85,12 @@ public sealed class MirrorSyncTests : IDisposable
             Assert.Equal(["m1", "m2"], inbox.Messages.Select(m => m.Id).OrderBy(x => x));       // server ids, so actions still reach the server
             Assert.Equal(1, inbox.UnreadCount);
             Assert.True(inbox.Messages.Single(m => m.Id == "m2").IsFlagged);
-            // the list shows the time the server reported, not one shifted by the UTC offset (8:16 AM for 3:16 PM in Pacific daylight
-            // time, 2026-10-15); only visible on a machine whose zone is not UTC
-            var written = new DateTimeOffset(2026, 10, 5, 10, 0, 0, TimeSpan.Zero);             // the message's own Date header (FakeServer.GetMimeAsync)
+            // the list shows the time the server received the message (not the Date header, which is 2026-10-05 10:00 UTC here), and not
+            // shifted by the UTC offset (8:16 AM for 3:16 PM in Pacific daylight time, 2026-10-15; the shift only shows on a machine
+            // whose zone is not UTC)
+            var received = server.Messages["inbox"].Single(m => m.Id == "m1").Received!.Value;
             var shown = inbox.Messages.Single(m => m.Id == "m1").Received!.Value;
-            Assert.True(shown == written, $"message {written:O}, list {shown:O}");
+            Assert.True(Math.Abs((shown - received).TotalSeconds) < 1, $"server {received:O}, list {shown:O}");
             Assert.Equal("In a subfolder", LocalMailboxReader.Read(pst, state, "proj")!.Messages.Single().Subject);
             var body = LocalMailboxReader.ReadBody(pst, state, "m1")!;                         // the body comes from the copy too
             Assert.Contains("Hello from m1", body.Text);

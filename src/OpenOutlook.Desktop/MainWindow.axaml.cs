@@ -24,6 +24,12 @@ namespace OpenOutlook.Desktop;
 public sealed partial class MainWindow : Window
 {
     private readonly Dictionary<string, IPstEngine> _stores = new(StringComparer.Ordinal);
+    /// <summary>
+    /// Attached data files that were not there at start-up (deleted, renamed, or on a drive that is not connected). They are not opened, they are
+    /// listed in Account Settings > Data Files as "not found" where Remove takes them off the list, and they stay saved otherwise so a drive that
+    /// comes back works again. Until 2026-10-16 a missing file was logged as an error with a stack trace on every start.
+    /// </summary>
+    private readonly List<string> _missingArchives = [];
     private readonly Dictionary<(string Path, uint FolderNid), IReadOnlyList<MailSummary>> _folderCache = new();
     private readonly Queue<(string Path, uint FolderNid)> _folderCacheOrder = new();
     private readonly SemaphoreSlim _readerGate = new(1, 1);
@@ -192,7 +198,15 @@ public sealed partial class MainWindow : Window
                 StatusText.Text = "Could not read saved PST attachments; check attached-psts.json in your OpenOutlook settings.";
             }
             foreach (var path in savedArchives)
+            {
+                if (!File.Exists(path))
+                {
+                    _missingArchives.Add(path);
+                    AppLog.Note("pst-open", $"attached data file not found: {path} (remove it in File > Account Settings > Data Files, or reconnect its drive)");
+                    continue;
+                }
                 await OpenArchiveAsync(path, remember: false);
+            }
             // Explicit command-line archives enable repeatable headless UI smoke tests.
             foreach (var path in Environment.GetCommandLineArgs().Skip(1).Where(File.Exists))
                 await OpenArchiveAsync(Path.GetFullPath(path));
@@ -209,8 +223,12 @@ public sealed partial class MainWindow : Window
             _ = WarmUpMicrosoftAsync();                             // token and connection ready before the first click
             StartJunkScheduler();                                   // silent Junk Cleaner runs
             if (Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_HTML") == "1") _ = RunHtmlSelfTestAsync();      // diagnostics: renders a sample message and logs the outcome
-            var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path));
-            if (unavailable > 0)
+            var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path) && !_missingArchives.Contains(path));
+            if (_missingArchives.Count > 0)
+                StatusText.Text = (_missingArchives.Count == 1 ? $"The data file {Path.GetFileName(_missingArchives[0])} was not found."
+                    : $"{_missingArchives.Count} data files were not found.") + (_missingArchives.Count == 1 ? " Remove it" : " Remove them") + " in File > Account Settings > Data Files, or reconnect the drive." +
+                    (unavailable > 0 ? $" {unavailable} other could not be opened." : "");
+            else if (unavailable > 0)
                 StatusText.Text = $"{unavailable} saved PST archive{(unavailable == 1 ? "" : "s")} could not be opened; the paths remain saved for the next restart.";
         };
     }

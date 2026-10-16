@@ -105,6 +105,8 @@ public partial class MainWindow
             rows.Add(new DataFileRow(store.DisplayName, path, "Outlook data file", size,
                 store.CanWrite ? "editable" : "read-only: " + (_readOnlyReasons.TryGetValue(path, out var why) ? why : "not editable")));
         }
+        foreach (var path in _missingArchives)
+            rows.Add(new DataFileRow(System.IO.Path.GetFileNameWithoutExtension(path), path, "Outlook data file", 0, "not found (select it and press Remove)", Available: false));
         return rows;
     }
 
@@ -304,6 +306,14 @@ public partial class MainWindow
                 return "The mailbox copy was closed and turned off. The file was not deleted; turn it on again in Settings.";
             }
             if (w._stores.TryGetValue(row.Path, out var store)) { await w.DetachAsync(row.Path, store); return $"{row.Name} was closed; the file was not deleted."; }
+            if (w._missingArchives.Remove(row.Path))
+            {
+                try { w._attachedPstStore.Remove(row.Path); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException) { return "Could not update the list of data files: " + e.Message; }
+                AppLog.Note("pst-open", $"missing data file removed from the list: {row.Path}");
+                if (w.StatusText.Text?.Contains("was not found", StringComparison.Ordinal) == true) w.StatusText.Text = "";
+                return $"{System.IO.Path.GetFileName(row.Path)} was removed from the list. It will not be looked for again.";
+            }
             return "That file is no longer open.";
         }
         public void OpenFileLocation(DataFileRow row) => w.OpenFileLocationOf(row.Path);

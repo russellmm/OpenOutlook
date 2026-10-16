@@ -294,4 +294,8 @@ Builds 0.1.48 from `8755aa1`: Windows republished, Linux `publish/openoutlook_0.
 
 ## Log viewer (2026-10-16)
 File > Account now has a **Log** card with **View log**: a window (`LogViewerWindow`) showing the program log (`openoutlook.log` and the rotated `.1`) as entries, newest first, with a search box, an "Only problems" filter (exception / error / failed / could not / not loaded / not shown / refused / problem), Refresh, Copy, Open log folder and Close; at most the newest 2,000 entries are shown (the status line says how many matched). `AppLogReader` keeps stack-trace lines with their entry and reads with FileShare.ReadWrite while the program writes. Tests: `AppLogReaderTests` (4), headless `File_account_has_a_view_log_link_and_the_viewer_shows_the_log_newest_first`. Windows unit 642 + 5 known, headless 50.
+- Builds 0.1.49 from `d95c6a1` (Windows and Linux). Owner tried the log viewer: works.
+
+## Missing attached data files (2026-10-16)
+Owner: "could not open F:\Claude\test_C5.pst ... (error 2)" was logged with a stack trace on every start, with no way to clear it. Now a saved data file that does not exist is not opened: one log line ("attached data file not found: ... remove it in File > Account Settings > Data Files, or reconnect its drive"), a status line naming the file, and a row with status "not found (select it and press Remove)" in Account Settings > Data Files; Remove takes it off `attached-psts.json`. It is never removed automatically, because a USB or network drive can come back. Test: headless `A_missing_attached_data_file_is_listed_as_not_found_and_remove_takes_it_off_the_list`. Windows unit 642 + 5 known, headless 51. **For the owner:** in 0.1.50, File > Account Settings > Data Files > select test_C5 > Remove.
 

@@ -1643,4 +1643,33 @@ public sealed class MainWindowHeadlessTests
             try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
         }
     }
+
+    [AvaloniaFact]
+    public async Task A_missing_attached_data_file_is_listed_as_not_found_and_remove_takes_it_off_the_list()
+    {
+        ResetRegistry();
+        var missing = Path.Combine(Path.GetTempPath(), "oo-gone-" + Guid.NewGuid().ToString("N"), "test_C5.pst");
+        var attached = new AttachedPstSettingsStore();
+        attached.Save([missing]);
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        try
+        {
+            ShowWithSnapshotReader(window);
+            var status = window.FindControl<TextBlock>("StatusText")!;
+            await WaitUntil(() => status.Text?.Contains("was not found", StringComparison.Ordinal) == true);
+            Assert.Contains("test_C5.pst", status.Text);
+            Assert.Contains("Data Files", status.Text);
+            var rows = Call<IReadOnlyList<DataFileRow>>(window, "BuildDataFileRows");
+            var row = Assert.Single(rows, r => r.Path == missing);
+            Assert.StartsWith("not found", row.Status, StringComparison.Ordinal);
+            Assert.False(row.Available);
+            var hostType = typeof(MainWindow).GetNestedType("AccountSettingsHost", BindingFlags.NonPublic)!;
+            var host = (IAccountSettingsHost)Activator.CreateInstance(hostType, window)!;
+            var note = await host.RemoveDataFileAsync(row);
+            Assert.Contains("removed from the list", note);
+            Assert.DoesNotContain(missing, attached.Load());                              // not looked for at the next start
+            Assert.DoesNotContain(Call<IReadOnlyList<DataFileRow>>(window, "BuildDataFileRows"), r => r.Path == missing);
+        }
+        finally { window.Close(); attached.Save([]); }
+    }
 }

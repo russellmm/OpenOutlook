@@ -76,6 +76,8 @@ Format rules 1-40 (what SCANPST requires) are in `docs/OpenOutlook_Design_Docume
 | Crash during a write rolls back byte for byte | Power loss | journal | `test_write.c` crash-recovery section *(native)* |
 | ANSI and 4K-page files are read and stay read-only | Old Outlook formats | engine | `PstEngineFormatTests.*` |
 | Very long property values are stored and the file stays clean | | data trees | `PstBigValueTests.Very_long_values_are_stored_and_the_file_stays_clean` |
+| A message with Bcc recipients carries PidTagDisplayBcc (0x0E02) (rule 41); the checker reports it missing and fixer R13 adds it as SCANPST does | 2026-10-16: SCANPST minor on the Hotmail mailbox copy (two phishing mails sent as Bcc); also the long-Bcc SCANPST error (open item A) | `op_import.c`, `op_check.c` rowcells, `op_fix.c` R13 | `test_write.c` (Bcc list read back; hook `OPST_TEST_NO_DISPLAYBCC` -> checker finds -> fixer repairs) *(native)*; SCANPST on the repaired copy and on `mkbigrecips 1:bcc10 1:bcc2500` **manual** |
+| The row's conversation id (0x3013) is the index GUID only for a valid conversation index (header byte 0x01); otherwise MD5 of the upper-cased topic (rule 42). Copy, move, import, the checker and fixer R10 all use `msg_conv_id` | 2026-10-16: our Check & Repair and copies overwrote Outlook's MD5 values on 5 Comcast-forwarded messages; SCANPST minor on both attached archives | `op_ops.c` `msg_conv_id` | `test_formats.c` (real values from the owner's archive) *(native)*; SCANPST on the fixed archives **manual** |
 | A long display-to (> ~2 KB) is one data tree shared by the message and its row (rule 39, cRef 3) | 2026-10-15: SCANPST minor on big recipient lists | `op_edit2.c` `tcbig_put` | MailSmoke `mkbigrecips` + SCANPST (**manual**) |
 | A heap past 8 blocks gets HNBITMAPHDR blocks at 8, 136, ... (66-byte header; rule 40) | 2026-10-15: mailbox-copy sync failed on a big message index | `op_edit.c` `heap_append_item` | soak / SCANPST (**manual**); no unit test |
 | A new PST is a clean empty store; never overwrites | | `opst_create` | `PstCreateTests.*` (5) |
@@ -246,7 +248,6 @@ These have no automated test; they were verified in the app or with a tool, and 
 
 ## Known gaps
 
-- **Bcc recipients give a real SCANPST error** in files the importer writes (deferred; repro with MailSmoke `mkbigrecips` `1:bccL`).
 - A single recipient *name* of 5,000+ characters still gives a SCANPST error (not a real-world case).
 - No checker/fixer rule for PSTs written with the old independent display-to copy (recreate the mailbox copy).
 - Heap bitmap blocks (rule 40) have no unit test; only soak + SCANPST.
@@ -267,6 +268,7 @@ These have no automated test; they were verified in the app or with a tool, and 
 - **`GraphAccountVerification.CacheEnabled` is a static switch**: its tests run in a non-parallel collection; a test that relies on the cache being off or on must join that collection, or Graph tests become flaky.
 - **Time-zone bugs are invisible on a UTC machine** (CI, most containers): a test of local-time handling only fails where the zone has an offset (the owner's PC). Run time tests on Windows too.
 - **Real-Chrome tests return early when no browser is installed** (`BrowserHtmlRendererTests`): on such a machine they pass without checking anything.
+- **SCANPST's "minor inconsistencies" have no log line**: repair a throwaway copy, then `tools/python/pstdiff.py` (which nodes changed), `pcdiff.py` (which properties of a message), `tcdiff.py` (which cells of a table), `convprobe.py` / `convstats.py` (conversation ids). After a repair SCANPST's next scan may report an AMap error at the old end of file: its own slip (rule 20), not ours.
 - **Native tests need a real small PST**: `OPST_TEST_PST=small.pst ctest`; headless tests need `OPENOUTLOOK_TEST_PST`. Always copies, never the owner's files.
 - **MailSmoke live steps touch the real accounts** and `sendtest` sends real mail (it happened four times on 2026-10-15 when an unknown step fell through). Only offline steps without the owner's say-so; confirm `0 Error(s)` before running a newly added step; run WebView probes as `MailSmoke.exe`.
 - **The deb smoke waits for the self-test line, not a fixed time**: a CI runner once needed 20 s to start the single-file program (run 38814882482).

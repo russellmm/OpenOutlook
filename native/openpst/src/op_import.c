@@ -135,7 +135,7 @@ static int has_prefix_ci(const char *s, const char *pre) {
 /* Found by probing SCANPST with imported messages that differ in one field each: the 0x3013 value it writes depends only on the conversation topic and
    equals MD5 over the UTF-16LE bytes of the topic in upper case. Outlook's conversation-index GUID of a new conversation is the same value, so the
    importer uses it for both. (Upper-casing covers ASCII, Latin-1, Latin Extended-A, Greek and Cyrillic; other scripts are left as they are.) */
-static uint16_t upper16(uint16_t c) {
+uint16_t upper16(uint16_t c) {
     if (c >= 'a' && c <= 'z') return (uint16_t)(c - 32);
     if (c == 0xB5) return 0x39C;
     if (c >= 0xE0 && c <= 0xFE && c != 0xF7) return (uint16_t)(c - 32);
@@ -174,7 +174,7 @@ static void md5_block(uint32_t st[4], const uint8_t b[64]) {
     }
     st[0] += a; st[1] += bb; st[2] += cc; st[3] += d;
 }
-static void md5(const uint8_t *p, size_t n, uint8_t out[16]) {
+void md5(const uint8_t *p, size_t n, uint8_t out[16]) {
     uint32_t st[4] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476};
     size_t i = 0;
     for (; i + 64 <= n; i += 64) md5_block(st, p + i);

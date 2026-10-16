@@ -722,12 +722,12 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
                 rep->rowsync_issues++;
                 if (apply) { rc = tc_set_cell(&tc, r, cols[k], p->v.p, want); dirty = 1; }
             }
-            if (!rc) {                                   /* 0x3013 = the conversation GUID of the message */
+            if (!rc) {                                   /* 0x3013 = the conversation id Outlook writes (msg_conv_id: the index's GUID, or MD5(topic) for an invalid index) */
                 int c3 = tc_col(&tc, 0x3013);
-                pcprop *cp = pcprops_find(&mp, 0x71);
-                if (c3 >= 0 && cp && cp->v.n >= 22 && (!tc.rows[r].present[c3] || tc.rows[r].cell[c3].n != 16 || memcmp(tc.rows[r].cell[c3].p, cp->v.p + 6, 16) != 0)) {
+                uint8_t want3[16];
+                if (c3 >= 0 && msg_conv_id(&mp, want3) && (!tc.rows[r].present[c3] || tc.rows[r].cell[c3].n != 16 || memcmp(tc.rows[r].cell[c3].p, want3, 16) != 0)) {
                     rep->rowsync_issues++;
-                    if (apply) { rc = tc_set_cell(&tc, r, c3, cp->v.p + 6, 16); dirty = 1; }
+                    if (apply) { rc = tc_set_cell(&tc, r, c3, want3, 16); dirty = 1; }
                 }
             }
             if (!rc) {

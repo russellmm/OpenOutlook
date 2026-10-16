@@ -273,6 +273,9 @@ int  row_fill_missing(tctx *tc, size_t r, pcprops *mp, int apply);
 int  row_fill_node(opw *w, tctx *tc, uint32_t rowid);
 int  row_conv_key(const tctx *tc, uint32_t rowid, uint32_t *key);
 int  row_sync_conv_id(opw *w, tctx *tc, uint32_t rowid);
+int  msg_conv_id(const pcprops *mp, uint8_t out[16]);      /* the row's 0x3013 Outlook writes for a message; 0 = cannot tell (leave the cell alone) */
+uint16_t upper16(uint16_t c);                             /* op_import.c */
+void md5(const uint8_t *p, size_t n, uint8_t out[16]);   /* op_import.c */
 uint32_t conv_key_of_guid(const uint8_t *g);
 int  ops_set_i32(ops *o, uint32_t nid, unsigned pid, uint32_t v);
 int  fo_repair_all(ops *o, int apply, int *found, void (*say)(void *, const char *), void *ctx);

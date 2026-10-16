@@ -939,3 +939,19 @@ Items found in this file: 3
 Folders found in this file: 6
 Items found in this file: 3
  | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-16 11:20:26  F:\Claude\OpenOutlook\.local\scan\a1-2026-10-16\rep.pst MINOR+REPAIRED folders=22 items=2793 log:45 lines, 0 flagged (!!/??)
+    dialog: OK | Repair complete
+2026-10-16 11:20:38  F:\Claude\OpenOutlook\.local\scan\a3-2026-10-16\rep.pst MINOR+REPAIRED folders=46 items=13410 log:45 lines, 0 flagged (!!/??)
+    dialog: OK | Repair complete
+2026-10-16 11:29:23  F:\Claude\OpenOutlook\.local\scan\a1-2026-10-16\fixed.pst NO_ERRORS folders=22 items=2793 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\a1-2026-10-16\fixed.pst | No errors were found in this file.
+
+Folders found in this file: 22
+Items found in this file: 2793
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-16 11:29:32  F:\Claude\OpenOutlook\.local\scan\a3-2026-10-16\fixed.pst NO_ERRORS folders=46 items=13410 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\a3-2026-10-16\fixed.pst | No errors were found in this file.
+
+Folders found in this file: 46
+Items found in this file: 13410
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK

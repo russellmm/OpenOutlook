@@ -552,13 +552,13 @@ static int check_rowcells(chk *c, ops *o, const tabvec *tabs) {
                 if (row_fill_missing(&tc, r, &mp, 0) > 0) short_rows++;
                 {
                     int c3 = tc_col(&tc, 0x3013);
-                    pcprop *cp = pcprops_find(&mp, 0x71);
-                    if (c3 >= 0 && cp && cp->v.n >= 22 && tc.rows[r].present[c3] && (tc.rows[r].cell[c3].n != 16 || memcmp(tc.rows[r].cell[c3].p, cp->v.p + 6, 16) != 0)) conv_rows++;
+                    uint8_t want3[16];
+                    if (c3 >= 0 && msg_conv_id(&mp, want3) && tc.rows[r].present[c3] && (tc.rows[r].cell[c3].n != 16 || memcmp(tc.rows[r].cell[c3].p, want3, 16) != 0)) conv_rows++;
                 }
                 pcprops_free(&mp);
             }
         }
-        if (conv_rows) note(c, &probs, "  contents table 0x%x: %zu of %zu rows have a conversation id (0x3013) that is not the GUID of the message's conversation index (SCANPST rewrites it and re-indexes the message)", tabs->v[ti], conv_rows, tc.nrows);
+        if (conv_rows) note(c, &probs, "  contents table 0x%x: %zu of %zu rows have a conversation id (0x3013) other than the one Outlook writes (the conversation index's GUID, or MD5 of the topic when the index is not valid; SCANPST rewrites it and re-indexes the message)", tabs->v[ti], conv_rows, tc.nrows);
         if (short_rows) note(c, &probs, "  contents table 0x%x: %zu of %zu rows lack cells for columns of the table that the message has a value for (SCANPST: Contents Table row doesn't match sub-object)", tabs->v[ti], short_rows, tc.nrows);
         if (miss) note(c, &probs, "  contents table 0x%x: %zu of %zu rows lack the row cells 0x0E17 / 0x3013 that Outlook writes (SCANPST adds them)", tabs->v[ti], miss, tc.nrows);
         tc_free(&tc);

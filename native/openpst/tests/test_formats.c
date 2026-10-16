@@ -2,6 +2,7 @@
  * The vectors were made by independent implementations: the cyclic cipher from the algorithm printed in MS-PST 5.2 (tables from the managed
  * reader), the zlib streams by zlib itself. */
 #include "../src/op_internal.h"
+#include "../src/op_wr.h"
 
 static int fails, checks;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; printf("FAIL line %d: %s", __LINE__, #c); putchar(10); } } while (0)
@@ -48,6 +49,24 @@ int main(void) {
         memcpy(bad, z_l1, sizeof bad);
         for (size_t i = 2 + (size_t)round % 5; i < sizeof bad; i += 3 + (size_t)round % 7) bad[i] ^= (uint8_t)(0x11 * (round + 1));
         (void)op_zinflate(bad, sizeof bad, got, wn);
+    }
+    /* the row's conversation id (0x3013) as Outlook writes it (msg_conv_id): the GUID of a valid conversation index, MD5 of the upper-cased topic when
+       the index's header byte is not 0x01. Values from an Outlook-written archive SCANPST calls clean: "RE: Check", index 9248ef56cb66 8cc2e00c... */
+    {
+        static const uint8_t bad_index[27] = {0x92, 0x48, 0xef, 0x56, 0xcb, 0x66, 0x8c, 0xc2, 0xe0, 0x0c, 0xe3, 0xbf, 0x55, 0xd2, 0x23, 0x92, 0xf8, 0x73, 0x22, 0xb2, 0xf0, 0x89, 0x92, 0xe0, 0xd4, 0xe8, 0xe0};
+        static const uint8_t md5_check[16] = {0xff, 0x12, 0x0e, 0xfe, 0x36, 0x3b, 0x5d, 0xbc, 0xaa, 0x1b, 0x97, 0xb1, 0xe6, 0x3d, 0xbc, 0xd2};
+        static const uint8_t topic_check[10] = {'C', 0, 'h', 0, 'e', 0, 'c', 0, 'k', 0};
+        uint8_t id[16], good_index[22];
+        memcpy(good_index, bad_index, sizeof good_index);
+        good_index[0] = 0x01;
+        pcprops mp = {0};
+        CHECK(pcprops_set(&mp, 0x0070, 0x1F, topic_check, sizeof topic_check) == 0);
+        CHECK(msg_conv_id(&mp, id) == 0);                                       /* no conversation index: leave the row alone */
+        CHECK(pcprops_set(&mp, 0x0071, 0x102, bad_index, sizeof bad_index) == 0);
+        CHECK(msg_conv_id(&mp, id) == 1 && memcmp(id, md5_check, 16) == 0);      /* invalid header byte: MD5("CHECK") */
+        CHECK(pcprops_set(&mp, 0x0071, 0x102, good_index, sizeof good_index) == 0);
+        CHECK(msg_conv_id(&mp, id) == 1 && memcmp(id, good_index + 6, 16) == 0); /* valid index: its GUID */
+        pcprops_free(&mp);
     }
     printf("%d checks, %d failed", checks, fails);
     putchar(10);

@@ -671,16 +671,36 @@ int row_conv_key(const tctx *tc, uint32_t rowid, uint32_t *key) {
     *key = conv_key_of_guid(tc->rows[ri].cell[ci].p);
     return 1;
 }
-/* The row's 0x3013 (PidTagConversationId) of a message that has a conversation index is the GUID inside it, bytes 6..22 (true for every message
-   Outlook wrote; SCANPST rewrites any other value and re-indexes the message). Returns 0 when the message has no conversation index. */
+/* The row's 0x3013 (PidTagConversationId) as Outlook writes it. A valid conversation index (header byte 0x01, at least 22 bytes) gives the GUID inside
+   it, bytes 6..22; a conversation index with any other header byte (seen on mail forwarded through Comcast / Zimbra) gives MD5 of the upper-cased
+   topic (0x0070) as UTF-16LE, the value Outlook uses for mail without an index. Measured on an Outlook-written archive that SCANPST calls clean
+   (2026-10-16): 2,788 rows with a valid index all carry the GUID, the 5 rows with another header byte all carry MD5(topic). The rule used until then
+   ("always the GUID") made Check & Repair and every copy overwrite those 5 values, and SCANPST then reported minor inconsistencies.
+   Returns 0 (out untouched) for a message without a conversation index or, with an invalid one, without a topic. */
+int msg_conv_id(const pcprops *mp, uint8_t out[16]) {
+    const pcprop *ci = pcprops_find((pcprops *)mp, 0x71);
+    if (!ci || ci->ext_nid || ci->v.n == 0) return 0;
+    if (ci->v.n >= 22 && ci->v.p[0] == 0x01) { memcpy(out, ci->v.p + 6, 16); return 1; }
+    const pcprop *tp = pcprops_find((pcprops *)mp, 0x0070);
+    if (!tp || tp->ext_nid || tp->ptype != 0x1F) return 0;
+    uint8_t *u = (uint8_t *)malloc(tp->v.n ? tp->v.n : 1);
+    if (!u) return 0;
+    for (size_t i = 0; i + 1 < tp->v.n; i += 2) {
+        uint16_t c = upper16((uint16_t)(tp->v.p[i] | tp->v.p[i + 1] << 8));
+        u[i] = (uint8_t)c; u[i + 1] = (uint8_t)(c >> 8);
+    }
+    md5(u, tp->v.n & ~(size_t)1, out);
+    free(u);
+    return 1;
+}
+
 int row_sync_conv_id(opw *w, tctx *tc, uint32_t rowid) {
     int ri = tc_find(tc, rowid), ci = tc_col(tc, 0x3013);
     if (ri < 0 || ci < 0) return 0;
     pcprops mp;
     if (pcprops_get_ex(w, rowid, &mp, 1) != 0) return 0;
-    pcprop *p = pcprops_find(&mp, 0x71);
-    int rc = 0;
-    if (p && p->v.n >= 22) rc = tc_set_cell(tc, (size_t)ri, ci, p->v.p + 6, 16);
+    uint8_t id[16];
+    int rc = msg_conv_id(&mp, id) ? tc_set_cell(tc, (size_t)ri, ci, id, 16) : 0;
     pcprops_free(&mp);
     return rc;
 }

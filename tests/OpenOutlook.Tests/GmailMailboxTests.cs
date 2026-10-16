@@ -96,6 +96,22 @@ public sealed class GmailMailboxTests
     }
 
     [Fact]
+    public async Task Reads_the_content_id_of_an_inline_picture()
+    {
+        using var client = Fake(path => path.EndsWith("/profile", StringComparison.Ordinal)
+            ? """{"emailAddress":"me@example.org"}"""
+            : $$$"""
+            {"id":"m1","payload":{"mimeType":"multipart/related","parts":[
+              {"mimeType":"text/html","body":{"data":"{{{B64("<img src='cid:logo1'>")}}}"}},
+              {"mimeType":"image/png","filename":"logo.png","headers":[{"name":"Content-ID","value":"<logo1>"}],"body":{"size":10,"attachmentId":"a"}},
+              {"mimeType":"application/pdf","filename":"report.pdf","body":{"size":20,"attachmentId":"b"}}]}}
+            """);
+        var content = await Mailbox(client).GetContentAsync("m1");
+        Assert.Equal("logo1", content.Attachments.Single(a => a.FileName == "logo.png").ContentId);
+        Assert.Null(content.Attachments.Single(a => a.FileName == "report.pdf").ContentId);
+    }
+
+    [Fact]
     public async Task Rejects_invalid_ids_and_labels_before_any_request()
     {
         var calls = 0;

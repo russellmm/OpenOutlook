@@ -102,7 +102,7 @@ public sealed partial class AccountSettingsWindow
 
     /// <summary>The words of the keyword box: separated by commas (new lines and semicolons work too), trimmed, without duplicates.</summary>
     internal static IReadOnlyList<string> ParseJunkKeywords(string? text) =>
-        JunkCleanerSettingsStore.NormalizeKeywords((text ?? "").Split([',', '\n', '\r', ';'], StringSplitOptions.RemoveEmptyEntries));
+        JunkCleanerSettingsStore.NormalizeKeywords((text ?? "").Split(new[] { ',', '\n', '\r', ';' }, StringSplitOptions.RemoveEmptyEntries));
 
     private ConnectedAccount? SelectedJunkAccount() => (_junkAccount.SelectedItem as ComboBoxItem)?.Tag as ConnectedAccount;
 

@@ -29,10 +29,13 @@ public static class PstMessageHeader
     public static IReadOnlyList<MailAttachment> VisibleAttachments(MailMessage message) =>
         message.Attachments.Where(a => !a.IsHidden && !IsInline(a, message.BodyHtml)).ToList();
 
-    private static bool IsInline(MailAttachment attachment, string html)
+    private static bool IsInline(MailAttachment attachment, string html) => IsInlinePicture(attachment.ContentId, html);
+
+    /// <summary>True when the HTML body shows this attachment itself (cid: reference); Outlook does not list such pictures as attachments.</summary>
+    public static bool IsInlinePicture(string? contentId, string? html)
     {
-        var id = attachment.ContentId?.Trim().Trim('<', '>');
-        return !string.IsNullOrEmpty(id) && html.Contains("cid:" + id, StringComparison.OrdinalIgnoreCase);
+        var id = contentId?.Trim().Trim('<', '>');
+        return !string.IsNullOrEmpty(id) && html?.Contains("cid:" + id, StringComparison.OrdinalIgnoreCase) == true;
     }
 
     /// <summary>"Attachments: report.pdf (1.2 MB), photo.jpg (310 KB)" or "" when there is nothing to list.</summary>

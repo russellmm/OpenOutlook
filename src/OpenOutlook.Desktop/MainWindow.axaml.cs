@@ -42,6 +42,7 @@ public sealed partial class MainWindow : Window
     private ObservableCollection<GraphMessageListRow>? _graphRows;
     private GraphInboxMessage? _activeGraphMessage;
     private IReadOnlyList<GraphAttachment>? _currentGraphAttachments;
+    private IReadOnlyList<GraphAttachment> _visibleGraphAttachments = [];   // without the pictures the body shows (cid:), as Outlook lists them
     private long _folderVersion;
     private long _messageVersion;
     private IReadOnlyList<MailSummary>? _currentMessages;
@@ -480,7 +481,7 @@ public sealed partial class MainWindow : Window
     {
         var chosen = await SafePick.FilesAsync(this, new FilePickerOpenOptions
         {
-            Title = "Open a PST archive read-only",
+            Title = "Open Outlook Data File",
             AllowMultiple = true,
             FileTypeFilter = [new FilePickerFileType("Outlook PST") { Patterns = ["*.pst"] }]
         }, failure => StatusText.Text = failure);
@@ -1187,7 +1188,7 @@ public sealed partial class MainWindow : Window
             finally { _readerGate.Release(); }
             if (version != _messageVersion) return;
             _activeMessage = message;
-            ExportAttachmentButton.IsEnabled = message.Attachments.Count > 0;
+            ExportAttachmentButton.IsEnabled = PstMessageHeader.VisibleAttachments(message).Count > 0;
             ExportMessageButton.IsEnabled = true;
             SubjectText.Text = message.Summary.Subject;
             SenderText.Text = message.Summary.From;
@@ -1270,9 +1271,10 @@ public sealed partial class MainWindow : Window
             var bodyShown = localBody is not null; // already on screen; only the attachments are left to add
             if (!bodyShown) ShowGraphMessageHeader(message);
             _currentGraphAttachments = attachments;
-            ExportAttachmentButton.IsEnabled = attachments.Any(CanSaveGraphAttachment);
+            _visibleGraphAttachments = attachments.Where(a => !PstMessageHeader.IsInlinePicture(a.ContentId, body?.Content)).ToList();
+            ExportAttachmentButton.IsEnabled = _visibleGraphAttachments.Any(CanSaveGraphAttachment);
             AttachmentText.Text = attachmentError ? "Could not load attachments. Select this message again to retry." : "";
-            ShowAttachmentChips(attachments.Select(a => (a.Name, (long)a.SizeBytes, CanSaveGraphAttachment(a))));
+            ShowAttachmentChips(_visibleGraphAttachments.Select(a => (a.Name, (long)a.SizeBytes, CanSaveGraphAttachment(a))));
             if (!bodyShown) SetMessageBody(string.Equals(body?.ContentType, "html", StringComparison.OrdinalIgnoreCase)
                     ? body?.Content : null,
                 string.Equals(body?.ContentType, "text", StringComparison.OrdinalIgnoreCase)
@@ -1405,9 +1407,9 @@ public sealed partial class MainWindow : Window
             return;
         }
         if (_activeGraphMessage is { } graphMessage && _activeMicrosoftAccount is { } graphAccount &&
-            _currentGraphAttachments is { } graphAttachments)
+            _currentGraphAttachments is not null)
         {
-            await SaveGraphAttachmentAsync(graphAccount, graphMessage, graphAttachments);
+            await SaveGraphAttachmentAsync(graphAccount, graphMessage, _visibleGraphAttachments);
             return;
         }
         var message = _activeMessage;
@@ -1416,8 +1418,9 @@ public sealed partial class MainWindow : Window
         if (message is null || path is null || !_stores.TryGetValue(path, out var store) ||
             message.Attachments.Count == 0) return;
         // A separate attachment choice is required for messages with multiple files.
-        var attachment = message.Attachments.Count == 1 ? message.Attachments[0] :
-            await ChooseAttachmentAsync(message.Attachments);
+        var visible = PstMessageHeader.VisibleAttachments(message);
+        if (visible.Count == 0) return;
+        var attachment = visible.Count == 1 ? visible[0] : await ChooseAttachmentAsync(visible);
         if (attachment is null || version != _messageVersion || !ReferenceEquals(_activeMessage, message)) return;
         if (attachment.Method != 1 || attachment.Size < 0 || attachment.Size > PstAttachmentExporter.DefaultMaximumBytes)
         { StatusText.Text = "Only by-value attachments up to 64 MiB can be exported."; return; }
@@ -1450,7 +1453,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException or PstException)
         { StatusText.Text = "Attachment export failed or target already exists. No existing file was overwritten."; }
-        finally { ExportAttachmentButton.IsEnabled = _activeMessage?.Attachments.Count > 0; }
+        finally { ExportAttachmentButton.IsEnabled = _activeMessage is { } shown && PstMessageHeader.VisibleAttachments(shown).Count > 0; }
     }
 
     private static bool CanSaveGraphAttachment(GraphAttachment attachment)

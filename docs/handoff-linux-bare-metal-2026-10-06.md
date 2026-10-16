@@ -120,3 +120,53 @@ Secrets on this machine: the sudo password for the bare-metal box is in `/mnt/SO
 - **Junk keywords:** the list now lives in `~/.config/OpenOutlook/junk-keywords.json` (one comma-separated line, shared by all accounts). Copy the Windows file (`C:\Users\russell\.config\OpenOutlook\junk-keywords.json`, 145 keywords) there, or edit the list in Account Settings > Junk Cleaner and press Save keywords. The Export button of section 9 is gone (the file is the export).
 - Not yet exercised on Linux at all: Folder/Message Properties, the calendar and appointment window, copy/move, Trust Center, People (contacts list, contact window, picture upload through the GTK file dialog). Add them to the section 3 walk-through.
 
+## 11. Walk-through of 0.1.32 on bare metal (2026-10-15, Ubuntu 26.04, GNOME Wayland, kernel 7.3, two 4K monitors at 1.25x)
+
+Driven by Claude through `ydotool` (real input via `/dev/uinput`; a udev rule `/etc/udev/rules.d/60-uinput.rules` with `TAG+="uaccess"` grants it to the desktop user, remove it when done) and X11 screenshots of the XWayland windows (`import -window <id>`). `xdotool` clicks are ignored by Xwayland 24 on GNOME, the screenshot portal refuses non-interactive captures, and GNOME-native windows (file chooser, Chrome) cannot be seen this way: the owner looked at those. The pointer is positioned in a feedback loop (move, read `xdotool getmouselocation`, correct) because GNOME accelerates relative motion; if another window covers OpenOutlook, `wmctrl -i -a <id>` brings it back. Keys are sent only after checking `_NET_ACTIVE_WINDOW` (one blind type once landed in another app).
+
+Passed:
+- Install of 0.1.32 (AppArmor profile file present); start from the desktop entry and from a terminal (window in ~3 s, 128 px icon, `WM_CLASS` matches `StartupWMClass`); no `[pst-open]` errors.
+- Window size/position and the maximised state are restored after a restart. Context menus draw in front; Message Properties opens on top and active.
+- HiDPI: text sharp at 1.25x (Avalonia scale 2.42 on the XWayland surface).
+- GTK file chooser (portal) for File > Open & Export > Open Outlook Data File: a copy of `blank.pst` opened editable and was attached.
+- Reading: Hotmail HTML (PayPal, Amazon, Nabu Casa) with pictures; an old Rich Text archive message with inline pictures; folder pane wheel scrolling.
+- Snapshot reader selection: drag by character + Ctrl+C copied exactly the range; double-click a word; triple-click a paragraph; right-click Copy; Ctrl+A copies the whole message (checked through the X clipboard).
+- Message Properties: fields and raw headers; Received shown in local time (23:17 UTC as 16:17).
+- People: 20 Hotmail contacts with pictures, detail pane, contact window opens and closes.
+- Calendar: after the owner repaired the Hotmail sign-in (`accounts.json` now has `Calendars.ReadWrite`) the month view shows the account's events, the calendar choices and busy days in the mini months; the new appointment window opens (closed without saving).
+- Compose and send from both accounts: Hotmail to Gmail and Gmail to Hotmail delivered; both Sent folders and inboxes in the mailbox copies show them (the Gmail copy took a few minutes; it syncs on its timer).
+- Hotmail times match local time (the 0.1.32 fix).
+
+Bugs / findings:
+1. Dark theme: the Options page keeps a white background while its text turns light, so the title, "General", "Archive files" and the checkbox label are unreadable. The main window, list and reader are fine in dark. (Theme set back to Light.)
+2. The app does not follow GNOME's dark preference (`color-scheme 'prefer-dark'`); dark is only the manual option.
+3. The Open PST chooser was titled "Open a PST archive read-only" although files open editable (owner: editable is the intended default). Title changed in source to "Open Outlook Data File" (`MainWindow.axaml.cs`, `OpenPstClicked`); not yet built into a package.
+4. File > Open & Export says every first write makes a backup copy, while Options > General has the ".bak copy" box unticked: one of the two texts is wrong.
+5. Seen once: after a sign-in repair the Calendar kept "Calendar access is not saved" until the view was switched away and back (the ribbon Refresh did not re-read the account). The owner could not reproduce it by hand; may be a test artefact. The repair button gives no feedback while the browser sign-in is open.
+6. People list is not alphabetical (Brett, Michael, Anthony, ...); the status bar can stay on "Loading contacts..." after leaving People.
+7. Coming back from File > Options left no folder selected ("Select a folder to begin").
+8. Window width shrinks by under 1 logical px per restart (1982.90 -> 1982.07); harmless drift.
+9. The log reports "OpenOutlook 1.0.0.0" instead of the package version.
+10. One `mark-read` PATCH got Graph 404 at the first start (message probably gone from the server; the copy had not synced since 2026-10-06); it fell back to the local overlay as designed.
+11. The contact window's ribbon is clipped at the right edge at its default width.
+12. (Withdrawn: File > Info "Mailbox Settings" does list the Gmail copy once it is open.)
+
+### 11.1 Second round (same evening, package 0.1.33)
+
+Fixed and built as **0.1.33** (`publish/openoutlook_0.1.33_amd64.deb`, also copied to `publish/openoutlook_current_amd64.deb`; not committed yet):
+- **Inline pictures listed as attachments** (owner: Outlook does not do that). Hotmail/Graph and Gmail messages showed every picture the HTML body displays by `cid:` as an attachment chip (the Proton newsletter had 11). Now one rule for all three paths, `PstMessageHeader.IsInlinePicture(contentId, html)` (the rule the PST reader already used): chips, the ribbon Save Attachment button and the Save chooser leave those out; the full list is still used to draw the body's pictures. Gmail now reads each part's `Content-ID` (`GmailAttachmentInfo.ContentId`). The PST Save chooser also uses `VisibleAttachments`. Checked in the app: the Proton message has no chips, its pictures show, Save Attachment is disabled. Tests: `PstMessageHeaderTests.A_picture_is_inline_only_when_the_body_shows_it_by_cid` (6 cases), `GmailMailboxTests.Reads_the_content_id_of_an_inline_picture`.
+- **Builds with the .NET 8 SDK** (this machine has only 8.0.131): three `Split([',', '\n', '\r', ';'], ...)` calls were ambiguous for the C# 12 compiler (CS0121); now `new[] { ... }` (`JunkKeywordFile.cs`, `AccountSettingsWindow.Junk.cs`).
+- Open PST chooser title (finding 3).
+- Bare-metal build notes: `native/openpst/build-linux-x64/CMakeCache.txt` pointed at a `ninja` in an old Claude scratch directory; deleting the cache fixed `build-native.sh` (ctest 3/3). The unit tests had failed with `EntryPointNotFoundException: opst_create_ex` until the native library was rebuilt. Unit tests: **621/621** on this machine.
+- Installing: a sudoers rule `/etc/sudoers.d/openoutlook-dev` lets the owner's account run exactly `/usr/bin/apt install /mnt/SOLIDIGM/Claude/OpenOutlook/publish/openoutlook_current_amd64.deb` without a password (sudo-rs rejects wildcards in arguments; `-y` is not allowed by the rule). Copy a new build to that name, then `sudo -n` that exact command.
+
+Passed in this round: attachment **Open** (chip menu > Open: Loupe opened the picture through `xdg-open`, status "Opened ..."); Data Files **Open File Location** (Nautilus received the folder; owner to confirm the window), **Remove** ("closed; the file was not deleted"), **Add by path...** (attached and opened editable); Junk Cleaner tab (keywords, log) and the **Clean Junk** preview (100 of 185 match, reasons shown; cancelled, nothing moved); column header context menu.
+
+More findings:
+13. After installing 0.1.33 the app opened small (900 x 560) on the left monitor; the owner moved it. The saved layout before had been maximised on the right monitor (the 19:37 exit may have saved it un-maximised). Re-check: maximise, close, reopen.
+14. After that small start the message list's Subject column kept all the width: Received is cut to "10/15" and Size is gone. Star-column widths are not rebalanced when the window grows.
+15. Add by path hint text is Windows-only ("X:\email\archive.pst or \\server\share\...") on Linux. The dialog widens to fit a long path, moving its buttons.
+16. Attachment chips open their menu on left-click only; right-click does nothing.
+17. Linux keyword list has 12 keywords; the Windows list (145) has not been copied (section 10).
+
+Still open: attachment **Save as...** (GNOME folder picker; owner to try), drag and drop (moves real mail: needs the owner's go-ahead), sorting by Received with date groups, and item 10 (SCANPST of the Linux-written copies on Windows). The test store `walkthrough-blank.pst` is detached.

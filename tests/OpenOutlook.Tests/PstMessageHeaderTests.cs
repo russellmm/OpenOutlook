@@ -33,6 +33,16 @@ public sealed class PstMessageHeaderTests
         Assert.Equal("To   Someone", PstMessageHeader.Recipients(m));
     }
 
+    [Theory]
+    [InlineData("<logo@x>", "<img src=\"cid:logo@x\">", true)]
+    [InlineData("logo@x", "<img src=\"CID:LOGO@X\">", true)]
+    [InlineData("logo@x", "<p>no picture</p>", false)]
+    [InlineData("", "<img src=\"cid:\">", false)]
+    [InlineData(null, "<img src=\"cid:logo@x\">", false)]
+    [InlineData("logo@x", null, false)]
+    public void A_picture_is_inline_only_when_the_body_shows_it_by_cid(string? contentId, string? html, bool expected) =>
+        Assert.Equal(expected, PstMessageHeader.IsInlinePicture(contentId, html));
+
     [Fact]
     public void Inline_and_hidden_attachments_are_not_listed()
     {

@@ -515,6 +515,14 @@ public sealed class GmailMailbox
             mime.StartsWith("multipart/mixed", StringComparison.OrdinalIgnoreCase), OptionalString(root, "snippet") ?? "");
     }
 
+    private static string? PartHeader(JsonElement part, string name)
+    {
+        if (!part.TryGetProperty("headers", out var headers) || headers.ValueKind != JsonValueKind.Array) return null;
+        foreach (var h in headers.EnumerateArray())
+            if (string.Equals(OptionalString(h, "name"), name, StringComparison.OrdinalIgnoreCase)) return OptionalString(h, "value");
+        return null;
+    }
+
     private static void ReadContentParts(JsonElement part, ref string? html, ref string? text, List<GmailAttachmentInfo> attachments, int depth, PartCounter counter)
     {
         if (depth > 8 || ++counter.Count > 64) throw new GmailReadException("Gmail message has too many MIME parts.");
@@ -522,7 +530,8 @@ public sealed class GmailMailbox
         var filename = OptionalString(part, "filename") ?? "";
         if (part.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.Object)
         {
-            if (filename.Length > 0) attachments.Add(new GmailAttachmentInfo(filename, mime, OptionalInt(body, "size") ?? 0, OptionalString(body, "attachmentId")));
+            if (filename.Length > 0) attachments.Add(new GmailAttachmentInfo(filename, mime, OptionalInt(body, "size") ?? 0, OptionalString(body, "attachmentId"),
+                PartHeader(part, "Content-ID")?.Trim().Trim('<', '>')));
             else if (body.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.String)
             {
                 if (mime == "text/html" && html is null) html = DecodeBody(data.GetString()!);
@@ -568,5 +577,6 @@ public sealed class GmailMailbox
 public sealed record GmailLabel(string Id, string Name, bool IsSystem, int? Total, int? Unread);
 public sealed record GmailSummary(string Id, string? ThreadId, string Subject, string From, string To, DateTimeOffset? Date, int? SizeBytes,
     bool IsUnread, bool IsStarred, bool IsDraft, bool HasAttachments, string Snippet);
-public sealed record GmailAttachmentInfo(string FileName, string MimeType, int SizeBytes, string? AttachmentId = null);
+/// <summary>ContentId (without angle brackets) is set when the part has a Content-ID header: the HTML body may show it inline by cid:.</summary>
+public sealed record GmailAttachmentInfo(string FileName, string MimeType, int SizeBytes, string? AttachmentId = null, string? ContentId = null);
 public sealed record GmailContent(string? Html, string? Text, IReadOnlyList<GmailAttachmentInfo> Attachments, IReadOnlyList<GmailHeader> Headers, string? Snippet, string? ThreadId = null);

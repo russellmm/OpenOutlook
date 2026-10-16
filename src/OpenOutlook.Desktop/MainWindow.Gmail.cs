@@ -150,6 +150,10 @@ public partial class MainWindow
     private GmailContent? _gmailContent;
     private string? _gmailContentMessageId;
 
+    /// <summary>The attachments Outlook would list: not the pictures the HTML body shows by cid:.</summary>
+    private static IEnumerable<GmailAttachmentInfo> VisibleGmailAttachments(GmailContent content) =>
+        content.Attachments.Where(a => !PstMessageHeader.IsInlinePicture(a.ContentId, content.Html));
+
     private static bool CanSaveGmailAttachment(GmailAttachmentInfo a)
     {
         if (a.AttachmentId is null || a.SizeBytes < 0 || a.SizeBytes > GmailMimeBuilder.MaxAttachmentBytes) return false;
@@ -161,7 +165,7 @@ public partial class MainWindow
     private async Task SaveGmailAttachmentAsync(GmailFolderSelection folder, GmailContent content, string messageId)
     {
         var version = _messageVersion;
-        var candidates = content.Attachments.Where(CanSaveGmailAttachment).ToArray();
+        var candidates = VisibleGmailAttachments(content).Where(CanSaveGmailAttachment).ToArray();
         if (candidates.Length == 0) { StatusText.Text = "This message has no attachment that can be saved."; return; }
         GmailAttachmentInfo? attachment = candidates[0];
         var chosen = _chipChoice is null ? null : candidates.FirstOrDefault(c => c.FileName == _chipChoice);
@@ -206,7 +210,7 @@ public partial class MainWindow
         catch (System.IO.IOException) { StatusText.Text = "Could not save the attachment: a file with that name already exists or the folder is not writable. Nothing was overwritten."; }
         catch (GmailReadException error) { StatusText.Text = error.Message; }
         catch (Exception) { StatusText.Text = "Could not save the attachment. Check the connection or choose another folder."; }
-        finally { ExportAttachmentButton.IsEnabled = version == _messageVersion && content.Attachments.Any(CanSaveGmailAttachment); }
+        finally { ExportAttachmentButton.IsEnabled = version == _messageVersion && VisibleGmailAttachments(content).Any(CanSaveGmailAttachment); }
     }
 
     private async Task OpenGmailMessageAsync(GmailFolderSelection folder, GraphInboxMessage message, long version)
@@ -245,7 +249,7 @@ public partial class MainWindow
             _currentGraphAttachments = null;
             _gmailContent = content;
             _gmailContentMessageId = message.Id;
-            ExportAttachmentButton.IsEnabled = content.Attachments.Any(CanSaveGmailAttachment);
+            ExportAttachmentButton.IsEnabled = VisibleGmailAttachments(content).Any(CanSaveGmailAttachment);
             SubjectText.Text = message.Subject;
             SenderText.Text = message.From;
             RecipientText.Text = $"To   {message.To}";
@@ -253,7 +257,7 @@ public partial class MainWindow
             SetReaderAvatar(message.From);
             ReaderReplyButton.IsVisible = ReaderReplyAllButton.IsVisible = ReaderForwardButton.IsVisible = folder.Account.CanSendGmail;   // reading-pane Reply / Reply All / Forward
             AttachmentText.Text = "";
-            ShowAttachmentChips(content.Attachments.Select(a => (a.FileName, (long)a.SizeBytes, CanSaveGmailAttachment(a))));
+            ShowAttachmentChips(VisibleGmailAttachments(content).Select(a => (a.FileName, (long)a.SizeBytes, CanSaveGmailAttachment(a))));
             if (bodyShown) return;                                                          // the body is already on screen, from the copy
             HideFormatBar();
             SetMessageBody(content.Html, content.Html is null ? (content.Text ?? content.Snippet ?? "") : "");

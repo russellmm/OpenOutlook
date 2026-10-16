@@ -33,11 +33,11 @@ public sealed class JunkKeywordFile
         switch (value.ValueKind)
         {
             case JsonValueKind.String:
-                raw.AddRange((value.GetString() ?? "").Split([',', '\n', '\r', ';'], StringSplitOptions.RemoveEmptyEntries));
+                raw.AddRange((value.GetString() ?? "").Split(new[] { ',', '\n', '\r', ';' }, StringSplitOptions.RemoveEmptyEntries));
                 break;
             case JsonValueKind.Array:
                 foreach (var item in value.EnumerateArray())
-                    if (item.ValueKind == JsonValueKind.String) raw.AddRange((item.GetString() ?? "").Split([',', '\n', '\r', ';'], StringSplitOptions.RemoveEmptyEntries));
+                    if (item.ValueKind == JsonValueKind.String) raw.AddRange((item.GetString() ?? "").Split(new[] { ',', '\n', '\r', ';' }, StringSplitOptions.RemoveEmptyEntries));
                 break;
             default:
                 throw new JsonException("The keyword file must hold {\"keywords\": \"word, word, ...\"}.");

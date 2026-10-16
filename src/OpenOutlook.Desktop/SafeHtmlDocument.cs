@@ -154,24 +154,25 @@ public static partial class SafeHtmlDocument
     }
 
     /// <summary>
-    /// A 1 x 1 picture (by attributes or inline style) is a tracking pixel, not content: there is nothing to see, and fetching it only
-    /// tells the sender the message was opened -- and can be slow (an American Express tracking server took 8 s per pixel). It is not
-    /// fetched and not counted as a missing picture.
+    /// A sliver -- at most 2 px one way and 8 px the other (by attributes or inline style; 1 x 1, 2 x 6 ...) -- is a tracking pixel, not content:
+    /// there is nothing to see, and fetching it only tells the sender the message was opened -- and can be slow (an American Express tracking
+    /// server took 8 s per pixel) or fail (Slickdeals' 2 x 6 "imp" beacon answers with a redirect, which is refused). It is not fetched and not
+    /// counted as a missing picture. Small icons (4 x 4, 8 x 8) and full-width 1 px spacer lines are still loaded.
     /// </summary>
     private static bool IsTrackingPixel(IElement image, string? style)
     {
-        static bool Tiny(string? value) => value is not null &&
+        static double? Size(string? value) => value is not null &&
             double.TryParse(value.Trim().TrimEnd('x', 'X', 'p', 'P').Trim(), System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var size) && size <= 1;
+                System.Globalization.CultureInfo.InvariantCulture, out var size) ? size : null;
         string? StyleValue(string name)
         {
             if (style is null) return null;
             var match = Regex.Match(style, @"(?:^|[;\s])" + name + @"\s*:\s*([0-9.]+)\s*px", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             return match.Success ? match.Groups[1].Value : null;
         }
-        var width = StyleValue("width") ?? image.GetAttribute("width");
-        var height = StyleValue("height") ?? image.GetAttribute("height");
-        return Tiny(width) && Tiny(height);
+        if (Size(StyleValue("width") ?? image.GetAttribute("width")) is not { } width ||
+            Size(StyleValue("height") ?? image.GetAttribute("height")) is not { } height) return false;
+        return Math.Min(width, height) <= 2 && Math.Max(width, height) <= 8;
     }
 
     public static string Build(string html, IReadOnlyDictionary<string, byte[]> images)

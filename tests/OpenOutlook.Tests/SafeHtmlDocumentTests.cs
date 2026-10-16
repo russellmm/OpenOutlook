@@ -32,6 +32,21 @@ public sealed class SafeHtmlDocumentTests
     }
 
     [Fact]
+    public void Sliver_beacons_are_not_fetched_but_small_icons_and_spacer_lines_are()
+    {
+        // Slickdeals' 2 x 6 "imp" beacon of 2026-10-15 answered with a redirect and showed "2 message images could not be loaded".
+        var html = "<img src='https://sli.example/imp?id=1' width='2' height='6' alt=''>" +
+            "<img src='https://sli.example/imp?id=2' style='width:6px;height:2px'>" +
+            "<img src='https://images.example/bullet.png' width='4' height='4'>" +
+            "<img src='https://images.example/arrow.png' width='8' height='8'>" +
+            "<img src='https://images.example/rule.gif' width='600' height='1'>" +
+            "<img src='https://images.example/unsized.png'>";
+        var sources = SafeHtmlDocument.FindImages(html);
+        Assert.Equal(new[] { "https://images.example/bullet.png", "https://images.example/arrow.png", "https://images.example/rule.gif", "https://images.example/unsized.png" },
+            sources.Select(s => s.Value));
+    }
+
+    [Fact]
     public void StyleSheetPicturesThatCannotShowAreNotFetched()
     {
         // American Express: a "printed" beacon in @media print and a "forwarded" beacon for an element only a forward contains.

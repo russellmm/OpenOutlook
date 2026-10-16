@@ -302,15 +302,23 @@ internal sealed class ArchiveRepairWindow : Window
         finally { _scan.IsEnabled = _files.IsEnabled = true; }
     }
 
-    private static string Summarize(PstScanReport r, bool repaired, DataFile file)
+    /// <summary>
+    /// The report shown in the window. The checker's text mixes indented problem lines with one summary line per check ("refs: ... 0 problems"); only
+    /// the indented lines are problems. The window used to count every line ("11 problem lines found" for one problem, 2026-10-16), so the problems
+    /// are counted and listed first now, with the per-check summary below them.
+    /// </summary>
+    internal static string Summarize(PstScanReport r, bool repaired, DataFile file)
     {
         var lines = new List<string> { file.Path, "" };
-        if (repaired) lines.Add($"Repaired {r.Fixed} inconsistenc{(r.Fixed == 1 ? "y" : "ies")}.");
-        if (r.Findings.Count == 0) lines.Add("No problems found. The archive is structurally sound.");
+        if (repaired) lines.Add($"Repaired {r.Fixed} item{(r.Fixed == 1 ? "" : "s")}.");
+        var problems = r.Findings.Where(l => l.StartsWith("  ", StringComparison.Ordinal)).Select(l => l.Trim()).ToList();
+        var checks = r.Findings.Where(l => !l.StartsWith("  ", StringComparison.Ordinal)).ToList();
+        if (problems.Count == 0 && r.Findings.Count > 0) { problems = r.Findings.ToList(); checks = []; }   // a report without the indented format
+        if (problems.Count == 0) lines.Add("No problems found. The archive is structurally sound.");
         else
         {
-            lines.Add($"{r.Findings.Count} problem line{(r.Findings.Count == 1 ? "" : "s")} found; " +
-                      (r.Fixable > 0 ? $"{r.Fixable} can be repaired automatically." : "none can be repaired automatically."));
+            lines.Add($"{problems.Count} problem{(problems.Count == 1 ? "" : "s")} found; " +
+                      (r.Fixable > 0 ? $"{r.Fixable} item{(r.Fixable == 1 ? "" : "s")} can be repaired automatically." : "nothing can be repaired automatically."));
             if (r.Fixable == 0)
                 lines.Add(OperatingSystem.IsWindows()
                     ? "Make a copy of the file and run Microsoft's Inbox Repair Tool (SCANPST.EXE) on the copy."
@@ -318,8 +326,14 @@ internal sealed class ArchiveRepairWindow : Window
             else if (!file.CanRepair)
                 lines.Add("This archive is open read-only, so it cannot be repaired.");
             lines.Add("");
-            lines.AddRange(r.Findings.Take(500));
-            if (r.Findings.Count > 500) lines.Add($"... and {r.Findings.Count - 500} more.");
+            lines.AddRange(problems.Take(500).Select(l => "- " + l));
+            if (problems.Count > 500) lines.Add($"... and {problems.Count - 500} more.");
+            if (checks.Count > 0)
+            {
+                lines.Add("");
+                lines.Add("Checks run:");
+                lines.AddRange(checks);
+            }
         }
         return string.Join(Environment.NewLine, lines);
     }

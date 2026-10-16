@@ -992,7 +992,9 @@ static int commit_w(opw *w) {
     if (!w->nov && w->eof == w->eof_start) {
         int any = 0;
         for (uint32_t s = 0; s < w->nsec; s++) if (w->dirty[s]) { any = 1; break; }
-        if (!any) return 0;
+        /* the NID counters (offset 44, 32 x 4 bytes) can change without any block: the fixer's R5 / rule 43 raise only them. Committing nothing
+           then dropped the repair while the report said "applied" (found 2026-10-16). */
+        if (!any && memcmp(w->hdr + 44, w->hdr_start + 44, 128) == 0) return 0;
     }
     for (uint32_t sec = 0; sec < w->nsec && !rc; sec++) {
         if (!w->dirty[sec]) continue;
@@ -1085,6 +1087,7 @@ static int opw_create(opst *p, opw **out) {
     w->reconciled = p->reconciled;          /* reconciling walks both B-trees (hundreds of ms on a multi-GB file); once per handle is enough */
     int rc = op_file_pread(p->f, w->hdr, 564, 0);
     if (rc) { free(w); return rc; }
+    memcpy(w->hdr_start, w->hdr, sizeof w->hdr_start);
     load_header(w);
     w->nsec = (uint32_t)((w->eof - OPW_AMAP0) / OPW_SECT);
     rc = w_cap_secs(w, w->nsec ? w->nsec : 1);          /* the per-section arrays exist even when the transaction allocates nothing (commit walks them) */

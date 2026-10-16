@@ -489,6 +489,22 @@ static int fix_empty_display(ops *o, int apply, int *count) {
     return rc;
 }
 
+/* ---- rule 43: the folder counter ------------------------------------------------------------------------------------------------------------------------------- */
+/* Header counters of the table types whose NIDs carry a folder's index (contents-table index 0x0A, receive-folder / outgoing-queue tables 0x0B / 0x0C,
+   hierarchy / contents / FAI tables 0x0D-0x0F, search-table index 0x13) share the folder index space. SCANPST requires the folder counter (type 0x02)
+   to be at least the highest of them: "Folder invalid high-water-mark (nidi=43F, nidiHigh=3C64)", its repair raises the folder counter to that value
+   (found 2026-10-16 on an older copy of the owner's 13,410-message archive whose 0x0A / 0x13 counters stood at 0x3C64). Search folders (type 3) and the
+   search types 6 / 7 / 0x10 have their own range and do not count. */
+uint32_t folder_index_floor(opw *w) {
+    static const unsigned types[] = {0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x13};
+    uint32_t m = 0;
+    for (size_t i = 0; i < sizeof types / sizeof types[0]; i++) {
+        uint32_t v = op_u32(w->hdr + 44 + 4 * types[i]);
+        if (v > m) m = v;
+    }
+    return m;
+}
+
 /* ---- R13: missing display-bcc ------------------------------------------------------------------------------------------------------------------------------------ */
 /* A message with Bcc recipients carries PidTagDisplayBcc (0x0E02): the recipients' display names joined by "; ", as Outlook writes it. Importers before
    2026-10-16 wrote only display-to and display-cc; SCANPST then reports "minor inconsistencies" and its repair adds 0x0E02 to the message (found by repairing a
@@ -673,6 +689,12 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
                 rep->nid_mark_issues++;
                 if (apply) wr32(w->hdr + 44 + 4 * t, hc.mx[t]);
             }
+        }
+        /* rule 43: the folder counter covers the counters of the folder-indexed table types (SCANPST "Folder invalid high-water-mark") */
+        uint32_t fl = folder_index_floor(w);
+        if (!rc && op_u32(w->hdr + 44 + 4 * 2) < fl) {
+            rep->nid_mark_issues++;
+            if (apply) wr32(w->hdr + 44 + 4 * 2, fl);
         }
     }
     /* ---- R6 ---- */

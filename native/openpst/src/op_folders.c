@@ -404,7 +404,10 @@ int fo_create(ops *o, uint32_t parent, const char *name, const char *cls, uint32
     rc = sibling_clash(o, parent, name, 0, &clash);
     if (rc) return rc;
     if (clash) return op_err(OPST_E_REFUSED, "a folder named '%s' already exists there", name);
-    uint32_t idx = op_u32(w->hdr + 44 + 4 * 2) + 1;
+    uint32_t idx = op_u32(w->hdr + 44 + 4 * 2);
+    uint32_t floor_idx = folder_index_floor(w);
+    if (idx < floor_idx) idx = floor_idx;                 /* rule 43: a folder index is above every folder-indexed counter */
+    idx++;
     uint32_t nid = (idx << 5) | 2;
     static const unsigned used_types[7] = {2, T_HIER, T_CONT, T_FAI, 6, 7, 0x10};
     for (int k = 0; k < 7; k++) {
@@ -412,6 +415,7 @@ int fo_create(ops *o, uint32_t parent, const char *name, const char *cls, uint32
         if (opw_node(w, (idx << 5) | used_types[k], &e) == 0) return op_err(OPST_E_FORMAT, "folder index 0x%x already in use", idx);
     }
     wr32(w->hdr + 44 + 4 * 2, idx);
+    { const char *hk = getenv("OPST_TEST_FOLDER_COUNTER_GAP"); if (hk && *hk) wr32(w->hdr + 44 + 4 * 0x0A, idx + 0x3000); }   /* test hook (rule 43) */
     static const unsigned derived[3] = {T_HIER, T_CONT, T_FAI};
     for (int k = 0; k < 3; k++) {
         uint8_t *h = w->hdr + 44 + 4 * derived[k];

@@ -975,3 +975,29 @@ Items found in this file: 2794
 Folders found in this file: 26
 Items found in this file: 285
  | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-16 11:47:07  F:\Claude\OpenOutlook\.local\scan\pristine\rmarrash_3-a.pst ERRORS    folders=46 items=13410 log:183 lines, 104 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\pristine\rmarrash_3-a.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 46
+Items found in this file: 13410
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-16 11:47:36  F:\Claude\OpenOutlook\.local\scan\pristine\rmarrash_3-b.pst ERRORS    folders=46 items=13410 log:43 lines, 2 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\pristine\rmarrash_3-b.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 46
+Items found in this file: 13410
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-16 11:49:47  F:\Claude\OpenOutlook\.local\scan\pristine\r3fix-rep.pst ERRORS+REPAIRED folders=46 items=13410 log:49 lines, 2 flagged (!!/??)
+    dialog: OK | Repair complete
+2026-10-16 11:55:05  F:\Claude\OpenOutlook\.local\scan\pristine\r3-counter.pst ERRORS    folders=46 items=13410 log:43 lines, 2 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\pristine\r3-counter.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 46
+Items found in this file: 13410
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-16 11:56:33  F:\Claude\OpenOutlook\.local\scan\pristine\r3-counter.pst NO_ERRORS folders=46 items=13410 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\pristine\r3-counter.pst | No errors were found in this file.
+
+Folders found in this file: 46
+Items found in this file: 13410
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK

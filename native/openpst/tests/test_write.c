@@ -55,6 +55,52 @@ static uint32_t crc_ms(const uint8_t *p, size_t n) {
 
 static int open_w(const char *path, opst **p) { return opst_open(path, OPST_OPEN_WRITE, p); }
 
+static int findings(opst *p);
+
+/* byte comparison of two files (1 = identical) */
+static int same_bytes(const char *a, const char *b) {
+    FILE *fa = fopen(a, "rb"), *fb = fopen(b, "rb");
+    int same = fa && fb;
+    char *ba = (char *)malloc(1 << 20), *bb = (char *)malloc(1 << 20);
+    if (!ba || !bb) same = 0;
+    while (same) {
+        size_t na = fread(ba, 1, 1 << 20, fa), nb = fread(bb, 1, 1 << 20, fb);
+        if (na != nb || memcmp(ba, bb, na) != 0) same = 0;
+        if (na == 0) break;
+    }
+    free(ba); free(bb);
+    if (fa) fclose(fa);
+    if (fb) fclose(fb);
+    return same;
+}
+
+/* The guard against "repairs" that damage good files (2026-10-16: fixer rule R10 rewrote conversation ids Outlook had written on purpose, and SCANPST
+   then reported the archive): on a file Outlook wrote and SCANPST calls clean, the checker finds nothing, the fixer counts nothing, and applying the
+   fixer anyway leaves the file byte for byte unchanged. Returns the number of failed checks. */
+static int clean_file_guard(const char *src) {
+    const char *tmp = "opst_clean_guard.pst";
+    char jrn[300];
+    snprintf(jrn, sizeof jrn, "%s.journal", tmp);
+    int failed = 0;
+    if (!copy_file(src, tmp)) { printf("clean-file guard: cannot copy %s\n", src); return 1; }
+    opst *q = NULL;
+    if (open_w(tmp, &q) != 0 || !q) { printf("clean-file guard: cannot open %s\n", src); remove(tmp); return 1; }
+    int f0 = findings(q);
+    opst_fix_report fr;
+    memset(&fr, 0, sizeof fr);
+    int rc = opst_fix(q, 0, &fr);
+    int counted = fr.rows_without_ids + fr.dangling_idmap + fr.messages_not_indexed + fr.row_version_issues + fr.nid_mark_issues + fr.rowcell_issues +
+                  fr.amap_issues + fr.folder_issues + fr.refs_issues + fr.rowsync_issues + fr.table_issues;
+    if (f0 != 0) { printf("clean-file guard: %s: the checker reports %d finding(s) on a clean file\n", src, f0); failed++; }
+    if (rc != 0 || counted != 0) { printf("clean-file guard: %s: the fixer wants to change %d thing(s) on a clean file\n", src, counted); failed++; }
+    memset(&fr, 0, sizeof fr);
+    if (opst_fix(q, 1, &fr) != 0) { printf("clean-file guard: %s: applying the fixer failed\n", src); failed++; }
+    opst_close(q);
+    if (!same_bytes(src, tmp)) { printf("clean-file guard: %s: applying the fixer changed the file\n", src); failed++; }
+    remove(tmp); remove(jrn);
+    return failed;
+}
+
 /* first folder below the IPM root that holds at least `want` messages (not Deleted Items); returns its NID or 0 */
 static uint32_t find_source_folder(opst *p, size_t want) {
     opst_folder_info *kids; size_t nk;
@@ -75,6 +121,24 @@ static int findings(opst *p) {
 int main(void) {
     const char *src = getenv("OPST_TEST_PST");
     if (!src || !*src) { printf("test_write: OPST_TEST_PST not set, skipped\n"); return 0; }
+    /* clean-file guard: OPST_TEST_PST (an Outlook-written, SCANPST-clean file) and every file in OPST_CLEAN_PSTS (more such files, separated by ';') */
+    {
+        checks++;
+        if (clean_file_guard(src)) fails++;
+        const char *more = getenv("OPST_CLEAN_PSTS");
+        char one[1024];
+        while (more && *more) {
+            const char *end = strchr(more, ';');
+            size_t len = end ? (size_t)(end - more) : strlen(more);
+            if (len && len < sizeof one) {
+                memcpy(one, more, len); one[len] = 0;
+                checks++;
+                if (clean_file_guard(one)) fails++;
+                else printf("clean-file guard: %s unchanged\n", one);
+            }
+            more = end ? end + 1 : NULL;
+        }
+    }
     const char *tmp = "opst_write_test.pst";
     char jrn[256];
     snprintf(jrn, sizeof jrn, "%s.journal", tmp);
@@ -406,6 +470,40 @@ int main(void) {
                 memset(&fr, 0, sizeof fr);
                 CHECK(opst_fix(q, 0, &fr) == 0 && fr.rowcell_issues == 0);
                 opst_close(q);
+                remove(tmp2);
+                char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);
+            }
+        }
+    }
+    /* rule 43: a folder counter below the folder-indexed table counters (SCANPST "Folder invalid high-water-mark"). The checker finds it, the fixer raises
+       the counter -- a header-only change, which the commit used to drop while reporting "applied" -- and it survives closing and reopening the file;
+       the next folder then gets an index above the gap */
+    {
+        const char *tmp2 = "opst_write_test2.pst";
+        if (copy_file(src, tmp2)) {
+            opst *q;
+            CHECK(open_w(tmp2, &q) == 0);
+            if (q) {
+                int base2 = findings(q);
+                uint32_t g1 = 0;
+                SETENV("OPST_TEST_FOLDER_COUNTER_GAP", "1");
+                CHECK(opst_folder_create(q, opst_ipm_root(q), "gap probe", NULL, &g1) == 0 && g1);
+                SETENV("OPST_TEST_FOLDER_COUNTER_GAP", "");
+                CHECK(findings(q) == base2 + 1);
+                opst_fix_report fr;
+                memset(&fr, 0, sizeof fr);
+                CHECK(opst_fix(q, 0, &fr) == 0 && fr.nid_mark_issues >= 1);
+                CHECK(opst_fix(q, 1, &fr) == 0);
+                opst_close(q);
+                q = NULL;
+                CHECK(open_w(tmp2, &q) == 0);                                  /* the repair is in the file, not only in memory */
+                if (q) {
+                    CHECK(findings(q) == base2);
+                    uint32_t g2 = 0;
+                    CHECK(opst_folder_create(q, opst_ipm_root(q), "after gap", NULL, &g2) == 0 && (g2 >> 5) > (g1 >> 5) + 0x3000);
+                    CHECK(findings(q) == base2);
+                    opst_close(q);
+                }
                 remove(tmp2);
                 char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);
             }

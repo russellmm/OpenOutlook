@@ -195,6 +195,10 @@ static int check_nids(chk *c, opw *w) {
         if (t == 0x06 || t == 0x07 || t == 0x10) continue;          /* index derived from its folder; not counted */
         if (n.mx[t] > hv) note(c, &probs, "  type 0x%02x: highest index in NBT %u (0x%x), header says %u   <-- NBT has a higher index than the header allows", t, n.mx[t], n.mx[t], hv);
     }
+    {
+        uint32_t fl = folder_index_floor(w), fc = op_u32(w->hdr + 44 + 4 * 2);
+        if (fc < fl) note(c, &probs, "  folder counter (type 0x02) is %u (0x%x), below %u (0x%x) of the folder-indexed table counters   <-- SCANPST: Folder invalid high-water-mark", fc, fc, fl, fl);
+    }
     c->rep->nids_problems += probs;
     info(c, "nids: %d problems", probs);
     return 0;

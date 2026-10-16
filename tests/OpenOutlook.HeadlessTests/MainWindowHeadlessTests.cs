@@ -93,6 +93,99 @@ public sealed class MainWindowHeadlessTests
         finally { window.Close(); }
     }
 
+    [AvaloniaFact]
+    public async Task A_Microsoft_move_leaves_the_list_before_the_server_answers()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        ShowWithSnapshotReader(window);
+        try
+        {
+            var handler = new FakeMicrosoftMove();
+            var (account, rows, archive) = SetUpMicrosoftInbox(window, handler, ["first", "second"]);
+            var move = Call<Task>(window, "MoveOnlineAsync", new List<string> { "first" }, archive, false);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(move.IsCompleted);                                     // the server has not answered yet
+            Assert.Equal(["second"], rows.Select(r => r.Message.Id).ToArray());  // but the row is already gone
+            handler.Answer.SetResult(HttpStatusCode.Created);
+            await move;
+            Assert.Equal(["first"], handler.Moved.ToArray());
+            Assert.Contains(account.AccountId + "|first", LocalRemoved(window));  // still hidden until the copy catches up
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task A_Microsoft_move_the_server_refuses_comes_back()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        ShowWithSnapshotReader(window);
+        try
+        {
+            var handler = new FakeMicrosoftMove();
+            var (account, rows, archive) = SetUpMicrosoftInbox(window, handler, ["first", "second"]);
+            var move = Call<Task>(window, "MoveOnlineAsync", new List<string> { "first" }, archive, false);
+            Dispatcher.UIThread.RunJobs();
+            Assert.DoesNotContain(rows, r => r.Message.Id == "first");
+            handler.Answer.SetResult(HttpStatusCode.InternalServerError);
+            await move;
+            Assert.DoesNotContain(account.AccountId + "|first", LocalRemoved(window));
+        }
+        finally { window.Close(); }
+    }
+
+    private static HashSet<string> LocalRemoved(MainWindow window) => (HashSet<string>)typeof(MainWindow)
+        .GetField("_localRemoved", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+
+    /// <summary>A signed-in Microsoft account whose Inbox shows the given messages, and an Archive folder of the same mailbox.</summary>
+    private static (OpenOutlook.Auth.ConnectedAccount Account, System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow> Rows, object Archive)
+        SetUpMicrosoftInbox(MainWindow window, HttpMessageHandler handler, string[] ids)
+    {
+        var account = new OpenOutlook.Auth.ConnectedAccount(
+            OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "headless-move", "person@hotmail.test", "client", DateTimeOffset.UtcNow,
+            ["Mail.ReadWrite", "Mail.Send"]);
+        typeof(MainWindow).GetField("_graphHttp", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, new HttpClient(handler));
+        typeof(MainWindow).GetField("_activeMicrosoftAccount", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, account);
+        var folderType = typeof(MainWindow).GetNestedType("MicrosoftFolderSelection", BindingFlags.NonPublic)!;
+        typeof(MainWindow).GetField("_activeMicrosoftFolder", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(window, Activator.CreateInstance(folderType, account, "inbox", "Inbox"));
+        var session = new MicrosoftMailSession(account, new OpenOutlook.Auth.UnavailableSecretStore(), new HttpClient());
+        typeof(MicrosoftMailSession).GetField("_accessToken", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(session, "headless-token");
+        typeof(MicrosoftMailSession).GetField("_expiresAt", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(session, DateTimeOffset.UtcNow.AddHours(1));
+        var sessions = (System.Collections.IDictionary)typeof(MainWindow)
+            .GetField("_microsoftSessions", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+        sessions[account.AccountId] = session;
+        var rows = new System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow>(ids.Select(id =>
+            new GraphMessageListRow(new OpenOutlook.Providers.Microsoft.GraphInboxMessage(
+                id, "Subject " + id, "Sender " + id, "person@hotmail.test", DateTimeOffset.UtcNow, 100, true, false, "Preview " + id))));
+        typeof(MainWindow).GetField("_graphRows", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, rows);
+        window.FindControl<DataGrid>("MessageList")!.ItemsSource = new Avalonia.Collections.DataGridCollectionView(rows);
+        return (account, rows, Activator.CreateInstance(folderType, account, "archive", "Archive")!);
+    }
+
+    /// <summary>Graph with a move that waits until the test answers it; everything else is an empty success.</summary>
+    private sealed class FakeMicrosoftMove : HttpMessageHandler
+    {
+        public readonly TaskCompletionSource<HttpStatusCode> Answer = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly System.Collections.Concurrent.ConcurrentQueue<string> Moved = new();
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            var status = HttpStatusCode.OK;
+            var json = "{}";
+            if (path == "/v1.0/me") json = """{"id":"headless-move"}""";
+            else if (path.StartsWith("/v1.0/me/messages/", StringComparison.Ordinal) && path.EndsWith("/move", StringComparison.Ordinal))
+            {
+                status = await Answer.Task;
+                if (status == HttpStatusCode.Created) Moved.Enqueue(path.Split('/')[4]);
+                json = status == HttpStatusCode.Created ? "{\"id\":\"moved\"}" : "{\"error\":{\"code\":\"ErrorInternalServerError\",\"message\":\"refused\"}}";
+            }
+            return new HttpResponseMessage(status)
+            { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"), RequestMessage = request };
+        }
+    }
+
     private sealed class FakeMicrosoftDelete : HttpMessageHandler
     {
         public readonly System.Collections.Concurrent.ConcurrentQueue<string> Moved = new();

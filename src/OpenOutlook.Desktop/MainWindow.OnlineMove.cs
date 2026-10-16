@@ -138,6 +138,12 @@ public partial class MainWindow
             if (_mailActionBusy) return;
             _mailActionBusy = true;
             var done = 0;
+            // A move leaves the list at once, as in Outlook: the rows go through the same overlay as delete / archive,
+            // and come back only if the server refuses (UndoLocalChange below).
+            var hideNow = !copy && _activeMicrosoftFolder == msSource;
+            if (hideNow)
+                foreach (var id in messageIds)
+                    if (_graphRows?.FirstOrDefault(row => row.Message.Id == id) is { } row) ApplyCompletedMailAction(row.Message, "archive");
             try
             {
                 var writer = new GraphMailWriter(_graphHttp, account.AccountId);
@@ -146,6 +152,7 @@ public partial class MainWindow
                 {
                     StatusText.Text = $"{(copy ? "Copying" : "Moving")} {done + 1} of {messageIds.Count}…";
                     if (copy) await writer.CopyAsync(token, id, msDest.Id); else await writer.MoveAsync(token, id, msDest.Id);
+                    if (hideNow) NoteLocalChange(account, id, "archive");     // stamped again now the server has it: a sync that began meanwhile cannot bring it back
                     done++;
                 }
                 StatusText.Text = done == 1 ? $"Message {(copy ? "copied" : "moved")} to {msDest.Name}." : $"{done} messages {(copy ? "copied" : "moved")} to {msDest.Name}.";
@@ -157,7 +164,11 @@ public partial class MainWindow
                         ? "Microsoft declined mail access. Use Account setup to sign in again, then retry." : error.Message);
             }
             catch (Exception) { StatusText.Text = "Mail action failed. Check the connection and retry."; }
-            finally { _mailActionBusy = false; }
+            finally
+            {
+                _mailActionBusy = false;
+                if (hideNow && done < messageIds.Count) UndoLocalChange(account, messageIds.Skip(done));
+            }
             if (_activeMicrosoftFolder == msSource) await RefreshMicrosoftFolderAsync();
         }
     }

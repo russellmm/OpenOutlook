@@ -2213,6 +2213,7 @@ public sealed partial class MainWindow : Window
             var pending = images.Where(source => !_inlineImageBytes.ContainsKey(source.Key)).ToArray();
             var totalBytes = _inlineImageBytes.Values.Sum(bytes => bytes.Length);
             var memoryLimited = 0;
+            var unavailable = 0;              // gone at the sender or blocked by the network: no warning, as in Outlook (SafeRemoteImageLoader.FailureKind)
             // Reserve declared pixels up front: Validate() trusts the size a file declares, and the
             // encoded-byte cap below cannot see a small file that decodes to a huge bitmap.
             var pixelBudget = new DecodedPixelBudget(_options.PictureBudgetPixels);           // Options > Trust Center > Automatic Download
@@ -2275,13 +2276,18 @@ public sealed partial class MainWindow : Window
                 },
                 () => version == _messageVersion,
                 concurrency: 6, FirstPaintDelay, loadLimit.Token,
-                (source, error) => AppLog.Note("reader", $"picture not loaded ({DescribePictureSource(source)}): " +
-                    (error is null ? "no data" : error.GetType().Name + ": " + error.Message)));
+                (source, error) =>
+                {
+                    var kind = error is null ? "failed" : SafeRemoteImageLoader.FailureKind(error);
+                    if (kind != "failed") unavailable++;
+                    AppLog.Note("reader", $"picture not loaded, {kind} ({DescribePictureSource(source)}): " +
+                        (error is null ? "no data" : error.GetType().Name + ": " + error.Message));
+                });
             if (!result.Completed) return;
             if (!result.NeedsFinalLayout)
             {
                 // Everything that arrived is already on screen; only the status line changes.
-                _failedMessageImages = images.Length - loaded;
+                _failedMessageImages = Math.Max(0, images.Length - loaded - unavailable);
                 StatusText.Text = loaded == images.Length ? $"Showing {loaded} message image{(loaded == 1 ? "" : "s")}." :
                     memoryLimited > 0 ? $"Showing {loaded} of {images.Length} message images; the largest were skipped to limit memory." :
                     $"Showing {loaded} of {images.Length} message images; some could not be loaded.";
@@ -2289,7 +2295,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
             if (loadLimit.IsCancellationRequested || version != _messageVersion || !IsVisible) return;
-            _failedMessageImages = images.Length - loaded;
+            _failedMessageImages = Math.Max(0, images.Length - loaded - unavailable);
             HtmlStatusText.Text = "Laying out HTML message with images…";
             HtmlStatusText.IsVisible = true;
             ShowMessageBody();

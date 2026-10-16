@@ -3,9 +3,37 @@ using System.Net.Sockets;
 
 namespace OpenOutlook.Desktop;
 
+/// <summary>The picture's server answered with an error status (403 / 404 / 410 ...): retrying will not help.</summary>
+public sealed class RemoteImageRefusedException(HttpStatusCode status) : IOException($"Remote image could not be safely loaded (HTTP {(int)status}).")
+{
+    public HttpStatusCode Status { get; } = status;
+}
+
+/// <summary>The picture's host has no public address: a DNS filter (AdGuard, Pi-hole) answers 0.0.0.0 / :: for ad and tracking hosts.</summary>
+public sealed class RemoteImageBlockedException() : IOException("Image host does not have a public address (blocked by a network filter?).");
+
 /// <summary>Fetches message images without proxies or private-network access.</summary>
 public static class SafeRemoteImageLoader
 {
+    /// <summary>
+    /// What kind of failure a picture had, for the reading pane's warning. "Gone" (the sender's server refuses it: 4xx) and "blocked" (the host
+    /// resolves to nothing public or not at all: an ad filter, a dead domain) will fail again on every retry, as they would in Outlook, which simply
+    /// leaves an empty spot; only "failed" (timeouts, server errors, dropped connections) is worth a warning and a retry. Found 2026-10-16: an Ulta
+    /// Lab Tests mailing whose social icons answer 403 to everyone, and Slickdeals ad slots whose ad server AdGuard answers with 0.0.0.0.
+    /// </summary>
+    public static string FailureKind(Exception? error) => error switch
+    {
+        HttpRequestException { InnerException: RemoteImageBlockedException } => "blocked",     // thrown in ConnectCallback, wrapped by HttpClient
+        RemoteImageRefusedException r when (int)r.Status is >= 400 and < 500 && r.Status != HttpStatusCode.RequestTimeout && (int)r.Status != 429 => "gone",
+        RemoteImageBlockedException => "blocked",
+        HttpRequestException { InnerException: System.Net.Sockets.SocketException s } when
+            s.SocketErrorCode is System.Net.Sockets.SocketError.HostNotFound or System.Net.Sockets.SocketError.NoData => "blocked",
+        System.Net.Sockets.SocketException s when s.SocketErrorCode is System.Net.Sockets.SocketError.HostNotFound or System.Net.Sockets.SocketError.NoData => "blocked",
+        _ => "failed"
+    };
+
+    /// <summary>True when a retry cannot bring the picture back (see <see cref="FailureKind"/>).</summary>
+    public static bool IsPermanentFailure(Exception? error) => FailureKind(error) != "failed";
     /// <summary>
     /// Image servers behind bot protection (Cloudflare and the like) answer 403 to a request without a browser User-Agent: .NET sends
     /// none by default, so newsletter pictures failed while Outlook and any browser showed them (found 2026-10-15 on a Steelers Now
@@ -45,7 +73,7 @@ public static class SafeRemoteImageLoader
             {
                 var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, cancellationToken);
                 var address = addresses.FirstOrDefault(IsPublicAddress) ??
-                    throw new IOException("Image host does not have a public address.");
+                    throw new RemoteImageBlockedException();
                 var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
                 try
                 {
@@ -84,8 +112,8 @@ public static class SafeRemoteImageLoader
                 uri = next;
                 continue;
             }
-            if (!response.IsSuccessStatusCode ||
-                response.Content.Headers.ContentLength > SafeInlineImage.MaximumBytes)
+            if (!response.IsSuccessStatusCode) throw new RemoteImageRefusedException(response.StatusCode);
+            if (response.Content.Headers.ContentLength > SafeInlineImage.MaximumBytes)
                 throw new IOException("Remote image could not be safely loaded.");
             await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var output = new MemoryStream();

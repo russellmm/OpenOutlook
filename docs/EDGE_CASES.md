@@ -212,6 +212,9 @@ All settings stores share the same rules: a missing file gives defaults, a corru
 | Messages without a date go to an undated group | | `MessageDateGroupsTests.Missing_message_date_is_kept_in_an_undated_group` |
 | Sync indicator: worst state wins, offline counts waiting changes | | `SyncIndicatorTests.*` |
 | Crash notice includes inner exceptions and bounds the stack trace | | `CrashNoticeTests.*` |
+| Top-left as in Outlook: program icon, Send/Receive All Folders, Undo (greyed when nothing to undo), ▾; rail Mail, Calendar, People | Owner's Outlook screenshots, 2026-10-15 | `.Top_left_matches_outlook_program_icon_send_receive_undo_then_mail_calendar_people` |
+| A ribbon caption with its own line break ("New" / "Appointment") keeps it and never wraps inside a word wider than 76 px | 2026-10-15: "Appointmen" / "t" | `.CalendarRailOpensPersonalCalendarAndReturnsToMail` |
+| The build is stamped with its version and commit ("+ changes" when built from uncommitted source) and shows it in About and the log | 2026-10-15: every build said 1.0.0.0 | `AppVersionTests.The_version_shown_names_the_package_version_and_the_commit` |
 
 ## Linux and platform
 
@@ -251,7 +254,7 @@ These have no automated test; they were verified in the app or with a tool, and 
 - WebKitGTK file navigation for > 2 MB messages (X11 Linux): untested.
 - Dark theme: the Options page keeps a white background with light text (unreadable); the app does not follow the desktop's dark preference (2026-10-15).
 - The File screen's left column overlaps itself in a short window ("Save Attachments" struck by a separator, "Office Account" on top of "Print") (2026-10-15).
-- After a start in a small window the message list's Subject column keeps all the width (Received cut, Size gone); People list not alphabetical; attachment chips have no right-click menu; Add by path shows a Windows-only hint on Linux; the log says version 1.0.0.0 (2026-10-15).
+- After a start in a small window the message list's Subject column keeps all the width (Received cut, Size gone); People list not alphabetical; attachment chips have no right-click menu; Add by path shows a Windows-only hint on Linux (2026-10-15).
 
 ## Test environment caveats
 

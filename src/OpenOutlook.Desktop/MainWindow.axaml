@@ -14,12 +14,21 @@
     <Border Grid.Row="0" Name="TitleBand" Background="{DynamicResource OlChrome}" Height="40" Padding="8,0,10,0">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-          <ContentControl Template="{StaticResource OlIconAppMark}" Width="22" Height="22" Margin="2,0,8,0" />
-          <Button Classes="olRail" Width="30" Height="30" ToolTip.Tip="Undo — planned" Click="RibbonPlaceholderClicked" Tag="Undo">
-            <ContentControl Template="{StaticResource OlIconUndo}" Width="16" Height="16" />
+          <!-- As in Outlook: the program icon above the navigation rail, then the Quick Access Toolbar (Send/Receive All Folders, Undo, customize) -->
+          <Image Name="TitleAppIcon" Source="/Assets/openoutlook.png" Width="24" Height="24" Margin="4,0,10,0" ToolTip.Tip="OpenOutlook" />
+          <Button Name="QuickSendReceiveButton" Classes="olRail" Width="30" Height="30" Click="SendReceiveAllClicked" ToolTip.Tip="Send/Receive All Folders">
+            <ContentControl Template="{StaticResource OlIconSyncAll}" Width="20" Height="20" />
           </Button>
-          <Button Classes="olRail" Width="30" Height="30" ToolTip.Tip="Redo — planned" Click="RibbonPlaceholderClicked" Tag="Redo">
-            <ContentControl Template="{StaticResource OlIconRedo}" Width="16" Height="16" />
+          <Button Name="QuickUndoButton" Classes="olRail" Width="30" Height="30" IsEnabled="False" ToolTip.ShowOnDisabled="True" ToolTip.Tip="Undo — planned">
+            <ContentControl Template="{StaticResource OlIconUndo}" Width="18" Height="18" />
+          </Button>
+          <Button Name="QuickCustomizeButton" Classes="olRail" Width="20" Height="30" ToolTip.Tip="Customize Quick Access Toolbar">
+            <TextBlock Text="▾" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                <MenuItem Header="More Commands…" Click="QuickAccessMoreCommandsClicked" />
+              </MenuFlyout>
+            </Button.Flyout>
           </Button>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="6" VerticalAlignment="Center">

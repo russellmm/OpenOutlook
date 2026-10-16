@@ -103,6 +103,20 @@ public partial class MainWindow
         foreach (var account in MirrorAccounts()) await SyncMirrorAsync(account, manual);
     }
 
+    /// <summary>Send/Receive All Folders in the Quick Access Toolbar: every mailbox copy catches up with its server in turn (after a sync that is
+    /// already running), then the folder on screen is shown again.</summary>
+    private async void SendReceiveAllClicked(object? sender, RoutedEventArgs e)
+    {
+        QuickSendReceiveButton.IsEnabled = false;
+        try
+        {
+            foreach (var account in MirrorAccounts().ToList()) await SyncMirrorWhenIdleAsync(account, manual: true);
+            if (_activeGmailFolder is { } gmail) await ReloadGmailFolderAsync(gmail);
+            else if (_activeMicrosoftFolder is not null) await RefreshMicrosoftFolderAsync();
+        }
+        finally { QuickSendReceiveButton.IsEnabled = true; }
+    }
+
     /// <summary>Brings one account's mailbox copy up to date. Never throws: problems become the status shown in Data Files and the status bar.</summary>
     /// <summary>Runs a sync of the copy after any one already in progress has finished. A change made on the server (an emptied folder, junk moved out)
     /// is only in the copy once a sync that started after it completes; skipping because one is running would leave the old messages in the folder list.</summary>

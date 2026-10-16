@@ -45,7 +45,7 @@ public partial class MainWindow
     {
         PopulateBackstageAccounts();
         PopulateBackstageMailbox();
-        BsVersionText.Text = "Version " + (typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0");
+        BsVersionText.Text = "Version " + AppVersion.Display;
         BackstageHost.IsVisible = true;
         NavInfo.IsChecked = true;
         SelectBackstagePage(page);

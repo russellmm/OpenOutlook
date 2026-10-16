@@ -107,8 +107,15 @@ public sealed partial class CalendarPage
     private static void ConfigureRibbonButton(Button button, string caption, string icon)
     {
         button.Classes.Add("olLarge");
-        button.Content = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center,
-            Children = { Icon(icon, 28), new TextBlock { Text = caption, Classes = { "olCaption" } } } };
+        var text = new TextBlock { Text = caption, Classes = { "olCaption" } };
+        if (caption.Contains('\n'))
+        {
+            // The caption has its own line breaks ("New" / "Appointment"): keep them, and never break inside a word that is wider than the
+            // caption's usual 76 px (it split "Appointment" into "Appointmen" / "t").
+            text.TextWrapping = TextWrapping.NoWrap;
+            text.MaxWidth = double.PositiveInfinity;
+        }
+        button.Content = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Children = { Icon(icon, 28), text } };
     }
 
     private static Button RibbonButton(string caption, string icon)

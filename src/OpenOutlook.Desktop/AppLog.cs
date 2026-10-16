@@ -101,7 +101,7 @@ public static class AppLog
 
     private static string Version()
     {
-        try { return typeof(AppLog).Assembly.GetName().Version?.ToString() ?? "unknown"; }
+        try { return AppVersion.Display; }
         catch (Exception) { return "unknown"; }
     }
 }

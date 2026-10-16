@@ -366,6 +366,8 @@ public sealed class MainWindowHeadlessTests
             Assert.Contains(page.GetVisualDescendants().OfType<TextBlock>(), text =>
                 text.Text?.Contains("Connect an Outlook.com or Hotmail account") == true);
             Shot(window, "calendar-empty");
+            var appointment = window.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Text == "New\nAppointment");
+            Assert.Equal(2, appointment.TextLayout.TextLines.Count);                // "New" / "Appointment", never "Appointmen" / "t"
             var workWeek = window.GetVisualDescendants().OfType<Button>()
                 .First(button => button.GetVisualDescendants().OfType<TextBlock>()
                     .Any(text => text.Text == "Work\nWeek"));
@@ -756,6 +758,27 @@ public sealed class MainWindowHeadlessTests
             repair.Close();
         }
         finally { window.Close(); Cleanup(copy); }
+    }
+
+    [AvaloniaFact]
+    public void Top_left_matches_outlook_program_icon_send_receive_undo_then_mail_calendar_people()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var strip = (StackPanel)window.FindControl<Image>("TitleAppIcon")!.Parent!;
+            Assert.Equal(["TitleAppIcon", "QuickSendReceiveButton", "QuickUndoButton", "QuickCustomizeButton"], strip.Children.Select(c => c.Name).ToArray());
+            Assert.True(window.FindControl<Button>("QuickSendReceiveButton")!.IsEnabled);
+            Assert.False(window.FindControl<Button>("QuickUndoButton")!.IsEnabled);           // nothing to undo yet: greyed, as in Outlook
+            Assert.Equal("Send/Receive All Folders", ToolTip.GetTip(window.FindControl<Button>("QuickSendReceiveButton")!));
+            var rail = (StackPanel)window.FindControl<Button>("MailNavButton")!.Parent!;
+            Assert.Equal(["MailNavButton", "CalendarNavButton", "PeopleNavButton"], rail.Children.OfType<Button>().Take(3).Select(b => b.Name).ToArray());
+            Shot(window, "top-left-quick-access");
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]

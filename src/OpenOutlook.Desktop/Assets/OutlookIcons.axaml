@@ -478,6 +478,16 @@
     </Canvas>
   </ControlTemplate>
 
+  <!-- Send/Receive All Folders in the Quick Access Toolbar: two green arrows chasing round a circle, as in Outlook -->
+  <ControlTemplate x:Key="OlIconSyncAll">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="#1F8A3B" StrokeThickness="2.4" StrokeLineCap="Round" Data="M25.5,13 A10,10 0 0 0 7.5,10" />
+      <Path Fill="#1F8A3B" Data="M27.5,6.5 L26.5,15 L19.5,11 Z" />
+      <Path Stroke="#1F8A3B" StrokeThickness="2.4" StrokeLineCap="Round" Data="M6.5,19 A10,10 0 0 0 24.5,22" />
+      <Path Fill="#1F8A3B" Data="M4.5,25.5 L5.5,17 L12.5,21 Z" />
+    </Canvas>
+  </ControlTemplate>
+
   <ControlTemplate x:Key="OlIconAppMark">
     <Canvas Width="32" Height="32">
       <Path Fill="#0F6CBD" Data="M3,7 L29,7 L29,25 L3,25 Z" />

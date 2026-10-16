@@ -3,6 +3,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 
 namespace OpenOutlook.Desktop;
 
@@ -45,6 +46,16 @@ public partial class MainWindow
         SelectOptionsCategory("general");
         OptCatGeneral.IsChecked = true;
         OptionsHost.Focus();
+    }
+
+    /// <summary>The Quick Access Toolbar's ▾ menu: More Commands… opens Options at the Quick Access Toolbar page, as in Outlook.</summary>
+    private void QuickAccessMoreCommandsClicked(object? sender, RoutedEventArgs e)
+    {
+        CloseBackstage();
+        OpenOptionsDialog();
+        SelectOptionsCategory("qat");
+        foreach (var item in OptionsHost.GetLogicalDescendants().OfType<RadioButton>())
+            if (item.Tag as string == "qat") item.IsChecked = true;
     }
 
     private void OptionsKeyDown(object? sender, KeyEventArgs e)

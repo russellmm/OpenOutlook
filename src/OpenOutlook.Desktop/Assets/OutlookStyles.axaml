@@ -205,6 +205,10 @@
         </ControlTemplate>
       </Setter>
     </Style>
+    <!-- A command that cannot be used now (Undo with nothing to undo) is drawn grey, as in Outlook -->
+    <Style Selector="Button.olRail:disabled /template/ ContentPresenter">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
     <Style Selector="Button.olRail:pointerover /template/ Border#bg">
       <Setter Property="Background" Value="{DynamicResource OlHover}" />
     </Style>

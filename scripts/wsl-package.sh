@@ -9,6 +9,9 @@ export PATH=$HOME/.dotnet:$PATH DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 work=$HOME/oo_pack
 rm -rf "$work" && mkdir -p "$work"
 cd "$root"
+OO_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)          # the copy below has no .git; package-linux-x64.sh stamps this
+git diff --ignore-cr-at-eol --quiet HEAD -- src native 2>/dev/null || OO_COMMIT="$OO_COMMIT-modified"
+export OO_COMMIT
 tar --exclude=bin --exclude=obj --exclude='native/openpst/build-*' --exclude=.git --exclude=publish --exclude=runtimes \
     --exclude='*.pst' --exclude='*.zip' --exclude=.local --exclude=third_party --exclude=.secrets --exclude='./*.png' -cf - . | tar -xf - -C "$work"
 cp "$root"/src/OpenOutlook.Desktop/Assets/*.png "$work"/src/OpenOutlook.Desktop/Assets/     # the tar above skips png files (root screenshots); the app icon is needed
@@ -16,7 +19,7 @@ mkdir -p "$work/third_party/chromium"
 if [[ -d "$root/third_party/chromium/linux64" ]]; then cp -r "$root/third_party/chromium/linux64" "$work/third_party/chromium/linux64"; fi
 cd "$work"
 bash scripts/build-native.sh 2>&1 | tail -3
-bash scripts/package-linux-x64.sh 2>&1 | tail -4
+bash scripts/package-linux-x64.sh "$version" 2>&1 | tail -4
 bash scripts/build-deb.sh "$version" 2>&1 | tail -3
 mkdir -p "$root/publish"
 cp publish/OpenOutlook-linux-x64.tar.gz "$root/publish/"

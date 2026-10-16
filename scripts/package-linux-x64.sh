@@ -9,8 +9,20 @@ build_dir="$publish_root/linux-x64"
 package_dir="$publish_root/OpenOutlook-linux-x64"
 oauth_source="$project_root/src/OpenOutlook.Desktop/openoutlook-oauth.json"
 
+# Optional first argument: the package version (the same one build-deb.sh gets). It is stamped into the program with the commit it was built
+# from ("-modified" when the source has uncommitted changes), and File > Office Account > About and the log show it: "0.1.41 (commit 1a2b3c4)".
+version_args=()
+if [[ -n "${1:-}" ]]; then
+  commit=${OO_COMMIT:-}                                 # wsl-package.sh builds from a copy without .git and passes the commit in
+  if [[ -z "$commit" ]]; then
+    commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+    git diff --ignore-cr-at-eol --quiet HEAD -- src native 2>/dev/null || commit="$commit-modified"
+  fi
+  version_args=(-p:Version="$1" -p:SourceRevisionId="$commit")
+fi
+
 dotnet publish src/OpenOutlook.Desktop/OpenOutlook.Desktop.csproj \
-  -c Release -r linux-x64 --self-contained true \
+  -c Release -r linux-x64 --self-contained true "${version_args[@]}" \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
   -p:PublishTrimmed=false -p:NuGetAudit=false --ignore-failed-sources \
   -m:1 -p:UseSharedCompilation=false \

@@ -262,7 +262,7 @@ These have no automated test; they were verified in the app or with a tool, and 
 - Gmail live copy/move, calendar invitations, Linux calendar, People against the live account: unverified.
 - WebKitGTK file navigation for > 2 MB messages (X11 Linux): untested.
 - Dark theme: the Options page keeps a white background with light text (unreadable); the app does not follow the desktop's dark preference (2026-10-15).
-- The File screen's left column overlaps itself in a short window ("Save Attachments" struck by a separator, "Office Account" on top of "Print") (2026-10-15).
+- The File screen's left column overlaps itself in a short window ("Save Attachments" struck by a separator, "Account" on top of "Print") (2026-10-15).
 - After a start in a small window the message list's Subject column keeps all the width (Received cut, Size gone); People list not alphabetical; attachment chips have no right-click menu; Add by path shows a Windows-only hint on Linux (2026-10-15).
 
 ## Test environment caveats

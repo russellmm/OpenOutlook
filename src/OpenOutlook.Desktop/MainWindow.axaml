@@ -594,7 +594,7 @@
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavOfficeAccount" Tag="officeaccount" Click="BackstageNavClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
                   <ContentControl Template="{StaticResource OlIconPeopleR}" Width="17" Height="17" Tag="{Binding #NavOfficeAccount.Foreground}" />
-                  <TextBlock Text="Office Account" VerticalAlignment="Center" />
+                  <TextBlock Text="Account" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavFeedback" Tag="feedback" Click="BackstageNavClicked">
@@ -856,11 +856,11 @@
               </Button>
             </StackPanel>
 
-            <!-- Office Account -->
+            <!-- Account (Outlook's "Office Account" place; the program is not part of Microsoft's suite, so the label names no product) -->
             <StackPanel Name="PageOfficeAccount" IsVisible="False">
-              <TextBlock Classes="olBsHeading" Text="Office Account" />
+              <TextBlock Classes="olBsHeading" Text="Account" />
               <TextBlock Classes="olBsCardTitle" Text="About OpenOutlook" />
-              <TextBlock Classes="olBsBody" Margin="0,2,0,10" Text="OpenOutlook is an independent mail client for Windows and Linux: it reads and writes Outlook PST archives and connects to Microsoft and Gmail accounts over OAuth. It is not part of Microsoft Office, so there is no Office licence or update ring to show here." />
+              <TextBlock Classes="olBsBody" Margin="0,2,0,10" Text="OpenOutlook is an independent mail client for Windows and Linux. It works with Office PST files (Outlook data files), connects to Microsoft and Gmail accounts, and has the familiar look and feel of Office." />
               <TextBlock Name="BsVersionText" Classes="olBsBody" Foreground="{DynamicResource OlTextSecondary}" Margin="0,0,0,14" Text="" />
               <Button Classes="olLink" Click="BsProjectHomeClicked">
                 <TextBlock Text="https://github.com/russellmm/OpenOutlook" Foreground="{DynamicResource OlAccent}" TextDecorations="Underline" FontSize="13.5" />
@@ -1322,7 +1322,7 @@
                       <TextBlock Classes="olOptBody" Text="Specify how Outlook corrects and formats text as you type." VerticalAlignment="Center" />
                       <Button Classes="olOptButton" Content="AutoCorrect Options..." Tag="AutoCorrect options" Click="EditorPlaceholderClicked" />
                     </StackPanel>
-                    <TextBlock Classes="olOptSection" Text="When correcting spelling in Microsoft Office programs" />
+                    <TextBlock Classes="olOptSection" Text="When correcting spelling in OpenOutlook" />
                     <Border Classes="olOptRule" />
                     <StackPanel Spacing="6" Margin="12,0,0,8">
                       <CheckBox Name="EdIgnoreUppercase" Content="_Ignore words in UPPERCASE" />

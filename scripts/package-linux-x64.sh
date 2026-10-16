@@ -10,7 +10,7 @@ package_dir="$publish_root/OpenOutlook-linux-x64"
 oauth_source="$project_root/src/OpenOutlook.Desktop/openoutlook-oauth.json"
 
 # Optional first argument: the package version (the same one build-deb.sh gets). It is stamped into the program with the commit it was built
-# from ("-modified" when the source has uncommitted changes), and File > Office Account > About and the log show it: "0.1.41 (commit 1a2b3c4)".
+# from ("-modified" when the source has uncommitted changes), and File > Account > About and the log show it: "0.1.41 (commit 1a2b3c4)".
 version_args=()
 if [[ -n "${1:-}" ]]; then
   commit=${OO_COMMIT:-}                                 # wsl-package.sh builds from a copy without .git and passes the commit in

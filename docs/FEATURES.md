@@ -33,7 +33,7 @@ Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). *
 | Import messages (EML files and folders, drag and drop), copy/move between archives | Yes | Yes | |
 | Copy / move messages between ANY two stores: data file, Microsoft mailbox, Gmail mailbox (Move / Copy to Folder... or drag and drop) | Yes | Untested (shared code) | One picker lists every open data file and every connected account. PST to PST uses the engine's own copy (all properties); the same mailbox uses the server's move/copy; every other pair goes through the whole message as MIME (`MailTransfer`, `MimeMessageBuilder`, Gmail `import`, Graph MIME create). A move removes an original only after its copy is committed (a failure leaves the message where it was, never lost). Originals of a mailbox go to Deleted Items / Trash, originals of a PST are removed. Not carried by MIME: flag status and categories; embedded (attached) messages stop that one message with a clear reason. |
 | Create a new empty PST (`opst_create`) | Yes | Yes | SCANPST-clean; used for the mailbox copies. |
-| Check and Repair (fixer rules R1-R12) | Yes | Yes | Window in the app; SCANPST.EXE is the oracle (Windows only). |
+| Check and Repair (fixer rules R1-R13; format rules 1-43) | Yes | Yes | Window in the app; SCANPST.EXE is the oracle (Windows only). |
 | Export message / folder tree to EML, save attachments | Yes | Yes | New files only, never overwrites. |
 | Selected-folder header search (sender, recipients, subject; max 500) | Yes | Yes | There is no cross-store full-text index. |
 

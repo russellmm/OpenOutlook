@@ -68,7 +68,7 @@ Contents: [Reading pane: HTML safety](#reading-pane-html-safety) · [Pictures](#
 
 ## PST engine and SCANPST
 
-Format rules 1-40 (what SCANPST requires) are in `docs/OpenOutlook_Design_Document.md` sections 3.4 and 15; fixer rules R1-R12 in section 6.6. They are guarded by the native checker (`opst_check`), byte-identity runs against the Python reference (`tests/pyops.py`), the fixer test (`tests/pydamage.py`) and SCANPST runs on written files (`tools/python/run_scanpst2.ps1`).
+Format rules 1-43 (what SCANPST requires) are in `docs/OpenOutlook_Design_Document.md` sections 3.4 and 15; fixer rules R1-R13 in section 6.6. They are guarded by the native checker (`opst_check`), byte-identity runs against the Python reference (`tests/pyops.py`), the fixer test (`tests/pydamage.py`) and SCANPST runs on written files (`tools/python/run_scanpst2.ps1`).
 
 | Case | Why | Handled in | Test |
 |---|---|---|---|

@@ -244,6 +244,7 @@ These have no automated test; they were verified in the app or with a tool, and 
 - **Real-server picture timing** (AmEx message, Windows, 2026-10-15; the scheduling itself is unit tested). Tool: MailSmoke `imgprobe <pst copy> <subject>` prints each fetch's time.
 - **Snapshot character selection in the app**: drag, double/triple-click, right-click Copy on the Google Cloud message with `OPENOUTLOOK_READER=snapshot` (Windows, 2026-10-15). **Not yet tried on the bare-metal Wayland desktop.**
 - **WebView2 character selection** and the > 2 MB file path (Google Cloud and 6.9 MB Delta messages, 2026-10-15).
+- **SCANPST after an in-app repair** (owner, 2026-10-16): Check & Repair in 0.1.45 on the Hotmail mailbox copy and two archives, then SCANPST.EXE: all clean.
 - **SCANPST verdicts** on files the engine writes (big recipient lists, imports, mirrors): `tools/python/run_scanpst2.ps1`, repair-and-diff until two passes agree (rule 26).
 - **Mailbox copy turned back on starts its sync**; **Hotmail live copy/move** (owner, 2026-10-08).
 - **Linux bare-metal checklist** (`docs/handoff-linux-bare-metal-2026-10-06.md` section 3): window behaviour, GTK dialogs, keyring sign-in, xdg-open, HiDPI.

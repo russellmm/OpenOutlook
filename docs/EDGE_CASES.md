@@ -31,12 +31,13 @@ Contents: [Reading pane: HTML safety](#reading-pane-html-safety) · [Pictures](#
 | Camera-size pictures decoded at 1600 px; budget is a Trust Center choice (64 / 128 / 256 MP) | 2026-10-15: two photos (5700x2560, 4914x3276) pushed a Delta mailing over budget | `SafeInlineImage.PreviewSize`, `OptionsSettings.TrustPictureMemoryMegapixels` | `SafeInlineImageTests.Camera_size_pictures_are_decoded_at_the_preview_width_so_a_newsletter_fits_the_message_budget`, `.The_trust_center_picture_memory_choice_sets_the_message_budget` |
 | Web fonts (`@font-face`, .woff/.ttf/...) are not pictures | 2026-10-15: a .woff counted as "could not be loaded" | `SafeHtmlDocument.FindImages` | `SafeHtmlDocumentTests.Web_fonts_are_not_counted_as_pictures` |
 | Hidden images (display:none, width/height 0, `hidden`) are not fetched | Tracking | `IsHiddenImage` | `SafeHtmlDocumentTests.HiddenTrackingImagesAreNotFetchedOrCountedAsMissingPictures` |
-| 1 x 1 images (attributes or inline px) are tracking pixels: not fetched, not counted | 2026-10-15: an American Express tracker took 8 s per 47-byte pixel | `IsTrackingPixel` | `SafeHtmlDocumentTests.OneByOneTrackingPixelsAreNotFetched` |
+| Tracking slivers (at most 2 px one way and 8 px the other, attributes or inline px: 1 x 1, 2 x 6 ...) are not fetched and not counted; small icons (4 x 4, 8 x 8) and full-width 1 px spacer lines still load | 2026-10-15: an American Express tracker took 8 s per 47-byte pixel; Slickdeals' 2 x 6 "imp" beacon answers with a redirect the loader refuses, so two messages said "2 message images could not be loaded" | `IsTrackingPixel` | `SafeHtmlDocumentTests.OneByOneTrackingPixelsAreNotFetched`, `.Sliver_beacons_are_not_fetched_but_small_icons_and_spacer_lines_are` |
 | Style-sheet pictures count only in rules that can show (`@media print`, rules matching no element are skipped) | Same AmEx mail: "printed" and "forwarded" beacons | `ScreenRulesWithPictures` | `SafeHtmlDocumentTests.StyleSheetPicturesThatCannotShowAreNotFetched` |
 | A style sheet wrapped in `<!-- -->` (and CSS comments) is scanned like a bare one | 2026-10-15: the AmEx body as the app reads it has `<style><!-- ... --></style>`; `<!-- @media print` read as a selector, which counts as matching, so the print beacon was fetched (8 s, "one image could not be loaded") | `ScreenRulesWithPictures` | `SafeHtmlDocumentTests.Html_comment_markers_and_css_comments_around_a_style_sheet_do_not_hide_print_rules` |
 | A style-sheet picture counts only if a matching element can show a background (has content, or a width / height / padding) | AmEx's beacons target `<div id="_two50"></div>` | `CanShowBackground` | `SafeHtmlDocumentTests.A_style_sheet_picture_for_an_empty_element_with_no_size_is_not_fetched` |
 | Every picture that is not shown is logged with host, path and origin (img, style sheet rule + selector, style / background attribute); the query string is left out (tracking ids) | Diagnosing "one image could not be loaded" | `MainWindow.DescribePictureSource`, `HtmlImageSource.Origin` | origin covered by the two tests above; log lines **manual** (`~/.local/share/OpenOutlook/logs/openoutlook.log`, "picture not loaded" / "picture not shown") |
 | Pictures show as they arrive (6 at a time, first layout after 1.2 s); one slow server does not hold back the rest; a slow picture that fails needs no second layout; switching message or cancelling stops without a layout | AmEx: everything waited for the slowest picture | `ProgressivePictureLoader`, `MainWindow.LoadImagesAsync`, `FirstPaintDelay` | `ProgressivePictureLoaderTests.*` (7; slow pictures are test-controlled, no timing dependence); also checked in the app on the AmEx message (all pictures within ~3 s) |
+| Pictures the HTML body shows by `cid:` are not listed as attachments (chips, Save Attachment, the save chooser), for PST, Microsoft and Gmail messages alike; the full list still draws the body | 2026-10-15: the Proton newsletter showed 11 logo / icon chips; Outlook lists none | `PstMessageHeader.IsInlinePicture`, `VisibleAttachments`, `_visibleGraphAttachments`, `VisibleGmailAttachments` | `PstMessageHeaderTests.A_picture_is_inline_only_when_the_body_shows_it_by_cid`, `.Inline_and_hidden_attachments_are_not_listed` |
 
 ## Reading pane: text selection
 
@@ -83,6 +84,7 @@ Format rules 1-40 (what SCANPST requires) are in `docs/OpenOutlook_Design_Docume
 | Damaged RTF / HTML bodies never crash the reader | Corrupt archives | RTF decoder | `fuzz_rtf.c` (16,000 bodies) *(native)* |
 | Mailbox wrapper folder hidden, its mail folders and non-empty system folders reachable | | `PstFolderPresentation` | `PstFolderPresentationTests.*` |
 | Recipients / headers views: no duplicates, fall back to summary or stored properties, hidden attachments not listed | Message Properties sheet | `PstMessageHeader` | `PstMessageHeaderTests.*` (6), `MainWindowHeadlessTests.Header_helpers_cut_the_header_block_and_unfold_values` *(headless)* |
+| Check and Repair (our SCANPST stand-in, `opst_check` / `opst_fix`) can scan every open data file, the mailbox copies included; it preselects the file on screen; repairing a mailbox copy holds its sync off and is refused while a sync runs | 2026-10-15 Linux: the copies this computer writes were not in the folder list, so they could not be checked | `ArchiveRepairWindow`, `CheckArchiveClicked` | `MainWindowHeadlessTests.Check_and_repair_offers_every_data_file_and_scans_the_one_chosen`, `.Check_and_repair_window_scans_the_archive` *(headless)* |
 
 ## Export and attachments
 
@@ -105,6 +107,9 @@ Format rules 1-40 (what SCANPST requires) are in `docs/OpenOutlook_Design_Docume
 | PST to PST copy/move keeps both files clean | | engine copy | `PstTransferEndToEndTests.*`, `PstImportTests.Messages_copy_between_two_open_archives_and_a_move_removes_the_originals`, `TransferHeadlessTests.*` *(headless)* |
 | Gmail import keeps labels and Date header, adds UNREAD once; Graph import marks read unless unread | | `MailboxImport` | `MailboxImportTests.*` (5) |
 | Flags / categories do not travel through MIME; embedded messages cannot go to a mailbox; the mailbox copy is not a destination | Known limits | `ExecuteTransferAsync` | n/a (see [Known gaps](#known-gaps)) |
+| A move in a Microsoft or Gmail mailbox leaves the list at once (same overlay as delete), is stamped again when the server confirms so a sync that began meanwhile cannot bring it back, and comes back if the server refuses; Gmail moves out of Sent / Drafts / Starred / Important only add a label and stay | 2026-10-15: moves showed ~3 s late (the list waited for Graph) | `MoveOnlineAsync`, `GmailMoveLeavesSource` | `MainWindowHeadlessTests.A_Microsoft_move_leaves_the_list_before_the_server_answers`, `.A_Microsoft_move_the_server_refuses_comes_back`, `.A_Gmail_move_leaves_the_list_before_Gmail_answers_and_a_refused_one_comes_back` *(headless)* |
+| The Move / Copy picker lists data files, accounts and folders in the folder pane's order (`folder-order.json`) and opens at the data file or mailbox the messages are in | 2026-10-15: it sorted data files first and everything A-Z, and opened at the top | `BuildTransferRoots`, `TransferStart`, `FolderPickerWindow` | `TransferHeadlessTests.The_picker_follows_the_folder_pane_order_and_opens_at_the_data_file_the_messages_are_in` *(headless)* |
+| A confirmed move or copy (same mailbox or across stores) syncs the mailbox copy at once, so the message shows in its new folder | 2026-10-15: copies waited for the 15-minute sync, moves for the 4 s / 20 s batching delay | `SyncMirrorNow` | **No automated test** (checked in the app, Hotmail and Gmail) |
 
 ## Mailbox copy (mirror)
 
@@ -160,6 +165,7 @@ Format rules 1-40 (what SCANPST requires) are in `docs/OpenOutlook_Design_Docume
 | Invalid ids and labels refused before any request; large batches split | | `GmailMailbox`, actions | `GmailMailboxTests.Rejects_invalid_ids_and_labels_before_any_request`, `GmailMailboxActionTests.Large_batches_are_split_and_invalid_input_is_refused_before_any_request` |
 | Only accounts with the modify scope may change mail; a refused change says to sign in again | | actions | `GmailMailboxActionTests.Only_accounts_connected_with_the_modify_scope_may_change_mail`, `.A_refused_change_explains_that_the_account_must_sign_in_again` |
 | Gmail folders and actions in the window; real drag and drop moves; labels copy | | `MainWindow` | `MainWindowHeadlessTests.Gmail_account_appears_with_its_standard_folders_and_survives_selection`, `.Gmail_actions_change_the_server_and_the_list`, `.Gmail_reply_reply_all_and_forward_are_prepared_from_the_original`, `.Dropping_messages_on_a_Gmail_folder_moves_them_and_adding_a_label_copies`, `.Real_mouse_and_drop_events_move_a_Gmail_message_onto_a_folder` *(headless)* |
+| A part's `Content-ID` is kept, so pictures the body shows are told apart from real attachments | Inline pictures listed as attachments | `GmailMailbox.ReadContentParts` | `GmailMailboxTests.Reads_the_content_id_of_an_inline_picture` |
 
 ## Compose and send
 
@@ -216,6 +222,8 @@ All settings stores share the same rules: a missing file gives defaults, a corru
 | Ubuntu 23.10+ AppArmor blocks the browser sandbox (SIGTRAP) | 2026-10-06 bare metal | deb ships `packaging/openoutlook-chromium.apparmor` | **Manual** (deb install); the tar.gz has no profile |
 | Single-file Linux build must ship the native PST library | 2026-10-05: "native PST library is not available" | `package-linux-x64.sh` | `PstEngineContractTests.Native_library_loads_when_present_and_matches_expected_version`; packaging itself **manual** (deb smoke) |
 | WebKitGTK loads NavigateToString as `about:blank` (not `data:`) | Why the Windows guard bug never hit Linux | `OwnDocumentNavigation` | MailSmoke `wvprobe guard` under WSLg (**manual**) |
+| Builds with the .NET 8 SDK (C# 12): `Split` with a collection expression is ambiguous there (CS0121); use `new[] { ... }` | 2026-10-15: the bare-metal box has only SDK 8.0.131; Windows / WSL / CI have newer SDKs and never saw it | `JunkKeywordFile`, `AccountSettingsWindow.Junk` | **Build only** (compile on Linux with SDK 8) |
+| GNOME on Wayland: GTK file choosers, the sign-in browser and xdg-open targets are Wayland-native windows | X11 screenshots cannot see them and they take keyboard focus | n/a | **Manual** (the owner looked at them, 2026-10-15) |
 
 ---
 
@@ -230,6 +238,7 @@ These have no automated test; they were verified in the app or with a tool, and 
 - **Mailbox copy turned back on starts its sync**; **Hotmail live copy/move** (owner, 2026-10-08).
 - **Linux bare-metal checklist** (`docs/handoff-linux-bare-metal-2026-10-06.md` section 3): window behaviour, GTK dialogs, keyring sign-in, xdg-open, HiDPI.
 - **Timing**: MailSmoke `selprobe` (render + character measurement), `timing`, `gmailtiming`.
+- **Linux bare-metal walk-through of 0.1.32 - 0.1.38** (`docs/handoff-linux-bare-metal-2026-10-06.md` section 11, 2026-10-15): start, window memory, popups in front, GTK file chooser, PST reading, text selection, Properties, People, Calendar, send from both accounts, attachment Open / Save as, Open File Location, Data Files Remove / Add by path, Junk Cleaner preview, sorting, drag and drop (real mouse), instant moves, picker order, Check and Repair of the mailbox copies.
 
 ## Known gaps
 
@@ -240,6 +249,9 @@ These have no automated test; they were verified in the app or with a tool, and 
 - Flag status and categories do not travel through MIME; messages with an embedded message cannot go to a mailbox; moving out of a read-only data file is refused (copy works).
 - Gmail live copy/move, calendar invitations, Linux calendar, People against the live account: unverified.
 - WebKitGTK file navigation for > 2 MB messages (X11 Linux): untested.
+- Dark theme: the Options page keeps a white background with light text (unreadable); the app does not follow the desktop's dark preference (2026-10-15).
+- The File screen's left column overlaps itself in a short window ("Save Attachments" struck by a separator, "Office Account" on top of "Print") (2026-10-15).
+- After a start in a small window the message list's Subject column keeps all the width (Received cut, Size gone); People list not alphabetical; attachment chips have no right-click menu; Add by path shows a Windows-only hint on Linux; the log says version 1.0.0.0 (2026-10-15).
 
 ## Test environment caveats
 
@@ -256,3 +268,5 @@ These have no automated test; they were verified in the app or with a tool, and 
 - **dotnet keeps stdout pipes open** after build/test (msbuild server): piping into `grep` can look hung on Linux; use `DOTNET_CLI_USE_MSBUILD_SERVER=0` and redirect to a file.
 - **Two drag systems in the folder pane** (folder reorder, message drops): a handler must not touch drags that are not its own.
 - **Editing sources on Windows**: never with PowerShell 5.1 `Get-Content`/`Set-Content` (UTF-8 read as ANSI); Bash heredocs collapse backslashes, so write scripts with the Write tool.
+- **Driving the real desktop on GNOME Wayland**: Xwayland ignores `xdotool` input; `ydotool` (uinput) works, but pointer acceleration needs a move-read-correct loop and a drag injected this way never starts `DoDragDrop` (a real mouse does). Check `_NET_ACTIVE_WINDOW` before typing: a blind type once landed in another app. `import -window <id>` captures XWayland windows only.
+- **A stale native library or CMake cache fails the unit tests, not the code**: `EntryPointNotFoundException: opst_create_ex` means `libopenpst.so` predates the engine (run `scripts/build-native.sh`); a `CMakeCache.txt` pointing at a `ninja` from an old scratch directory stops that script (delete the cache).

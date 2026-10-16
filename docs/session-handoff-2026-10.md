@@ -266,3 +266,10 @@ Owner's caution: Check & Repair ran before SCANPST, so findings may be ours. Che
 - Tests: `test_write.c` 188 checks (+ guard on the 868 MB archive), all native tests pass; Windows unit 623 + 5 known, headless 49.
 - Builds 0.1.44 from `f493168`: Windows `F:\Claude\OpenOutlook_win`, Linux `publish/openoutlook_0.1.44_amd64.deb` (+ `openoutlook_current_amd64.deb`); WSL native ctest 3/3 (gcc), unit 628/628, deb smoke OK.
 
+## F:\\Claude tidied up (2026-10-16)
+With the owner's approval: the top level now holds only `OpenOutlook\\` (repo), `OpenOutlook_win\\` (Windows build), `OutlookJunkCleaner\\` (older tray app, running and started from the Startup folder: left in place), `.secrets\\`, `gh_token` and `git-cred-ghtoken.sh` (the repo's credential helper reads them by path), plus three new folders:
+- `Mail-data\\`: the owner's PSTs (`rmarrash_1.pst`, `rmarrash_1_clean.pst` = the pristine SCANPST-clean reference, `rmarrash_1_clean (Copy).pst`, `rmarrash_2.pst`, `rmarrash_3.pst`) and `PST_Files\\` (10-06 snapshots of the mailbox copies). OpenOutlook's `attached-psts.json` and `scripts/build-native.ps1` point there now.
+- `Reference\\ms-pst.pdf` (the format specification).
+- `Archive\\OpenOutlook-early\\`: the pre-repo handoffs (rev4-rev8), the PST editor chat, the old design document / plan / progress PDF, the original `openpst\\` engine folder (bindings, dist, early research), old SCANPST result files.
+- Sent to the Recycle Bin (restorable): 31 loose scripts byte-identical to `tools/python`, their `*.bak_*` backups, `__pycache__`, `old\\` patch scripts, `r7\\` logs, the before/after dumps, SCANPST logs, the old Python app's 0.8.x packages and scripts, and the pre-0.1.42 rollback exe in `OpenOutlook_win`.
+

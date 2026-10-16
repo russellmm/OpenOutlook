@@ -1,6 +1,6 @@
 # OpenOutlook / OpenPST - Design Document
 
-Status: 4 October 2026. Covers the Python implementation (`F:\Claude\*.py`), the C library OpenPST v0.3.0 (`F:\Claude\openpst`), the
+Status: 4 October 2026. Covers the Python implementation (`F:\Claude\*.py`, now `tools/python`), the C library OpenPST v0.3.0 (`F:\Claude\openpst`, now `native/openpst`; the original folder is archived in `F:\Claude\Archive\OpenOutlook-early`), the
 packaging, the verification method and everything learned about the Outlook PST format on the way.
 Companion documents: `OpenOutlook_Session_Handoff_rev4.md` (rules 1-11, stages D-F, GUI), `OpenOutlook_Session_Handoff_rev5.md` (rules 12-16, the copy investigation, `pstfix`, big-file tests),
 `OpenOutlook_Session_Handoff_rev6.md` (rules 17-18, stage G), `OpenOutlook_Local_Session_Handoff.md` (rev7) and `OpenOutlook_Local_Session_Handoff_rev8.md` (C port, what happened when), `openpst\README.md` (API reference), `ms-pst.pdf` (the specification, MS-PST v20250218).
@@ -54,7 +54,7 @@ Two implementations of the same engine exist on purpose:
 * **C** (OpenPST) is the portable engine: Linux and Windows, no dependencies, P/Invoke-friendly. Its writer is a faithful port of the Python writer and is
   verified to produce **byte-identical files** (section 10).
 
-Test data (all in `F:\Claude`): `rmarrash_1_clean.pst` (868 MB, 2,793 messages, SCANPST clean), `rmarrash_2.pst` (1.2 MB, 10 messages), `rmarrash_3.pst`
+Test data (all in `F:\Claude\Mail-data` since 2026-10-16; earlier in `F:\Claude`): `rmarrash_1_clean.pst` (868 MB, 2,793 messages, SCANPST clean), `rmarrash_2.pst` (1.2 MB, 10 messages), `rmarrash_3.pst`
 (2.6 GB, 13,410 messages). Store name of the user's mailbox: "rmarrash_hotmail2".
 
 ---------------------------------------------------------------------------------------------------------------------------------------

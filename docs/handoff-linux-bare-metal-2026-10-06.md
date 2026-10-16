@@ -81,7 +81,7 @@ Headless tests (21 UI tests) run under Xvfb: `scripts/headless-smoke.sh`. The `c
 
 ## 7. Standing rules for whoever continues
 
-- The owner's real PSTs (`F:\Claude\rmarrash_*.pst`, `F:\Claude\PST_Files\...`, and anything the app owns under `AppData`/`~/.local/share/openoutlook/mail`) are never modified by experiments: work on copies (`.local/scan/`).
+- The owner's real PSTs (`F:\Claude\Mail-data\rmarrash_*.pst`, `F:\Claude\Mail-data\PST_Files\...`, and anything the app owns under `AppData`/`~/.local/share/openoutlook/mail`) are never modified by experiments: work on copies (`.local/scan/`).
 - Never commit or print `gh_token`, `.secrets/`, `openoutlook-oauth.json`.
 - Push `native-engine-phase0` to both `native-engine-phase0` and `main` (same commit). Commit messages end with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
 - Publish the Windows build only when a change affects Windows, and never kill the owner's running OpenOutlook.

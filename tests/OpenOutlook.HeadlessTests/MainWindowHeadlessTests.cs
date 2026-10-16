@@ -745,16 +745,42 @@ public sealed class MainWindowHeadlessTests
         {
             var stores = (System.Collections.IDictionary)typeof(MainWindow).GetField("_stores", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
             var store = (IPstEngine)stores[copy]!;
-            var repair = new ArchiveRepairWindow("test.pst", store.CanWrite, () => Task.Run(store.Scan), () => Task.Run(store.Repair));
+            var file = new ArchiveRepairWindow.DataFile(copy, "test", store.CanWrite);
+            var repair = new ArchiveRepairWindow([file], file, _ => Task.Run(store.Scan), _ => Task.Run(store.Repair));
             repair.Show();
             var log = repair.GetVisualDescendants().OfType<TextBox>().First();
-            await WaitUntil(() => log.Text is { Length: > 0 } t && t != "Scanning...");
+            await WaitUntil(() => log.Text is { Length: > 0 } t && !t.StartsWith("Scanning", StringComparison.Ordinal));
             Shot(repair, "05-check-repair");
             Assert.False(string.IsNullOrWhiteSpace(log.Text));
             Assert.DoesNotContain("failed", log.Text!);
             repair.Close();
         }
         finally { window.Close(); Cleanup(copy); }
+    }
+
+    [AvaloniaFact]
+    public async Task Check_and_repair_offers_every_data_file_and_scans_the_one_chosen()
+    {
+        var scanned = new List<string>();
+        Task<PstScanReport> Scan(string path) { scanned.Add(path); return Task.FromResult(new PstScanReport([], 0, 0)); }
+        var archive = new ArchiveRepairWindow.DataFile("/data/archive.pst", "archive", CanRepair: true);
+        var copy = new ArchiveRepairWindow.DataFile("/data/me@hotmail.test.pst", "me@hotmail.test (mailbox copy)", CanRepair: true);
+        var window = new ArchiveRepairWindow([copy, archive], archive, Scan, Scan);
+        window.Show();
+        try
+        {
+            var files = window.GetVisualDescendants().OfType<ComboBox>().Single();
+            var log = window.GetVisualDescendants().OfType<TextBox>().Single();
+            Assert.Equal([copy, archive], files.Items.Cast<ArchiveRepairWindow.DataFile>().ToArray());
+            await WaitUntil(() => scanned.Count == 1);
+            Assert.Equal("/data/archive.pst", scanned[0]);                       // the one you were looking at is scanned first
+            await WaitUntil(() => log.Text?.Contains("No problems found", StringComparison.Ordinal) == true);
+            files.SelectedItem = copy;                                           // choosing the mailbox copy scans it
+            await WaitUntil(() => scanned.Count == 2);
+            Assert.Equal("/data/me@hotmail.test.pst", scanned[1]);
+            await WaitUntil(() => log.Text?.StartsWith("/data/me@hotmail.test.pst", StringComparison.Ordinal) == true);
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]

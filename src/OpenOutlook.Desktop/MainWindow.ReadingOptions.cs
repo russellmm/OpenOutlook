@@ -179,27 +179,45 @@ public partial class MainWindow
 
     private async void CheckArchiveClicked(object? sender, RoutedEventArgs e)
     {
-        if (_activePath is not { } path || !_stores.TryGetValue(path, out var store))
+        // Every open data file can be checked, the mailbox copies behind the accounts included (they are not in the folder list, but they are
+        // the files this computer writes most). The one you are looking at is chosen first.
+        var files = _stores.Select(entry => new ArchiveRepairWindow.DataFile(entry.Key,
+                IsMirrorCopy(entry.Key)
+                    ? MirrorAccounts().FirstOrDefault(a => MirrorPathFor(a) == entry.Key)?.DisplayAddress + " (mailbox copy)"
+                    : entry.Value.DisplayName,
+                entry.Value.CanWrite))
+            .OrderBy(f => IsMirrorCopy(f.Path) ? 0 : 1).ThenBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        if (files.Count == 0)
         {
-            StatusText.Text = "Select a folder in an open archive (.pst) first.";
+            StatusText.Text = "Open a data file (.pst) or connect an account first.";
             return;
         }
+        var activeAccount = _activeMicrosoftAccount ?? _activeGmailFolder?.Account;
+        var first = _activePath ?? (activeAccount is null ? null : MirrorPathFor(activeAccount));
         CloseBackstage();
         CloseOptionsDialog();
-        async Task<PstScanReport> Run(Func<PstScanReport> work)
+        async Task<PstScanReport> Run(string path, Func<IPstEngine, PstScanReport> work)
         {
+            if (!_stores.TryGetValue(path, out var store)) throw new InvalidOperationException("That data file is no longer open.");
             await _readerGate.WaitAsync();
-            try { return await Task.Run(work); }
+            try { return await Task.Run(() => work(store)); }
             finally { _readerGate.Release(); }
         }
-        var window = new ArchiveRepairWindow(Path.GetFileName(path), store.CanWrite,
-            () => Run(store.Scan),
-            async () =>
+        var window = new ArchiveRepairWindow(files, files.FirstOrDefault(f => f.Path == first) ?? files[0],
+            path => Run(path, store => store.Scan()),
+            async path =>
             {
-                var report = await Run(store.Repair);
-                InvalidateFolderCache(path);
-                await RefreshActivePstFolderAsync(path);
-                return report;
+                var mirror = IsMirrorCopy(path);
+                if (mirror && _mirrorBusy) throw new InvalidOperationException("This mailbox copy is being updated. Try again when it has finished.");
+                if (mirror) _mirrorBusy = true;                                      // no sync writes to the copy while it is repaired
+                try
+                {
+                    var report = await Run(path, store => store.Repair());
+                    InvalidateFolderCache(path);
+                    if (_activePath == path) await RefreshActivePstFolderAsync(path);
+                    return report;
+                }
+                finally { if (mirror) _mirrorBusy = false; }
             });
         await window.ShowDialog(this);
     }
@@ -217,15 +235,26 @@ internal sealed class ArchiveRepairWindow : Window
     private readonly Button _scan = new() { Content = "Scan again", MinWidth = 96 };
     private readonly Button _repair = new() { Content = "Repair", MinWidth = 96, IsEnabled = false };
     private readonly Button _close = new() { Content = "Close", MinWidth = 96 };
-    private readonly Func<Task<PstScanReport>> _scanFn;
-    private readonly Func<Task<PstScanReport>> _repairFn;
-    private readonly bool _canRepair;
+    private readonly ComboBox _files = new() { MinWidth = 360, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+    private readonly Func<string, Task<PstScanReport>> _scanFn;
+    private readonly Func<string, Task<PstScanReport>> _repairFn;
 
-    public ArchiveRepairWindow(string archiveName, bool canRepair, Func<Task<PstScanReport>> scan, Func<Task<PstScanReport>> repair)
+    /// <summary>One open data file: an archive, or the mailbox copy behind a connected account.</summary>
+    public sealed record DataFile(string Path, string Name, bool CanRepair)
     {
-        _scanFn = scan; _repairFn = repair; _canRepair = canRepair;
-        Title = $"Check and Repair - {archiveName}";
+        public override string ToString() => Name;
+    }
+
+    private DataFile Current => (DataFile)_files.SelectedItem!;
+
+    public ArchiveRepairWindow(IReadOnlyList<DataFile> files, DataFile first, Func<string, Task<PstScanReport>> scan, Func<string, Task<PstScanReport>> repair)
+    {
+        _scanFn = scan; _repairFn = repair;
+        Title = "Check and Repair";
         Width = 720; Height = 520; MinWidth = 480; MinHeight = 320;
+        foreach (var file in files) _files.Items.Add(file);
+        _files.SelectedItem = first;
+        ToolTip.SetTip(_files, first.Path);
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var buttons = new StackPanel
         {
@@ -233,35 +262,49 @@ internal sealed class ArchiveRepairWindow : Window
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0),
             Children = { _scan, _repair, _close }
         };
+        var chooser = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+        var label = new TextBlock { Text = "Data file:", VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        DockPanel.SetDock(label, Dock.Left);
+        chooser.Children.Add(label);
+        chooser.Children.Add(_files);
         var panel = new DockPanel { Margin = new Thickness(14) };
+        DockPanel.SetDock(chooser, Dock.Top);
         DockPanel.SetDock(buttons, Dock.Bottom);
+        panel.Children.Add(chooser);
         panel.Children.Add(buttons);
         panel.Children.Add(_log);
         Content = panel;
         _scan.Click += async (_, _) => await RunAsync(_scanFn, repaired: false);
         _repair.Click += async (_, _) => await RunAsync(_repairFn, repaired: true);
         _close.Click += (_, _) => Close();
+        _files.SelectionChanged += async (_, _) =>
+        {
+            if (_files.SelectedItem is not DataFile file) return;
+            ToolTip.SetTip(_files, file.Path);
+            if (IsVisible) await RunAsync(_scanFn, repaired: false);
+        };
         Opened += async (_, _) => await RunAsync(_scanFn, repaired: false);
     }
 
-    private async Task RunAsync(Func<Task<PstScanReport>> work, bool repaired)
+    private async Task RunAsync(Func<string, Task<PstScanReport>> work, bool repaired)
     {
-        _scan.IsEnabled = _repair.IsEnabled = false;
-        _log.Text = repaired ? "Repairing..." : "Scanning...";
+        var file = Current;
+        _scan.IsEnabled = _repair.IsEnabled = _files.IsEnabled = false;
+        _log.Text = (repaired ? "Repairing " : "Scanning ") + file.Name + "...";
         try
         {
-            var report = await work();
-            _log.Text = Summarize(report, repaired);
-            _repair.IsEnabled = _canRepair && report.Fixable > 0;
+            var report = await work(file.Path);
+            _log.Text = Summarize(report, repaired, file);
+            _repair.IsEnabled = file.CanRepair && report.Fixable > 0;
         }
         catch (Exception ex) when (ex is PstException or IOException or InvalidOperationException or ObjectDisposedException)
         { _log.Text = $"The operation failed: {ex.Message}"; }
-        finally { _scan.IsEnabled = true; }
+        finally { _scan.IsEnabled = _files.IsEnabled = true; }
     }
 
-    private string Summarize(PstScanReport r, bool repaired)
+    private static string Summarize(PstScanReport r, bool repaired, DataFile file)
     {
-        var lines = new List<string>();
+        var lines = new List<string> { file.Path, "" };
         if (repaired) lines.Add($"Repaired {r.Fixed} inconsistenc{(r.Fixed == 1 ? "y" : "ies")}.");
         if (r.Findings.Count == 0) lines.Add("No problems found. The archive is structurally sound.");
         else
@@ -269,8 +312,10 @@ internal sealed class ArchiveRepairWindow : Window
             lines.Add($"{r.Findings.Count} problem line{(r.Findings.Count == 1 ? "" : "s")} found; " +
                       (r.Fixable > 0 ? $"{r.Fixable} can be repaired automatically." : "none can be repaired automatically."));
             if (r.Fixable == 0)
-                lines.Add("Make a copy of the file and run Microsoft's Inbox Repair Tool (SCANPST.EXE) on the copy.");
-            else if (!_canRepair)
+                lines.Add(OperatingSystem.IsWindows()
+                    ? "Make a copy of the file and run Microsoft's Inbox Repair Tool (SCANPST.EXE) on the copy."
+                    : "Copy the file to a Windows PC and run Microsoft's Inbox Repair Tool (SCANPST.EXE) on the copy.");
+            else if (!file.CanRepair)
                 lines.Add("This archive is open read-only, so it cannot be repaired.");
             lines.Add("");
             lines.AddRange(r.Findings.Take(500));

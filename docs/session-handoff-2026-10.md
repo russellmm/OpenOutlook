@@ -264,4 +264,5 @@ Owner's caution: Check & Repair ran before SCANPST, so findings may be ours. Che
 - **Engine bug found on the way:** `commit_w` returned early when no block was dirty, so a header-only repair (R5 counters) was dropped while the report said "applied". Now the NID counters are compared with the header as read at the start (`hdr_start`).
 - **Clean-file guard** (`test_write.c` `clean_file_guard`): on `OPST_TEST_PST` and every file in `OPST_CLEAN_PSTS` the checker must find nothing, the fixer must count nothing, and applying it must leave the file byte for byte unchanged. `scripts/build-native.ps1` sets both on this PC. Verified: with the old conversation-id rule it fails on the pristine archive (5 rows).
 - Tests: `test_write.c` 188 checks (+ guard on the 868 MB archive), all native tests pass; Windows unit 623 + 5 known, headless 49.
+- Builds 0.1.44 from `f493168`: Windows `F:\Claude\OpenOutlook_win`, Linux `publish/openoutlook_0.1.44_amd64.deb` (+ `openoutlook_current_amd64.deb`); WSL native ctest 3/3 (gcc), unit 628/628, deb smoke OK.
 

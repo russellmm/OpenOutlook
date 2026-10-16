@@ -765,8 +765,7 @@ public sealed class MainWindowHeadlessTests
     {
         ResetRegistry();
         var window = new MainWindow { Width = 1200, Height = 700 };
-        window.Show();
-        Dispatcher.UIThread.RunJobs();
+        ShowWithSnapshotReader(window);                 // the native web view cannot start on the headless host (Windows: RPC_E_CHANGED_MODE)
         try
         {
             CallVoid(window, "OpenBackstage", "info");
@@ -789,8 +788,7 @@ public sealed class MainWindowHeadlessTests
     {
         ResetRegistry();
         var window = new MainWindow { Width = 1200, Height = 800 };
-        window.Show();
-        Dispatcher.UIThread.RunJobs();
+        ShowWithSnapshotReader(window);                 // the native web view cannot start on the headless host (Windows: RPC_E_CHANGED_MODE)
         try
         {
             var strip = (StackPanel)window.FindControl<Image>("TitleAppIcon")!.Parent!;

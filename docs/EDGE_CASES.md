@@ -261,6 +261,7 @@ These have no automated test; they were verified in the app or with a tool, and 
 
 - **Xvfb proves nothing about the embedded web view or the clipboard.** Under Xvfb X11 reparenting works (the web view looks fine) and Avalonia's clipboard reports success but serves nothing. Neither is evidence for a real desktop. (`docs/reading-pane-text-selection.md`)
 - **Headless test host**: `NativeWebView` fails to start (swallowed, as in the app); tests that only need construction do not `Show()` the window. "Unable to initialize GTK" in the Xvfb smoke is expected.
+- **Headless tests that show the main window must use `ShowWithSnapshotReader`**, not `window.Show()`: plain `Show()` starts WebView2, which fails on the Windows test thread (`RPC_E_CHANGED_MODE`) but passes on Linux, where there is no WebView2 (two tests written on bare metal, 2026-10-15, failed on Windows the next day).
 - **Headless input**: `MouseMove` needs `RawInputModifiers.LeftMouseButton` to count as a held button; drags need `DragEnter` before `DragOver`.
 - **Five `OfflineMessageCacheTests` fail on Windows** (`PlatformNotSupportedException`, a Unix-only API in setup); they pass on Linux. The Windows baseline is "N pass + 5 known".
 - **`GraphAccountVerification.CacheEnabled` is a static switch**: its tests run in a non-parallel collection; a test that relies on the cache being off or on must join that collection, or Graph tests become flaky.

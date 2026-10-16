@@ -657,8 +657,10 @@
           </DockPanel>
         </Border>
 
-        <ScrollViewer Grid.Column="1" Padding="42,26,40,30" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel>
+        <!-- The space round the page is the content's Margin, not the ScrollViewer's Padding: Padding is left out of the scroll range,
+             so the end of the Info page (Manage Add-ins) could never be scrolled into view. -->
+        <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="42,26,40,30">
 
             <!-- Info / Account Information -->
             <StackPanel Name="PageInfo">

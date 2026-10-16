@@ -215,6 +215,7 @@ All settings stores share the same rules: a missing file gives defaults, a corru
 | Top-left as in Outlook: program icon, Send/Receive All Folders, Undo (greyed when nothing to undo), ▾; rail Mail, Calendar, People | Owner's Outlook screenshots, 2026-10-15 | `.Top_left_matches_outlook_program_icon_send_receive_undo_then_mail_calendar_people` |
 | A ribbon caption with its own line break ("New" / "Appointment") keeps it and never wraps inside a word wider than 76 px | 2026-10-15: "Appointmen" / "t" | `.CalendarRailOpensPersonalCalendarAndReturnsToMail` |
 | The build is stamped with its version and commit ("+ changes" when built from uncommitted source) and shows it in About and the log | 2026-10-15: every build said 1.0.0.0 | `AppVersionTests.The_version_shown_names_the_package_version_and_the_commit` |
+| A scrolling page keeps its edge spacing as the content's Margin, not the ScrollViewer's Padding (Padding is left out of the scroll range) | 2026-10-15: File > Info could not scroll far enough to show Manage Add-ins | `.The_file_info_page_scrolls_far_enough_to_show_its_last_card` |
 
 ## Linux and platform
 

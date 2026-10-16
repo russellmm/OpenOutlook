@@ -761,6 +761,30 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public void The_file_info_page_scrolls_far_enough_to_show_its_last_card()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 700 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            CallVoid(window, "OpenBackstage", "info");
+            Dispatcher.UIThread.RunJobs();
+            var host = window.FindControl<Border>("BackstageHost")!;
+            var scroller = host.GetVisualDescendants().OfType<ScrollViewer>().First(s => s.Content is StackPanel);
+            scroller.Offset = new Vector(0, scroller.Extent.Height);
+            Dispatcher.UIThread.RunJobs();
+            var last = host.GetVisualDescendants().OfType<TextBlock>().Last(t => t.Text?.StartsWith("Manage and acquire Web Add-ins", StringComparison.Ordinal) == true && t.IsEffectivelyVisible);   // the last line of the page
+            var bottom = last.TranslatePoint(new Point(0, last.Bounds.Height), window)!.Value.Y;
+            var hostBottom = scroller.TranslatePoint(new Point(0, scroller.Bounds.Height), window)!.Value.Y;
+            Shot(window, "file-info-scrolled-to-end");
+            Assert.True(bottom <= Math.Min(hostBottom, window.Bounds.Height), $"last card text ends at {bottom}, visible area ends at {hostBottom}, window {window.Bounds.Height}, extent {scroller.Extent.Height}, viewport {scroller.Viewport.Height}");
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public void Top_left_matches_outlook_program_icon_send_receive_undo_then_mail_calendar_people()
     {
         ResetRegistry();

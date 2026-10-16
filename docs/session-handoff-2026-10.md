@@ -1,8 +1,8 @@
 # Session handoff (updated 2026-10-16, end of session)
 
-> Documentation map (kept in step with the code as of 2026-10-15): `README.md` (overview, build), `docs/FEATURES.md` (every feature per platform), `BUILD_STATUS.md` (state, tests, open items), `PRODUCT_REQUIREMENTS.md` (requirements + conformance table), `DESIGN_SPEC.md` (baseline design; sections 11-18 = design as built). This file is the chronological working log; older material is in `docs/history/`.
+> Documentation map (kept in step with the code as of 2026-10-16): `README.md` (overview, build), `docs/FEATURES.md` (every feature per platform), `BUILD_STATUS.md` (state, tests, open items), `PRODUCT_REQUIREMENTS.md` (requirements + conformance table), `DESIGN_SPEC.md` (baseline design; sections 11-18 = design as built). This file is the chronological working log; older material is in `docs/history/`.
 
-Read this first when resuming. Longer background: `native-engine-status.md` (what exists and how it is validated), `OpenOutlook_Design_Document.md` (every PST rule found, rules 1-35), `accounts-setup.md` (Hotmail / Gmail), `OpenOutlook_Avalonia_Integration_Plan.md` (phases, backlog), `Ctools.MD` / `PythonTools.MD` (tool references).
+Read this first when resuming. Longer background: `native-engine-status.md` (what exists and how it is validated), `OpenOutlook_Design_Document.md` (every PST rule found, rules 1-43; fixer rules R1-R13), `EDGE_CASES.md` (every edge case with its test, manual checks, known gaps, test traps), `accounts-setup.md` (Hotmail / Gmail), `OpenOutlook_Avalonia_Integration_Plan.md` (phases, backlog), `Ctools.MD` / `PythonTools.MD` (tool references).
 
 ## State
 - Repo `github.com/russellmm/OpenOutlook`, work branch `native-engine-phase0`, merged to `main` after every step (both point at the same commit). The app (Avalonia 11.2.3, .NET 8) reads and writes PST files through the vendored C library `native/openpst`, and has Hotmail (Microsoft Graph) and Gmail accounts.

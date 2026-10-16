@@ -233,6 +233,10 @@ int main(void) {
                 CHECK(rl[2].type == 3 && strcmp(rl[2].name, "Cy") == 0);
                 opst_free_recipients(rl);
             }
+            const char *dbcc = opst_msg_str(im2, 0x0E02);                  /* the Bcc display list, as Outlook writes it (rule R13) */
+            CHECK(dbcc && strcmp(dbcc, "Cy") == 0);
+            const char *dcc = opst_msg_str(im2, 0x0E03);
+            CHECK(dcc && strcmp(dcc, "bob@example.test") == 0);
             opst_attachment *al; size_t nal;
             CHECK(opst_msg_attachments(im2, &al, &nal) == 0 && nal == 2);
             if (nal == 2) {
@@ -401,6 +405,43 @@ int main(void) {
                 CHECK(findings(q) == base2);
                 memset(&fr, 0, sizeof fr);
                 CHECK(opst_fix(q, 0, &fr) == 0 && fr.rowcell_issues == 0);
+                opst_close(q);
+                remove(tmp2);
+                char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);
+            }
+        }
+    }
+    /* a message with Bcc recipients but no PidTagDisplayBcc (what importers wrote before 2026-10-16; SCANPST: minor inconsistencies): the checker finds it,
+       the fixer (rule R13) adds the property built from the recipient table, exactly as SCANPST's repair does */
+    {
+        const char *tmp2 = "opst_write_test2.pst";
+        if (copy_file(src, tmp2)) {
+            opst *q;
+            CHECK(open_w(tmp2, &q) == 0);
+            if (q) {
+                int base2 = findings(q);
+                uint32_t dest = find_source_folder(q, 1);
+                opst_import_recipient rb[3] = {{"Me", "me@example.test", 1}, {"", "hidden@example.test", 3}, {"Other One", "other@example.test", 3}};
+                opst_import_msg m;
+                memset(&m, 0, sizeof m);
+                m.subject = "bcc probe"; m.recipients = rb; m.nrecipients = 3;
+                uint32_t mn = 0;
+                SETENV("OPST_TEST_NO_DISPLAYBCC", "1");
+                CHECK(dest && opst_msg_import(q, dest, &m, &mn) == 0 && mn);
+                SETENV("OPST_TEST_NO_DISPLAYBCC", "");
+                CHECK(findings(q) == base2 + 1);
+                opst_fix_report fr;
+                memset(&fr, 0, sizeof fr);
+                CHECK(opst_fix(q, 0, &fr) == 0 && fr.rowsync_issues >= 1);
+                CHECK(opst_fix(q, 1, &fr) == 0);
+                CHECK(findings(q) == base2);
+                opst_msg *bm;
+                CHECK(opst_msg_open(q, mn, &bm) == 0);
+                if (bm) {
+                    const char *v = opst_msg_str(bm, 0x0E02);
+                    CHECK(v && strcmp(v, "hidden@example.test; Other One") == 0);   /* name, else address, in recipient order */
+                    opst_msg_close(bm);
+                }
                 opst_close(q);
                 remove(tmp2);
                 char j2[256]; snprintf(j2, sizeof j2, "%s.journal", tmp2); remove(j2);

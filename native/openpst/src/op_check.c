@@ -6,7 +6,8 @@
  *   rowvers  PidTagLtpRowVer values unique store-wide and below dwUnique
  *   subnodes attachment sizes (PR_ATTACH_SIZE = sum of the sizes of the attachment's property values) and the header counters of the
  *            local NIDs used inside messages (attachment / LTP subnodes)            [found by repairing imported files with SCANPST]
- *   rowcells contents-table rows carry the row-only cells Outlook writes (0x0E17 message status, 0x3013 per-row key)
+ *   rowcells contents-table rows carry the row-only cells Outlook writes (0x0E17 message status, 0x3013 per-row key); a message with Bcc
+ *            recipients carries PidTagDisplayBcc (0x0E02, fixer rule R13)
  *   amap     every block and tree page is marked allocated in the allocation maps, and the header's cbAMapFree equals the maps' free space
  *   folders  every folder has its hierarchy / contents / FAI tables and a row in its parent's hierarchy table that mirrors its properties
  *            [amap and folders were found by repairing a damaged archive with SCANPST] */
@@ -562,6 +563,10 @@ static int check_rowcells(chk *c, ops *o, const tabvec *tabs) {
         if (miss) note(c, &probs, "  contents table 0x%x: %zu of %zu rows lack the row cells 0x0E17 / 0x3013 that Outlook writes (SCANPST adds them)", tabs->v[ti], miss, tc.nrows);
         tc_free(&tc);
     }
+    int nbcc = 0;
+    int rc = fix_display_bcc(o, 0, &nbcc);
+    if (rc) return rc;
+    if (nbcc) note(c, &probs, "  %d message(s) with Bcc recipients lack PidTagDisplayBcc (0x0E02) (SCANPST: minor inconsistencies; its repair adds the property)", nbcc);
     c->rep->rowcell_problems += probs;
     info(c, "rowcells: %zu message rows, %d problems", rows, probs);
     return 0;

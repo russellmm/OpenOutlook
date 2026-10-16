@@ -256,6 +256,8 @@ int  op_path_same(const char *a, const char *b);                               /
 /* fixer and cross-file copy (op_fix.c, op_xcopy.c) */
 int  fix_replica_blob(ops *o, bbuf *out, int *found);
 int  fix_run(ops *o, int apply, opst_fix_report *rep);
+int  fix_display_bcc(ops *o, int apply, int *count);     /* R13, also counted by opst_check (apply 0) */
+int  u8_to_u16(const char *s, bbuf *out);                /* UTF-8 -> UTF-16LE, invalid sequences become U+FFFD (op_import.c) */
 int  xc_copy(ops *dst, opst *src, const uint32_t *nids, size_t n, uint32_t dest, uint32_t *new_nids);
 
 int  fo_create(ops *o, uint32_t parent, const char *name, const char *cls, uint32_t *nid);

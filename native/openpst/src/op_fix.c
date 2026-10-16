@@ -489,6 +489,53 @@ static int fix_empty_display(ops *o, int apply, int *count) {
     return rc;
 }
 
+/* ---- R13: missing display-bcc ------------------------------------------------------------------------------------------------------------------------------------ */
+/* A message with Bcc recipients carries PidTagDisplayBcc (0x0E02): the recipients' display names joined by "; ", as Outlook writes it. Importers before
+   2026-10-16 wrote only display-to and display-cc; SCANPST then reports "minor inconsistencies" and its repair adds 0x0E02 to the message (found by repairing a
+   Hotmail mailbox copy and diffing: two phishing messages that reached the owner as Bcc). Contents tables carry no 0x0E02 column, so only the message changes. */
+int fix_display_bcc(ops *o, int apply, int *count) {
+    opw *w = o->w;
+    r11msgs ml = {0, 0, 0};
+    int rc = bt_items(w, 1, r11_msgs_cb, &ml);
+    *count = 0;
+    for (size_t k = 0; k < ml.n && !rc; k++) {
+        uint32_t nid = ml.v[k].nid;
+        opst_msg *m = NULL;
+        if (opst_msg_open(o->p, nid, &m) != 0) continue;              /* not a readable message: other rules deal with it */
+        int stored = opst_msg_prop(m, 0x0E02, NULL, NULL, NULL) == 0;
+        bbuf names = {0};
+        opst_recipient *r = NULL;
+        size_t nr = 0;
+        if (!stored && opst_msg_recipients(m, &r, &nr) == 0) {
+            for (size_t i = 0; i < nr; i++) {
+                if (r[i].type != 3) continue;
+                const char *nm = r[i].name && *r[i].name ? r[i].name : (r[i].email ? r[i].email : "");
+                if (names.n) bb_put(&names, "; ", 2);
+                bb_put(&names, nm, strlen(nm));
+            }
+            opst_free_recipients(r);
+        }
+        opst_msg_close(m);
+        if (stored || names.n == 0) { bb_free(&names); continue; }
+        bb_u8(&names, 0);
+        (*count)++;
+        if (apply) {
+            bbuf u = {0};
+            pcprops pp;
+            rc = names.bad ? OPST_E_NOMEM : u8_to_u16((const char *)names.p, &u);
+            if (!rc && u.n <= OP_MAXALLOC && pcprops_get_ex(w, nid, &pp, 2) == 0) {   /* a longer list (over ~1,700 characters) is left for SCANPST */
+                rc = pcprops_set(&pp, 0x0E02, 0x1F, u.p, u.n);
+                if (!rc) rc = pc_store(w, nid, &pp);
+                pcprops_free(&pp);
+            }
+            bb_free(&u);
+        }
+        bb_free(&names);
+    }
+    free(ml.v);
+    return rc;
+}
+
 int fix_run(ops *o, int apply, opst_fix_report *rep) {
     opw *w = o->w;
     memset(rep, 0, sizeof *rep);
@@ -706,6 +753,12 @@ int fix_run(ops *o, int apply, opst_fix_report *rep) {
     if (!rc) {
         int n = 0;
         rc = fix_empty_display(o, apply, &n);
+        rep->rowsync_issues += n;
+    }
+    /* ---- R13 ---- (counted with the row / message differences: the report keeps its layout for the bindings) */
+    if (!rc) {
+        int n = 0;
+        rc = fix_display_bcc(o, apply, &n);
         rep->rowsync_issues += n;
     }
     /* ---- R8 ---- */

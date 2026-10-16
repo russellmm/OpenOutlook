@@ -907,3 +907,35 @@ Items found in this file: 11
 Folders found in this file: 6
 Items found in this file: 11
  | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-16 11:11:36  F:\Claude\OpenOutlook\.local\scan\hm-2026-10-16\rep.pst MINOR+REPAIRED folders=19 items=495 log:45 lines, 0 flagged (!!/??)
+    dialog: OK | Repair complete
+2026-10-16 11:11:48  F:\Claude\OpenOutlook\.local\scan\hm-2026-10-16\rep.pst ERRORS    folders=19 items=495 log:41 lines, 1 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\hm-2026-10-16\rep.pst | Errors were found in this file. To repair these errors, click Repair.
+
+Folders found in this file: 19
+Items found in this file: 495
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | Cancel
+2026-10-16 11:16:37  F:\Claude\OpenOutlook\.local\scan\hm-2026-10-16\fixed.pst NO_ERRORS folders=19 items=495 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\hm-2026-10-16\fixed.pst | No errors were found in this file.
+
+Folders found in this file: 19
+Items found in this file: 495
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-16 11:19:16  F:\Claude\OpenOutlook\.local\scan\bcc-2026-10-16\recips_1_bcc10.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\bcc-2026-10-16\recips_1_bcc10.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-16 11:19:24  F:\Claude\OpenOutlook\.local\scan\bcc-2026-10-16\recips_1_bcc2500.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\bcc-2026-10-16\recips_1_bcc2500.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK
+2026-10-16 11:19:33  F:\Claude\OpenOutlook\.local\scan\bcc-2026-10-16\recips_1_cc2500.pst NO_ERRORS folders=6 items=3 log:39 lines, 0 flagged (!!/??)
+    dialog: The following file has been scanned: | F:\Claude\OpenOutlook\.local\scan\bcc-2026-10-16\recips_1_cc2500.pst | No errors were found in this file.
+
+Folders found in this file: 6
+Items found in this file: 3
+ | &Make backup of scanned file before repairing | Enter name of &backup file: | &Browse... | &Details... | &Repair | OK

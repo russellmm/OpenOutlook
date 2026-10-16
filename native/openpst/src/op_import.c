@@ -14,7 +14,7 @@ static int test_hook(const char *name) { const char *e = getenv(name); return e 
 static int64_t now_filetime(void) { return (int64_t)time(NULL) * 10000000LL + 116444736000000000LL; }
 
 /* UTF-8 -> UTF-16LE; invalid sequences become U+FFFD instead of failing (imported mail is often sloppy) */
-static int u8_to_u16(const char *s, bbuf *out) {
+int u8_to_u16(const char *s, bbuf *out) {
     const unsigned char *p = (const unsigned char *)(s ? s : "");
     while (*p) {
         uint32_t c = *p;
@@ -413,23 +413,24 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
     size_t natt = m->nattachments;
     if (natt > 250 || m->nrecipients > 2000) return op_err(OPST_E_ARG, "too many attachments or recipients");
 
-    /* display strings: "To" and "Cc" lists */
-    bbuf to = {0}, cc = {0};
+    /* display strings: "To", "Cc" and "Bcc" lists. Outlook writes PidTagDisplayBcc (0x0E02) for a message with Bcc recipients; without it
+       SCANPST reports "minor inconsistencies" and its repair adds the property, built from the recipient table (found 2026-10-16 on two
+       phishing messages in a Hotmail mailbox copy that reached the owner as Bcc). Contents tables have no 0x0E02 column. */
+    bbuf to = {0}, cc = {0}, bcc = {0};
     for (size_t i = 0; i < m->nrecipients; i++) {
         const opst_import_recipient *r = &m->recipients[i];
-        bbuf *b = r->type == 2 ? &cc : r->type == 3 ? NULL : &to;
-        if (!b) continue;
+        bbuf *b = r->type == 2 ? &cc : r->type == 3 ? &bcc : &to;
         const char *nm = r->name && *r->name ? r->name : (r->email ? r->email : "");
         if (b->n) bb_put(b, "; ", 2);
         bb_put(b, nm, strlen(nm));
     }
-    bb_u8(&to, 0); bb_u8(&cc, 0);
+    bb_u8(&to, 0); bb_u8(&cc, 0); bb_u8(&bcc, 0);
 
     pcprops p = {0};
     sublist subs = {0};
     uint32_t *att_nids = (uint32_t *)calloc(natt ? natt : 1, sizeof *att_nids);
     int32_t *att_sizes = (int32_t *)calloc(natt ? natt : 1, sizeof *att_sizes);
-    if (!att_nids || !att_sizes || to.bad || cc.bad) rc = OPST_E_NOMEM;
+    if (!att_nids || !att_sizes || to.bad || cc.bad || bcc.bad) rc = OPST_E_NOMEM;
     uint8_t guid[16], rk[22], pred[23], conv[22], skey[16];
     uint32_t idx = op_u32(w->hdr + 44 + 4 * 4) + 1;
     uint32_t nn = (idx << 5) | 4;
@@ -468,6 +469,8 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
     if (!rc) rc = p_str_big(w, &subs, &p, 0x0C1A, sname);
     if (!rc) rc = p_str(&p, 0x0C1E, "SMTP");
     if (!rc) rc = p_str_big(w, &subs, &p, 0x0C1F, semail);
+    if (!rc && *(const char *)bcc.p && !test_hook("OPST_TEST_NO_DISPLAYBCC"))            /* only when there are Bcc recipients, like display-cc; the hook */
+        rc = p_str_big(w, &subs, &p, 0x0E02, (const char *)bcc.p);                     /* reproduces the importers before 2026-10-16 */
     if (!rc && *(const char *)cc.p) rc = p_str_big(w, &subs, &p, 0x0E03, (const char *)cc.p);       /* an empty display-cc is not written (SCANPST removes it) */
     if (!rc && *(const char *)to.p) rc = p_str_big(w, &subs, &p, 0x0E04, (const char *)to.p);       /* an empty display-to is not written either (found with SCANPST: it deletes the property) */
     if (!rc) rc = p_time(&p, 0x0E06, recv);
@@ -612,7 +615,7 @@ static int import_one(ops *o, uint32_t folder, tctx *dtc, const opst_import_msg 
         key->key = msg_conv_key(w, nn, &k) ? k : 0;
     }
     if (!rc && nid_out) *nid_out = nn;
-    bb_free(&to); bb_free(&cc);
+    bb_free(&to); bb_free(&cc); bb_free(&bcc);
     pcprops_free(&p);
     sublist_free(&subs);
     free(att_nids);

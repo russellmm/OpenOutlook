@@ -169,4 +169,11 @@ More findings:
 16. Attachment chips open their menu on left-click only; right-click does nothing.
 17. Linux keyword list has 12 keywords; the Windows list (145) has not been copied (section 10).
 
-Still open: attachment **Save as...** (GNOME folder picker; owner to try), drag and drop (moves real mail: needs the owner's go-ahead), sorting by Received with date groups, and item 10 (SCANPST of the Linux-written copies on Windows). The test store `walkthrough-blank.pst` is detached.
+### 11.2 Third round
+
+Passed: attachment **Save as...** (GNOME folder picker, picked by the owner: `~/Downloads/smoke-101600.txt`, 40 bytes, status "Attachment saved to a new file"; real attachments still get chips); **sort by Received** both ways keeps the date groups; **drag and drop** of a Hotmail message from Inbox to archive (owner's real mouse; a drag injected with ydotool selects the row but never starts `DoDragDrop`, so drag tests need a person) and **Move to Folder...** back (picker greys the current folder; message back in place).
+
+18. Moves in the Hotmail mailbox copy take ~3 s to show (the row stays in the source folder for about three captures, one per second, after OK), by drag and by Move to Folder. FEATURES/offline-mirror plan say copy actions are instant: the list probably waits for the server call.
+19. Move to Folder... opens scrolled to the first data file (the archive PST), not to the current mailbox; finding the Hotmail Inbox needs a long scroll.
+
+Still open: item 10 (SCANPST of the Linux-written copies on Windows).

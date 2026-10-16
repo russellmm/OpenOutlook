@@ -133,6 +133,16 @@ public partial class MainWindow
         RequestMirrorSyncSoon(account);
     }
 
+    /// <summary>A move or copy the server has confirmed: the copy catches up now (not after the few seconds that gather quick changes such as
+    /// read or flag), so the message shows in its new folder. While a sync is running the request waits for the usual short delay instead.</summary>
+    private void SyncMirrorNow(ConnectedAccount account)
+    {
+        if (Environment.GetEnvironmentVariable("OPENOUTLOOK_NO_MIRROR") == "1") return;
+        if (_mirrorBusy) { RequestMirrorSyncSoon(account); return; }
+        if (_mirrorSoonAccount?.AccountId == account.AccountId) _mirrorSoonTimer?.Stop();   // this sync covers what was waiting for this account
+        _ = SyncMirrorAsync(account, manual: false);
+    }
+
     /// <summary>The copy catches up a few seconds after the last change (many changes in a row make one sync).</summary>
     private void RequestMirrorSyncSoon(ConnectedAccount account)
     {

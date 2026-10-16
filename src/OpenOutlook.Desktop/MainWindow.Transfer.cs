@@ -66,29 +66,32 @@ public partial class MainWindow
 
     // ---- the picker ---------------------------------------------------------------------------------------------------------------------
 
-    /// <summary>One tree for the picker: every editable data file, every Microsoft account and every Gmail account, each with its folders; the folder the messages are in cannot be chosen.</summary>
+    /// <summary>One tree for the picker, in the folder pane's order (data files, accounts and folders as arranged there): every editable data file,
+    /// every Microsoft account and every Gmail account, each with its folders; the folder the messages are in cannot be chosen.</summary>
     private List<FolderPickItem> BuildTransferRoots(TransferOrigin origin)
     {
         var roots = new List<FolderPickItem>();
-        var stores = _stores.Where(s => s.Value.CanWrite && !IsMirrorCopy(s.Key)).OrderBy(s => s.Value.DisplayName, StringComparer.CurrentCultureIgnoreCase).ToList();
-        foreach (var (path, store) in stores)
+        var accounts = _accountRegistry.Load().ToDictionary(a => a.AccountId, StringComparer.Ordinal);
+        var stores = _stores.Where(s => s.Value.CanWrite && !IsMirrorCopy(s.Key)).ToList();
+        foreach (var node in FolderTree.Items.OfType<TreeViewItem>())
         {
-            FolderPickItem Pick(MailFolder f)
+            if (node.Tag is string path && _stores.TryGetValue(path, out var store) && store.CanWrite && !IsMirrorCopy(path))
             {
-                var here = origin is PstOrigin po && po.Path == path && po.Folder.Nid == f.Nid;
-                var item = new FolderPickItem(f.Name, new PstTarget(path, f), f.UnreadCount, selectable: !here);
-                foreach (var child in f.Children) item.Children.Add(Pick(child));
-                return item;
+                FolderPickItem Pick(TreeViewItem n)
+                {
+                    var f = ((FolderSelection)n.Tag!).Folder;
+                    var here = origin is PstOrigin po && po.Path == path && po.Folder.Nid == f.Nid;
+                    var item = new FolderPickItem(f.Name, new PstTarget(path, f), f.UnreadCount, selectable: !here);
+                    foreach (var child in n.Items.OfType<TreeViewItem>().Where(c => c.Tag is FolderSelection)) item.Children.Add(Pick(child));
+                    return item;
+                }
+                var ambiguous = stores.Count(s => string.Equals(s.Value.DisplayName, store.DisplayName, StringComparison.CurrentCultureIgnoreCase)) > 1;
+                var root = new FolderPickItem(ambiguous ? $"{store.DisplayName} ({Path.GetFileName(path)})" : store.DisplayName, new PstPickRoot(path), selectable: false);
+                foreach (var top in node.Items.OfType<TreeViewItem>().Where(c => c.Tag is FolderSelection)) root.Children.Add(Pick(top));
+                roots.Add(root);
+                continue;
             }
-            var ambiguous = stores.Count(s => string.Equals(s.Value.DisplayName, store.DisplayName, StringComparison.CurrentCultureIgnoreCase)) > 1;
-            var root = new FolderPickItem(ambiguous ? $"{store.DisplayName} ({Path.GetFileName(path)})" : store.DisplayName, new PstPickRoot(path), selectable: false);
-            foreach (var top in PstFolderPresentation.VisibleRoots(store.Root)) root.Children.Add(Pick(top));
-            roots.Add(root);
-        }
-        foreach (var account in _accountRegistry.Load().OrderBy(a => a.DisplayAddress, StringComparer.CurrentCultureIgnoreCase))
-        {
-            var node = FolderTree.Items.OfType<TreeViewItem>().FirstOrDefault(i => i.Tag is ConnectedAccount a && a.AccountId == account.AccountId);
-            if (node is null) continue;
+            if (node.Tag is not ConnectedAccount shown || !accounts.TryGetValue(shown.AccountId, out var account)) continue;   // the saved record has the current permissions
             if (account.Provider == OAuthProvider.MicrosoftConsumers && account.CanWriteMicrosoftMail)
             {
                 FolderPickItem Pick(TreeViewItem n)
@@ -109,23 +112,28 @@ public partial class MainWindow
                 var hidden = new HashSet<string> { "SENT", "DRAFT", "STARRED", "IMPORTANT" };
                 int Unread(GmailFolderSelection g) => _gmailUnread.TryGetValue(account.AccountId + "|" + g.LabelId, out var n) ? n : 0;
                 bool Here(GmailFolderSelection g) => origin is GmailOrigin go && go.Folder.Account.AccountId == account.AccountId && go.Folder.LabelId == g.LabelId;
-                var all = node.Items.OfType<TreeViewItem>().Select(i => i.Tag).OfType<GmailFolderSelection>().ToList();
+                var all = node.Items.OfType<TreeViewItem>().Select(i => i.Tag).OfType<GmailFolderSelection>().Where(g => !hidden.Contains(g.LabelId)).ToList();
                 var root = new FolderPickItem(account.DisplayAddress, new GmailPickRoot(account), selectable: false);
-                foreach (var system in all.Where(g => GmailSystemLabels.Any(l => l.Id == g.LabelId) && !hidden.Contains(g.LabelId)))
-                    root.Children.Add(new FolderPickItem(system.Name, new GmailTarget(account, system), Unread(system), selectable: !Here(system)));
+                int Slash(GmailFolderSelection g) => GmailSystemLabels.Any(l => l.Id == g.LabelId) ? -1 : g.Name.LastIndexOf('/');
+                var items = all.Select(g => (Label: g, Item: new FolderPickItem(Slash(g) >= 0 ? g.Name[(Slash(g) + 1)..] : g.Name, new GmailTarget(account, g), Unread(g), selectable: !Here(g)))).ToList();
                 var byPath = new Dictionary<string, FolderPickItem>(StringComparer.Ordinal);
-                foreach (var user in all.Where(g => GmailSystemLabels.All(l => l.Id != g.LabelId)).OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase))
-                {
-                    var slash = user.Name.LastIndexOf('/');
-                    var item = new FolderPickItem(slash >= 0 ? user.Name[(slash + 1)..] : user.Name, new GmailTarget(account, user), Unread(user), selectable: !Here(user));
-                    byPath[user.Name] = item;
-                    (slash >= 0 && byPath.TryGetValue(user.Name[..slash], out var parent) ? parent : root).Children.Add(item);
-                }
+                foreach (var (label, item) in items) byPath.TryAdd(label.Name, item);
+                foreach (var (label, item) in items)                                    // in the pane's order; a child the pane lists before its parent still nests
+                    (Slash(label) >= 0 && byPath.TryGetValue(label.Name[..Slash(label)], out var parent) ? parent : root).Children.Add(item);
                 roots.Add(root);
             }
         }
         return roots;
     }
+
+    /// <summary>The picker opens at the data file or mailbox the messages are in.</summary>
+    private static FolderPickItem? TransferStart(IEnumerable<FolderPickItem> roots, TransferOrigin origin) => roots.FirstOrDefault(r => (r.Tag, origin) switch
+    {
+        (PstPickRoot p, PstOrigin o) => p.Path == o.Path,
+        (MicrosoftPickRoot m, MicrosoftOrigin o) => m.Account.AccountId == o.Folder.Account.AccountId,
+        (GmailPickRoot g, GmailOrigin o) => g.Account.AccountId == o.Folder.Account.AccountId,
+        _ => false
+    });
 
     /// <summary>Move / Copy to Folder... from the message menu and the ribbon: pick any folder of any store, then transfer.</summary>
     private async Task TransferViaDialogAsync(bool copy)
@@ -138,7 +146,8 @@ public partial class MainWindow
         if (!roots.Any(r => r.Children.Any(c => HasSelectable(c)))) { StatusText.Text = "There is no other folder to " + (copy ? "copy" : "move") + " into."; return; }
         var count = OriginCount(origin);
         var noun = count == 1 ? "item" : "items";
-        var dialog = new FolderPickerWindow(copy ? "Copy Items" : "Move Items", $"{(copy ? "Copy" : "Move")} the selected {noun} to:", roots, CreateFolderForPickerAsync);
+        var dialog = new FolderPickerWindow(copy ? "Copy Items" : "Move Items", $"{(copy ? "Copy" : "Move")} the selected {noun} to:", roots, CreateFolderForPickerAsync,
+            TransferStart(roots, origin));
         await dialog.ShowDialog(this);
         TransferTarget? target = dialog.Result?.Tag switch { PstTarget p => p, MicrosoftTarget m => m, GmailTarget g => g, _ => null };
         if (target is null) return;
@@ -281,6 +290,15 @@ public partial class MainWindow
         var sink = MakeTransferSink(target);
         var progress = new Progress<string>(text => StatusText.Text = text);
         var result = await MailTransfer.RunAsync(source, items, sink, move: !copy, progress);
+
+        // the mailbox copies catch up now, so the messages show in their new folder (and leave the old one) at once
+        if (result.Transferred > 0)
+        {
+            if (target is MicrosoftTarget { Account: var toMicrosoft }) SyncMirrorNow(toMicrosoft);
+            else if (target is GmailTarget { Account: var toGmail }) SyncMirrorNow(toGmail);
+            if (!copy && origin is MicrosoftOrigin { Folder.Account: var fromMicrosoft }) SyncMirrorNow(fromMicrosoft);
+            else if (!copy && origin is GmailOrigin { Folder.Account: var fromGmail }) SyncMirrorNow(fromGmail);
+        }
 
         // what is on screen
         var where = DescribeTarget(target);

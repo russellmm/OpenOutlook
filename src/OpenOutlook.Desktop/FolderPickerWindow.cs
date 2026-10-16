@@ -6,6 +6,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace OpenOutlook.Desktop;
 
@@ -32,7 +34,9 @@ internal sealed class FolderPickerWindow : Window
 
     public FolderPickItem? Result { get; private set; }
 
-    public FolderPickerWindow(string title, string prompt, IReadOnlyList<FolderPickItem> roots, Func<FolderPickItem?, Task<FolderPickItem?>>? createNew)
+    /// <param name="startAt">The item shown at the top when the window opens (the mailbox the messages are in), as Outlook does.</param>
+    public FolderPickerWindow(string title, string prompt, IReadOnlyList<FolderPickItem> roots, Func<FolderPickItem?, Task<FolderPickItem?>>? createNew,
+        FolderPickItem? startAt = null)
     {
         _createNew = createNew;
         Title = title;
@@ -67,8 +71,30 @@ internal sealed class FolderPickerWindow : Window
         Opened += (_, _) =>
         {
             if (_tree.Items.OfType<TreeViewItem>().FirstOrDefault() is { } first) first.IsExpanded = true;
+            if (startAt is not null && FindNode(_tree.Items.OfType<TreeViewItem>(), startAt) is { } start)
+            {
+                start.IsExpanded = true;
+                Dispatcher.UIThread.Post(() => ScrollToTop(start), DispatcherPriority.Loaded);
+            }
             _tree.Focus();
         };
+    }
+
+    private static TreeViewItem? FindNode(IEnumerable<TreeViewItem> nodes, FolderPickItem item)
+    {
+        foreach (var node in nodes)
+        {
+            if (ReferenceEquals(node.Tag, item)) return node;
+            if (FindNode(node.Items.OfType<TreeViewItem>(), item) is { } deeper) return deeper;
+        }
+        return null;
+    }
+
+    private void ScrollToTop(TreeViewItem node)
+    {
+        if (_tree.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is not { } scroller) return;
+        if (node.TranslatePoint(new Point(0, 0), scroller) is not { } at) return;
+        scroller.Offset = new Vector(scroller.Offset.X, Math.Max(0, scroller.Offset.Y + at.Y));
     }
 
     private TreeViewItem Build(FolderPickItem item, int depth)

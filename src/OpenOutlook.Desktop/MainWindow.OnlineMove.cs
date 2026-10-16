@@ -130,6 +130,7 @@ public partial class MainWindow
                 StatusText.Text = await GmailMoveCoreAsync(gmailSource, messageIds, gmailDest, copy);
                 changed = true;
                 if (hideGmail) foreach (var id in messageIds) NoteLocalChange(gmailSource.Account, id, "archive");   // stamped again now Gmail has it
+                SyncMirrorNow(gmailSource.Account);                                    // the copy shows it in the new folder now
             }
             catch (GmailReadException error) { StatusText.Text = error.Message; }
             catch (OperationCanceledException) { }
@@ -175,6 +176,7 @@ public partial class MainWindow
                     done++;
                 }
                 StatusText.Text = done == 1 ? $"Message {(copy ? "copied" : "moved")} to {msDest.Name}." : $"{done} messages {(copy ? "copied" : "moved")} to {msDest.Name}.";
+                SyncMirrorNow(account);                                                // the copy shows it in the new folder now
             }
             catch (GraphMailException error)
             {
@@ -187,6 +189,7 @@ public partial class MainWindow
             {
                 _mailActionBusy = false;
                 if (hideNow && done < messageIds.Count) UndoLocalChange(account, messageIds.Skip(done));
+                if (done > 0 && done < messageIds.Count) SyncMirrorNow(account);      // some went through before the failure
             }
             if (_activeMicrosoftFolder == msSource) await RefreshMicrosoftFolderAsync();
         }

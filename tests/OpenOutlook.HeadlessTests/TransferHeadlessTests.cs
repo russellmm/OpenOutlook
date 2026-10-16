@@ -123,6 +123,27 @@ public sealed class TransferHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task The_picker_follows_the_folder_pane_order_and_opens_at_the_data_file_the_messages_are_in()
+    {
+        if (!OpenPst.NativeLibraryLoader.IsAvailable) return;
+        var (window, a, b, dir) = await OpenTwoAsync(3);
+        try
+        {
+            var tree = window.FindControl<TreeView>("FolderTree")!;
+            var beta = tree.Items.OfType<TreeViewItem>().Single(i => i.Tag is string p && p == b);
+            tree.Items.Remove(beta);
+            tree.Items.Insert(0, beta);                                          // the user dragged Beta above Alpha in the pane
+            await SelectAllInAsync(window, a, "Inbox2");
+            var origin = Call<object>(window, "CurrentTransferOrigin")!;
+            var roots = Call<List<FolderPickItem>>(window, "BuildTransferRoots", origin);
+            Assert.Equal(["Beta", "Alpha"], roots.Select(r => r.Name).ToArray());
+            var start = (FolderPickItem?)typeof(MainWindow).GetMethod("TransferStart", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, [roots, origin]);
+            Assert.Equal("Alpha", start?.Name);
+        }
+        finally { window.Close(); try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+    [AvaloniaFact]
     public async Task Copy_then_move_between_two_data_files_keep_everything_and_both_files_stay_clean()
     {
         if (!OpenPst.NativeLibraryLoader.IsAvailable) return;

@@ -1611,4 +1611,36 @@ public sealed class MainWindowHeadlessTests
         }
         finally { window.Close(); }
     }
+
+    [AvaloniaFact]
+    public void File_account_has_a_view_log_link_and_the_viewer_shows_the_log_newest_first()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        ShowWithSnapshotReader(window);
+        var dir = Path.Combine(Path.GetTempPath(), "oo-logwin-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var log = Path.Combine(dir, "openoutlook.log");
+        File.WriteAllLines(log, ["2026-10-16 12:00:00 [startup] older entry", "2026-10-16 12:00:05 [reader] picture not loaded, gone (https://cdn.example/fb.png)"]);
+        LogViewerWindow? viewer = null;
+        try
+        {
+            CallVoid(window, "OpenBackstage", "officeaccount");
+            Dispatcher.UIThread.RunJobs();
+            Assert.NotNull(window.FindControl<Button>("BsViewLogButton"));
+            var opened = new List<string>();
+            viewer = new LogViewerWindow(log, opened.Add);
+            viewer.Show(window);
+            Dispatcher.UIThread.RunJobs();
+            Assert.StartsWith("2026-10-16 12:00:05 [reader] picture not loaded", viewer.ShownText, StringComparison.Ordinal);
+            Assert.EndsWith("older entry", viewer.ShownText, StringComparison.Ordinal);
+            Shot(viewer, "log-viewer");
+        }
+        finally
+        {
+            viewer?.Close();
+            window.Close();
+            try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
+        }
+    }
 }

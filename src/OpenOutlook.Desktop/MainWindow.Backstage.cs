@@ -182,6 +182,13 @@ public partial class MainWindow
 
     private void BsProjectHomeClicked(object? sender, RoutedEventArgs e) => OpenUrl("https://github.com/russellmm/OpenOutlook");
 
+    /// <summary>File > Account > View log (2026-10-16: the owner could only read the log by finding the file).</summary>
+    private void BsViewLogClicked(object? sender, RoutedEventArgs e)
+    {
+        var path = AppLog.CurrentPath ?? System.IO.Path.Combine(AppLog.LogDirectory, "openoutlook.log");
+        new LogViewerWindow(path, OpenFileLocationOf).Show(this);
+    }
+
     private void BsFeedbackClicked(object? sender, RoutedEventArgs e) => OpenUrl("https://github.com/russellmm/OpenOutlook/issues/new");
 
     private async void BsAddAccountClicked(object? sender, RoutedEventArgs e)

@@ -865,6 +865,11 @@
               <Button Classes="olLink" Click="BsProjectHomeClicked">
                 <TextBlock Text="https://github.com/russellmm/OpenOutlook" Foreground="{DynamicResource OlAccent}" TextDecorations="Underline" FontSize="13.5" />
               </Button>
+              <TextBlock Classes="olBsCardTitle" Margin="0,22,0,0" Text="Log" />
+              <TextBlock Classes="olBsBody" Margin="0,2,0,8" Text="What OpenOutlook recorded while it ran: start-up, synchronisation, pictures that could not be shown and why, errors." />
+              <Button Name="BsViewLogButton" Classes="olLink" Click="BsViewLogClicked">
+                <TextBlock Text="View log" Foreground="{DynamicResource OlAccent}" TextDecorations="Underline" FontSize="13.5" />
+              </Button>
             </StackPanel>
 
             <!-- Feedback -->

@@ -255,5 +255,6 @@ Owner: SCANPST.EXE reports minor inconsistencies in PSTs used in OpenOutlook (Wi
 - Gmail mailbox copy: clean (our checker and SCANPST).
 - Bare-metal Linux files (`F:\deepseek-linux\projects\OpenOutlook\`): `rmarrash_1.pst` has the same 5 conversation-id rows (repaired with our old R10 on Linux); our fixed copy: SCANPST "No errors". `test-archive.pst` is clean now (SCANPST and our checker; last changed by the owner's repair on 10-15).
 - Tests: `test_write.c` 178 checks (Bcc read-back; `OPST_TEST_NO_DISPLAYBCC` hook -> checker -> R13), `test_formats.c` 785 checks (`msg_conv_id` with the archive's real values). Windows unit 623 + 5 known, headless 49. App DLL rebuilt (`scripts/build-native.ps1`).
+- Builds from `8bcd6aa`, version 0.1.43: Windows `F:\Claude\OpenOutlook_win` (About shows it), Linux `publish/openoutlook_0.1.43_amd64.deb` (also `openoutlook_current_amd64.deb`); WSL: native ctest 3/3 (gcc), unit 628/628, deb smoke OK.
 - **For the owner:** the real files are untouched. With the new build, File > Check & Repair on each of them (Hotmail mailbox copy, both archives) should report and fix these; then SCANPST should say no errors.
 

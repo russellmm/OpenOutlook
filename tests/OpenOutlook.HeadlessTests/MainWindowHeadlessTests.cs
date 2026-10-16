@@ -785,7 +785,9 @@ public sealed class MainWindowHeadlessTests
     private sealed class FakeGmail(Dictionary<string, HashSet<string>> labels) : HttpMessageHandler
     {
         public readonly List<string> Log = [];
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        /// <summary>When set, label changes wait for it; false answers them with a server error.</summary>
+        public TaskCompletionSource<bool>? HoldModify;
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath.Replace("/gmail/v1/users/me", "");
             var body = request.Content is null ? "" : request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
@@ -800,6 +802,9 @@ public sealed class MainWindowHeadlessTests
             }
             else if (path.EndsWith("/modify", StringComparison.Ordinal) || path == "/messages/batchModify")
             {
+                if (HoldModify is { } hold && !await hold.Task)
+                    return new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                    { Content = new StringContent("{\"error\":{\"code\":500,\"message\":\"refused\"}}", System.Text.Encoding.UTF8, "application/json"), RequestMessage = request };
                 var doc = System.Text.Json.JsonDocument.Parse(body).RootElement;
                 var ids = path == "/messages/batchModify" ? doc.GetProperty("ids").EnumerateArray().Select(x => x.GetString()!) : [path.Split('/')[2]];
                 foreach (var id in ids)
@@ -833,8 +838,8 @@ public sealed class MainWindowHeadlessTests
                        "\"body\":{\"data\":\"aGVsbG8\"}}}";
             }
             else json = "{}";
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"), RequestMessage = request });
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"), RequestMessage = request };
         }
     }
 
@@ -1042,6 +1047,51 @@ public sealed class MainWindowHeadlessTests
             // Gmail cannot keep a copy in Trash: copying there is a move
             await Call<Task>(window, "MoveOnlineAsync", new List<string> { "m3" }, Node("Trash").Tag!, true);
             Assert.Contains("TRASH", labels["m3"]); Assert.DoesNotContain("INBOX", labels["m3"]);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task A_Gmail_move_leaves_the_list_before_Gmail_answers_and_a_refused_one_comes_back()
+    {
+        var labels = new Dictionary<string, HashSet<string>> { ["m1"] = ["INBOX"], ["m2"] = ["INBOX"], ["m3"] = ["INBOX"] };
+        var server = new FakeGmail(labels);
+        var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.Google, "gmail-account-9", "me@example.org", "client", DateTimeOffset.UtcNow,
+            ["https://www.googleapis.com/auth/gmail.modify"]);
+        ResetRegistry().Upsert(account);
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var boxes = (System.Collections.IDictionary)typeof(MainWindow).GetField("_gmailBoxes", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            boxes[account.AccountId] = new OpenOutlook.Providers.Google.GmailMailbox(new HttpClient(server), _ => ValueTask.FromResult("tok"), "me@example.org");
+            var tree = window.FindControl<TreeView>("FolderTree")!;
+            var root = tree.Items.OfType<TreeViewItem>().Single(i => i.Tag is OpenOutlook.Auth.ConnectedAccount { AccountId: "gmail-account-9" });
+            TreeViewItem Node(string header) => root.Items.OfType<TreeViewItem>().First(i => i.Header?.ToString()?.StartsWith(header, StringComparison.Ordinal) == true);
+            tree.SelectedItem = Node("Inbox");
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            int Shown() => list.CollectionView!.Cast<object>().Count();
+            await WaitUntil(() => list.CollectionView?.Cast<object>().Count() == 3);
+
+            server.HoldModify = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var move = Call<Task>(window, "MoveOnlineAsync", new List<string> { "m1" }, Node("Spam").Tag!, false);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(move.IsCompleted);                                     // Gmail has not answered yet
+            Assert.Equal(2, Shown());                                           // but m1 has left the Inbox list
+            server.HoldModify.SetResult(true);
+            await move;
+            Assert.Contains("SPAM", labels["m1"]); Assert.DoesNotContain("INBOX", labels["m1"]);
+
+            server.HoldModify = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var refused = Call<Task>(window, "MoveOnlineAsync", new List<string> { "m2" }, Node("Spam").Tag!, false);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, Shown());
+            server.HoldModify.SetResult(false);
+            await refused;
+            Assert.DoesNotContain(account.AccountId + "|m2", LocalRemoved(window));
+            await WaitUntil(() => Shown() == 2);                                // m2 is back: Gmail still has it in the Inbox
+            Assert.Contains("INBOX", labels["m2"]);
         }
         finally { window.Close(); }
     }

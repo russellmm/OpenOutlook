@@ -119,11 +119,30 @@ public partial class MainWindow
             }
             if (_gmailActionBusy) return;
             _gmailActionBusy = true;
-            try { StatusText.Text = await GmailMoveCoreAsync(gmailSource, messageIds, gmailDest, copy); }
+            // As for Microsoft below: the rows leave the list at once and come back if Gmail refuses.
+            var hideGmail = GmailMoveLeavesSource(gmailSource, gmailDest, copy);
+            if (hideGmail)
+                foreach (var id in messageIds)
+                    if (_graphRows?.FirstOrDefault(row => row.Message.Id == id) is { } row) ApplyCompletedMailAction(row.Message, "archive");
+            var changed = false;
+            try
+            {
+                StatusText.Text = await GmailMoveCoreAsync(gmailSource, messageIds, gmailDest, copy);
+                changed = true;
+                if (hideGmail) foreach (var id in messageIds) NoteLocalChange(gmailSource.Account, id, "archive");   // stamped again now Gmail has it
+            }
             catch (GmailReadException error) { StatusText.Text = error.Message; }
             catch (OperationCanceledException) { }
             catch (Exception) { StatusText.Text = "Gmail change failed. Check the connection and retry."; }
-            finally { _gmailActionBusy = false; }
+            finally
+            {
+                _gmailActionBusy = false;
+                if (hideGmail && !changed)
+                {
+                    UndoLocalChange(gmailSource.Account, messageIds);
+                    RequestGmailCountsRefresh(gmailSource.Account);                // the unread count was lowered for rows that come back
+                }
+            }
             await ReloadGmailFolderAsync(gmailSource);
             return;
         }

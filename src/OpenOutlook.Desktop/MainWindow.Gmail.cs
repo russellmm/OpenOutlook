@@ -389,13 +389,20 @@ public partial class MainWindow
         return root is null ? Task.CompletedTask : LoadGmailLabelsAsync(account, root, CancellationToken.None);
     }
 
+    /// <summary>A move takes the current folder's label off, except for system labels the folder cannot lose (Spam can; Trash and the others are handled by their own call).</summary>
+    private static bool GmailMoveRemovesCurrentLabel(GmailFolderSelection source, bool copy) =>
+        !copy && source.LabelId is not ("SENT" or "DRAFT" or "STARRED" or "IMPORTANT" or "TRASH");
+
+    /// <summary>True when the messages leave the folder on screen: a move that removes its label, or a move to Trash.</summary>
+    private static bool GmailMoveLeavesSource(GmailFolderSelection source, GmailFolderSelection dest, bool copy) =>
+        !copy && (dest.LabelId == GmailMailbox.TrashLabel || GmailMoveRemovesCurrentLabel(source, copy));
+
     /// <summary>The label changes of a Gmail move / copy (picker and drag and drop both end here); returns the status text.</summary>
     private async Task<string> GmailMoveCoreAsync(GmailFolderSelection source, IReadOnlyList<string> ids, GmailFolderSelection dest, bool copy)
     {
         var account = source.Account;
         var box = GetGmailMailbox(account);
-        // System labels the current folder cannot lose (Spam can; Trash and the others are handled by their own call).
-        var removeCurrent = !copy && source.LabelId is not ("SENT" or "DRAFT" or "STARRED" or "IMPORTANT" or "TRASH");
+        var removeCurrent = GmailMoveRemovesCurrentLabel(source, copy);
         if (dest.LabelId == GmailMailbox.TrashLabel) await box.TrashAsync(ids);
         else await box.ModifyLabelsAsync(ids, [dest.LabelId], removeCurrent ? [source.LabelId] : []);
         _ = RefreshGmailCountsAsync(account);

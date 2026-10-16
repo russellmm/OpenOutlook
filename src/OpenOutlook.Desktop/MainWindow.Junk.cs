@@ -93,7 +93,7 @@ public partial class MainWindow
     private static string? JunkProblem(ConnectedAccount account, JunkCleanerAccountSettings s) =>
         !account.CanWriteMicrosoftMail ? "This sign-in has read-only mail access. Sign in again from Account Settings to allow organising mail."
         : !s.Enabled ? "The Junk Cleaner is turned off for this account. Turn it on in Account Settings > Junk Cleaner."
-        : s.Keywords.Count == 0 && !s.Rules.DeleteHighImportance && !s.Rules.DeleteMissingTo && !s.Rules.DeleteOnBehalfOf && !s.Rules.DeleteFlagged ? "Add at least one keyword or rule in Account Settings > Junk Cleaner first."
+        : s.Keywords.Count == 0 && !s.Rules.DeleteHighImportance && !s.Rules.DeleteMissingTo && !s.Rules.DeleteOnBehalfOf && !s.Rules.DeleteFlagged && !s.Rules.DeleteWithBcc ? "Add at least one keyword or rule in Account Settings > Junk Cleaner first."
         : null;
 
     /// <summary>The manual run: scan, show what would be removed, remove what the user keeps ticked.</summary>
@@ -162,7 +162,8 @@ public partial class MainWindow
             {
                 Keywords = JunkCleanerSettingsStore.NormalizeKeywords(current.Keywords.Concat(imported.Keywords)),
                 Rules = new JunkRuleOptions(current.Rules.DeleteHighImportance || imported.Rules.DeleteHighImportance,
-                    current.Rules.DeleteMissingTo || imported.Rules.DeleteMissingTo, current.Rules.DeleteOnBehalfOf || imported.Rules.DeleteOnBehalfOf, preview.DeleteFlagged ?? current.Rules.DeleteFlagged),
+                    current.Rules.DeleteMissingTo || imported.Rules.DeleteMissingTo, current.Rules.DeleteOnBehalfOf || imported.Rules.DeleteOnBehalfOf, preview.DeleteFlagged ?? current.Rules.DeleteFlagged,
+                    current.Rules.DeleteWithBcc || imported.Rules.DeleteWithBcc),
                 IntervalMinutes = imported.IntervalMinutes, Enabled = true            // automatic cleaning stays as it was; turn it on deliberately
             });
             return $"Imported {preview.Keywords.Count} keywords. The Junk Cleaner is on for this account; automatic cleaning is unchanged.";

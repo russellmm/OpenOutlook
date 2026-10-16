@@ -14,7 +14,8 @@ public readonly record struct JunkRuleOptions(
     bool DeleteHighImportance = false,
     bool DeleteMissingTo = false,
     bool DeleteOnBehalfOf = false,
-    bool DeleteFlagged = false);
+    bool DeleteFlagged = false,
+    bool DeleteWithBcc = false);
 
 public static class JunkMatcher
 {
@@ -26,7 +27,7 @@ public static class JunkMatcher
 
     public static IReadOnlyList<string> MatchReasons(
         FromFields fields, IReadOnlyList<string> keywords, int? importance,
-        bool? hasToAddress, JunkRuleOptions options, bool? isFlagged = null)
+        bool? hasToAddress, JunkRuleOptions options, bool? isFlagged = null, bool? hasBcc = null)
     {
         var reasons = new List<string>();
         var haystack = BuildHaystack(fields);
@@ -45,6 +46,10 @@ public static class JunkMatcher
             reasons.Add("On behalf of");
         if (options.DeleteFlagged && isFlagged == true)
             reasons.Add("Flagged");
+        // A received message with anyone in Bcc is a mass mailing: a recipient never sees the Bcc list of real mail (spam that addresses its targets
+        // through a visible "BCC:" header, 2026-10-16). Unknown is not a match.
+        if (options.DeleteWithBcc && hasBcc == true)
+            reasons.Add("Bcc recipients");
         return reasons;
     }
 

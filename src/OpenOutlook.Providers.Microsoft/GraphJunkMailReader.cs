@@ -10,7 +10,7 @@ public sealed class GraphJunkMailReader
     private const string Origin = "https://graph.microsoft.com";
     private const string Root = "/v1.0";
     private const int MaxResponseBytes = 4 * 1024 * 1024;
-    private const string MessageSelect = "id,subject,from,sender,toRecipients,ccRecipients,importance,flag,internetMessageHeaders";
+    private const string MessageSelect = "id,subject,from,sender,toRecipients,ccRecipients,bccRecipients,importance,flag,internetMessageHeaders";
     private readonly HttpClient _http;
     private readonly Func<CancellationToken, ValueTask<string>> _accessToken;
     private readonly string _expectedGraphUserId;
@@ -76,7 +76,7 @@ public sealed class GraphJunkMailReader
                     RequiredString(item, "id"), OptionalString(item, "subject"),
                     Address(item, "from"), Address(item, "sender"),
                     Addresses(item, "toRecipients"), Addresses(item, "ccRecipients"),
-                    OptionalString(item, "importance"), Headers(item), HasToRecipients(item), IsFlagged(item)));
+                    OptionalString(item, "importance"), Headers(item), HasToRecipients(item), IsFlagged(item), HasBcc(item)));
             }
             if (result.Count == maxMessages || !json.RootElement.TryGetProperty("@odata.nextLink", out var link)
                 || link.ValueKind == JsonValueKind.Null) break;
@@ -209,6 +209,30 @@ public sealed class GraphJunkMailReader
         return true;
     }
 
+    /// <summary>
+    /// Anyone in Bcc: Graph's bccRecipients, or a "Bcc" internet header with an address in it (spam that names its targets in a visible BCC: header,
+    /// 2026-10-16). Null when Graph returned neither field, so "unknown" never counts as a match.
+    /// </summary>
+    private static bool? HasBcc(JsonElement obj)
+    {
+        bool? known = null;
+        if (obj.TryGetProperty("bccRecipients", out var array) && array.ValueKind == JsonValueKind.Array)
+        {
+            known = false;
+            foreach (var recipient in array.EnumerateArray())
+                if (recipient.ValueKind == JsonValueKind.Object && recipient.TryGetProperty("emailAddress", out var address) &&
+                    !string.IsNullOrWhiteSpace(OptionalString(address, "address"))) return true;
+        }
+        if (obj.TryGetProperty("internetMessageHeaders", out var headers) && headers.ValueKind == JsonValueKind.Array)
+        {
+            known = false;
+            foreach (var header in headers.EnumerateArray())
+                if (header.ValueKind == JsonValueKind.Object && string.Equals(OptionalString(header, "name"), "Bcc", StringComparison.OrdinalIgnoreCase) &&
+                    OptionalString(header, "value") is { } value && value.Contains('@')) return true;
+        }
+        return known;
+    }
+
     // Graph says flagStatus notFlagged / flagged / complete; a missing field is unknown, not unflagged.
     private static bool? IsFlagged(JsonElement obj) =>
         obj.TryGetProperty("flag", out var flag) && flag.ValueKind == JsonValueKind.Object && OptionalString(flag, "flagStatus") is { } status
@@ -236,7 +260,7 @@ public sealed record GraphMailFolder(string Id, string? DisplayName);
 public sealed record GraphInternetHeader(string Name, string Value);
 public sealed record GraphJunkMessage(string Id, string? Subject, string? From, string? Sender,
     IReadOnlyList<string> ToRecipients, IReadOnlyList<string> CcRecipients, string? Importance,
-    IReadOnlyList<GraphInternetHeader> InternetMessageHeaders, bool? HasToRecipients = null, bool? IsFlagged = null);
+    IReadOnlyList<GraphInternetHeader> InternetMessageHeaders, bool? HasToRecipients = null, bool? IsFlagged = null, bool? HasBccRecipients = null);
 
 public sealed class GraphMailException : Exception
 {

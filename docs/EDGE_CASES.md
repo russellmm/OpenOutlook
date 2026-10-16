@@ -189,6 +189,8 @@ Format rules 1-40 (what SCANPST requires) are in `docs/OpenOutlook_Design_Docume
 | Nothing runs without an explicit per-account opt-in; a missing config creates nothing | Moving mail is an outward action | `JunkCleanerSettingsStore` | `JunkCleanerSettingsTests.Missing_config_does_not_create_file_or_enable_accounts`, `MicrosoftJunkPreviewMatcherTests.Requires_explicit_opt_in_and_same_bound_account` |
 | Invalid / damaged config (or keyword file) is never overwritten | 2026-10-15: keywords disappeared | `JunkCleanerSettingsStore`, `JunkKeywordFile` | `JunkCleanerSettingsTests.Invalid_existing_config_is_not_replaced_by_load`, `.A_damaged_keyword_file_throws_instead_of_being_overwritten`, `.Keyword_file_is_one_comma_separated_line_and_reads_back` |
 | Unknown To / sender / importance never triggers optional rules | | matcher | `MicrosoftJunkPreviewMatcherTests.*`, `UnitTest1.*` (keyword matcher) |
+| "Anyone in Bcc" rule: Graph's bccRecipients or a Bcc header with an address; unknown (neither field) never matches; saved and exported with the list | 2026-10-16: phishing that named its targets in a visible BCC: header | `JunkMatcher`, `GraphJunkMailReader.HasBcc` | `JunkBccRuleTests.*` (4) |
+| The removal history (`junk-cleaner.log`) holds at most the newest 1,500 entries and 256 KB, whatever is written | Owner: it must not grow indefinitely (it used to trim only past 512 KB) | `JunkCleanerLog` | `JunkBccRuleTests.The_removal_history_never_grows_without_limit` |
 | Scan changes nothing; clean moves only matches, at most the cap; one failed move does not stop the rest | | `MicrosoftJunkCleanerRunner` | `MicrosoftJunkCleanerRunnerTests.*` (6) |
 
 ## Settings files

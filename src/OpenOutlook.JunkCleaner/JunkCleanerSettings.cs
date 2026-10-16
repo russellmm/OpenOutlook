@@ -47,6 +47,7 @@ internal sealed class LegacyJunkCleanerDto
     public bool DeleteMissingTo { get; set; }
     public bool DeleteOnBehalfOf { get; set; }
     public bool? DeleteFlagged { get; set; }      // only in files written by OpenOutlook's own export
+    public bool? DeleteWithBcc { get; set; }      // only in files written by OpenOutlook's own export (2026-10-16 and later)
 
     // Windows-only startup/tray fields are intentionally not modeled or imported.
 }

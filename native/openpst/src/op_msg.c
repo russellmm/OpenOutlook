@@ -166,13 +166,14 @@ int opst_folder_find(opst *p, uint32_t start, const char *path, uint32_t *nid_ou
 }
 
 /* ---- message lists ----------------------------------------------------------------------------------------------------- */
-int opst_messages(opst *p, uint32_t folder, opst_msg_row **out, size_t *count) {
+/* rows of a folder's contents table (type 0x0E) or associated contents table (type 0x0F, hidden FAI messages) */
+static int table_messages(opst *p, uint32_t table_nid, opst_msg_row **out, size_t *count) {
     if (!p || !out || !count) return op_err(OPST_E_ARG, "null argument");
     *out = NULL; *count = 0;
     oplist l;
     if (op_list_init(&l, sizeof(opst_msg_row))) return op_err(OPST_E_NOMEM, "out of memory");
     opnode n; optc tc;
-    if (op_node_get(p, (folder & ~NID_TYPE_MASK) | 0x0E, &n) == 0) {
+    if (op_node_get(p, table_nid, &n) == 0) {
         int rc = op_tc_open(p, &n, &tc);
         if (rc) { op_list_abort(&l); return rc; }
         int c_subj = op_tc_col(&tc, 0x0037), c_from = op_tc_col(&tc, 0x0C1A), c_from2 = op_tc_col(&tc, 0x0042),
@@ -219,6 +220,12 @@ int opst_messages(opst *p, uint32_t folder, opst_msg_row **out, size_t *count) {
     *out = (opst_msg_row *)op_list_finish(&l);
     *count = cnt;
     return 0;
+}
+int opst_messages(opst *p, uint32_t folder, opst_msg_row **out, size_t *count) {
+    return table_messages(p, (folder & ~NID_TYPE_MASK) | 0x0E, out, count);
+}
+int opst_folder_assoc_messages(opst *p, uint32_t folder, opst_msg_row **out, size_t *count) {
+    return table_messages(p, (folder & ~NID_TYPE_MASK) | 0x0F, out, count);
 }
 void opst_free_messages(opst_msg_row *arr) { op_arr_free(arr); }
 

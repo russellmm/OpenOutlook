@@ -66,6 +66,8 @@ namespace OpenPst
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_folder_find(IntPtr p, uint start, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, out uint nid);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_messages(IntPtr p, uint folder, out IntPtr arr, out UIntPtr count);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern void opst_free_messages(IntPtr arr);
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_folder_assoc_messages(IntPtr p, uint folder, out IntPtr arr, out UIntPtr count);
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msg_prop(IntPtr m, ushort pid, out ushort ptype, out IntPtr data, out UIntPtr len);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern int opst_msg_open(IntPtr p, uint nid, out IntPtr m);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern void opst_msg_close(IntPtr m);
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr opst_msg_str(IntPtr m, ushort pid);
@@ -318,9 +320,14 @@ namespace OpenPst
             return nid;
         }
 
-        public IReadOnlyList<PstMessageRow> Messages(uint folder)
+        public IReadOnlyList<PstMessageRow> Messages(uint folder) => Rows(Native.opst_messages(H, folder, out var arr, out var cnt), arr, cnt);
+
+        /// <summary>The folder's hidden (associated) messages: views, rules, the Inbox's "Junk E-mail Rule". Open them with <see cref="OpenMessage"/>.</summary>
+        public IReadOnlyList<PstMessageRow> AssociatedMessages(uint folder) => Rows(Native.opst_folder_assoc_messages(H, folder, out var arr, out var cnt), arr, cnt);
+
+        IReadOnlyList<PstMessageRow> Rows(int rc, IntPtr arr, UIntPtr cnt)
         {
-            Native.Check(Native.opst_messages(H, folder, out var arr, out var cnt));
+            Native.Check(rc);
             try
             {
                 var list = new List<PstMessageRow>();
@@ -583,6 +590,14 @@ namespace OpenPst
         public string Str(ushort pid) => Native.Str(Native.opst_msg_str(M, pid));
         /// <summary>Integer/boolean property by tag id; <paramref name="dflt"/> when absent.</summary>
         public long Int(ushort pid, long dflt = 0) => Native.opst_msg_i64(M, pid, dflt);
+        /// <summary>Raw property bytes (any type, e.g. a binary rule condition); null when absent.</summary>
+        public byte[]? Binary(ushort pid)
+        {
+            if (Native.opst_msg_prop(M, pid, out _, out var data, out var len) != 0) return null;
+            var bytes = new byte[checked((int)len)];
+            if (bytes.Length > 0) Marshal.Copy(data, bytes, 0, bytes.Length);
+            return bytes;
+        }
         public bool Has(PstBody kind) => (Native.opst_msg_bodies(M) & (1u << (int)kind)) != 0;
 
         /// <summary>Body as text (Text/Html as UTF-8 decoded to string; Rtf is the decompressed 7-bit RTF as Latin-1). Null when absent.</summary>

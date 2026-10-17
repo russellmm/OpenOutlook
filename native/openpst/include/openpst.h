@@ -114,6 +114,9 @@ typedef struct opst_msg_row {
 
 OPST_API int  opst_messages(opst *p, uint32_t folder, opst_msg_row **out, size_t *count);
 OPST_API void opst_free_messages(opst_msg_row *arr);
+/* the folder's hidden (associated, "FAI") messages: views, rules, the Inbox's "Junk E-mail Rule" (IPM.ExtendedRule.Message); open them with
+   opst_msg_open and read raw properties with opst_msg_prop. Freed with opst_free_messages. */
+OPST_API int  opst_folder_assoc_messages(opst *p, uint32_t folder, opst_msg_row **out, size_t *count);
 
 /* ---- one message --------------------------------------------------------------------------------------------- */
 OPST_API int  opst_msg_open(opst *p, uint32_t nid, opst_msg **out);

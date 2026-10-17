@@ -1645,6 +1645,40 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task A_due_reminder_opens_the_reminders_window_and_a_dismissal_is_saved_and_never_shown_again()
+    {
+        ResetRegistry();                                                                     // no accounts: the dismissal stays pending, nothing goes to Graph
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        try
+        {
+            ShowWithSnapshotReader(window);
+            var id = "ev-" + Guid.NewGuid().ToString("N");
+            var start = DateTimeOffset.UtcNow.AddDays(-6);                                   // came due while OpenOutlook was closed
+            var item = new ReminderItem("hotmail", id, "Dentist", "Main St", start, start.AddHours(1), start.AddMinutes(-15));
+            var server = (Dictionary<string, IReadOnlyList<ReminderItem>>)typeof(MainWindow)
+                .GetField("_reminderServer", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            server["hotmail"] = [item];
+            CallVoid(window, "EvaluateReminders");
+            Dispatcher.UIThread.RunJobs();
+            var reminders = (RemindersWindow)typeof(MainWindow).GetField("_remindersWindow", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            Assert.True(reminders.IsVisible);
+            Assert.Equal("1 Reminder", reminders.Title);
+            Assert.Equal("6 days overdue", reminders.DueText(item));
+
+            await window.DismissRemindersAsync([item]);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Empty(window.DueReminders);
+            Assert.False(reminders.IsVisible);
+            var saved = new ReminderStateStore().Load()[item.Key];
+            Assert.Equal(ReminderRecord.Dismissed, saved.State);
+            Assert.True(saved.PendingSync);                                                  // sent to Graph on the next check
+            CallVoid(window, "EvaluateReminders");                                          // the server still lists it: stays gone
+            Assert.Empty(window.DueReminders);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public async Task A_missing_attached_data_file_is_listed_as_not_found_and_remove_takes_it_off_the_list()
     {
         ResetRegistry();

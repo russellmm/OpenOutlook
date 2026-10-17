@@ -148,6 +148,13 @@ public sealed partial class CalendarPage : UserControl
 
     public string? SelectedAccountId => SelectedAccount?.AccountId;
 
+    /// <summary>Shows <paramref name="date"/> in Day view (the Reminders window's Open Item); loads when the page is next activated.</summary>
+    public void GoToDay(DateOnly date)
+    {
+        _cursor = date;
+        _views.SelectedIndex = 3;
+    }
+
     public void SelectAccount(string accountId)
     {
         var option = _accounts.Items.OfType<ComboBoxItem>()

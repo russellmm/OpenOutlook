@@ -182,6 +182,7 @@ public sealed partial class MainWindow : Window
             _tokenHttp.Dispose();
             _graphHttp.Dispose();
             foreach (var dialog in _interactiveDialogs.ToArray()) dialog.Close();
+            CloseRemindersWindow();
             ClearInlineImages();
             // Pending reader tasks hold this gate; close is cooperative until they finish.
             _ = CloseStoresAsync();
@@ -222,6 +223,7 @@ public sealed partial class MainWindow : Window
             StartMirrorScheduler();                                  // the local copies of connected mailboxes
             _ = WarmUpMicrosoftAsync();                             // token and connection ready before the first click
             StartJunkScheduler();                                   // silent Junk Cleaner runs
+            StartReminderScheduler();                               // calendar reminders (docs/reminders-plan.md)
             if (Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_HTML") == "1") _ = RunHtmlSelfTestAsync();      // diagnostics: renders a sample message and logs the outcome
             var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path) && !_missingArchives.Contains(path));
             if (_missingArchives.Count > 0)

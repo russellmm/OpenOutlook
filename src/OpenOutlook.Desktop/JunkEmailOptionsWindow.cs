@@ -26,6 +26,7 @@ public sealed class JunkEmailOptionsWindow : Window
     private readonly Dictionary<JunkListKind, ListBox> _boxes = [];
     private readonly Dictionary<JunkListKind, List<TextBlock>> _counts = [];
     private readonly CheckBox _trustContacts = new() { Content = "Also trust email from my _Contacts" };
+    private readonly CheckBox _readAtStart = new() { Content = "Read Outlook's lists _when OpenOutlook starts (only while Outlook is closed and its lists have changed)" };
     private readonly CheckBox _applyLists = new() { Content = "_Apply these lists in OpenOutlook: move mail from safe senders out of Junk Email, and mail from blocked senders into it" };
     private readonly TextBlock _outlookStatus = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     private readonly TextBlock _outlookLevel = new() { TextWrapping = TextWrapping.Wrap };
@@ -72,6 +73,7 @@ public sealed class JunkEmailOptionsWindow : Window
         Content = dock;
         _trustContacts.IsCheckedChanged += (_, _) => Changed();
         _applyLists.IsCheckedChanged += (_, _) => Changed();
+        _readAtStart.IsCheckedChanged += (_, _) => Changed();
         Load(account);
     }
 
@@ -93,14 +95,15 @@ public sealed class JunkEmailOptionsWindow : Window
         foreach (var kind in Kinds) { _lists[kind] = effective.Get(kind).ToList(); _loaded[kind] = _lists[kind].ToList(); }
         _trustContacts.IsChecked = account.TrustContacts;
         _applyLists.IsChecked = account.ApplyLists;
+        _readAtStart.IsChecked = account.ReadOutlookAtStart;
         foreach (var kind in Kinds) Refresh(kind);
         _outlookLevel.Text = account.OutlookOptions is { } o
             ? $"Microsoft's junk email protection for this account, as set in Outlook: {o.Level}." + (o.PermanentlyDelete ? " Suspected junk email is deleted for good by Microsoft." : "")
             : "Microsoft's junk email protection level is set in Outlook or on Outlook.com (Settings > Mail > Junk email); other programs cannot read or change it.";
         _outlookStatus.Text = account.OutlookReadAt is { } at
             ? $"Lists read from Outlook on {at.ToLocalTime():g} ({account.FromOutlook.SafeSenders.Count} safe senders, {account.FromOutlook.SafeRecipients.Count} safe recipients, {account.FromOutlook.BlockedSenders.Count} blocked senders), from {account.OutlookSource}. " +
-              "They are read again when OpenOutlook starts while Outlook is closed and Outlook has changed them."
-            : "Outlook's lists have not been read on this computer. OpenOutlook reads them from Outlook desktop's offline file when it starts while Outlook is closed (Windows), or import the files Outlook's Export to File writes.";
+              "Close Outlook and use \"Read Outlook's lists now\" to read them again."
+            : "Outlook's lists have not been read on this computer. Close Outlook and use \"Read Outlook's lists now\" (Windows, Outlook desktop installed), or import the files Outlook's Export to File writes.";
         _loading = false;
         _apply.IsEnabled = false;
     }
@@ -116,13 +119,13 @@ public sealed class JunkEmailOptionsWindow : Window
         if (!_apply.IsEnabled) return;
         var added = Kinds.ToDictionary(k => k, k => _lists[k].Except(_loaded[k]).ToList());
         var removed = Kinds.ToDictionary(k => k, k => _loaded[k].Except(_lists[k]).ToHashSet());
-        var trust = _trustContacts.IsChecked == true; var apply = _applyLists.IsChecked == true;
+        var trust = _trustContacts.IsChecked == true; var apply = _applyLists.IsChecked == true; var atStart = _readAtStart.IsChecked == true;
         var saved = _save(stored =>
         {
             var account = stored;
             foreach (var kind in Kinds)
                 account = account.WithEdited(kind, stored.Effective.Get(kind).Where(e => !removed[kind].Contains(e)).Concat(added[kind]));
-            return account with { TrustContacts = trust, ApplyLists = apply };
+            return account with { TrustContacts = trust, ApplyLists = apply, ReadOutlookAtStart = atStart };
         });
         _account = saved;
         Load(saved);
@@ -139,7 +142,7 @@ public sealed class JunkEmailOptionsWindow : Window
             new CheckBox { Content = "Permanently delete suspected junk email instead of moving it to the Junk Email folder", IsEnabled = false, [ToolTip.TipProperty] = "OpenOutlook never deletes mail for good; the Junk Cleaner moves it to Deleted Items." },
             _applyLists,
             new Border { Height = 1, Background = Themed.Brush("OlHairline", Brushes.LightGray), Margin = new Thickness(0, 6) },
-            _outlookStatus, read);
+            _outlookStatus, read, _readAtStart);
     }
 
     internal async Task ReadFromOutlookAsync()

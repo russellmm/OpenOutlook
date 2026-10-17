@@ -114,32 +114,31 @@
                                         </DockPanel>
                   </Border>
 
-                  <!-- Delete -->
+                  <!-- Delete: as in Outlook, Ignore / Clean Up / Junk in a small column, then Delete and Archive -->
                   <Border Classes="olGroup">
                     <DockPanel LastChildFill="True">
                       <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Delete" />
 
                       <StackPanel Orientation="Horizontal">
+                        <StackPanel VerticalAlignment="Top" Margin="0,0,2,0">
+                          <Button Classes="olSmall" Tag="Ignore message" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                            <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18" Margin="0,0,4,0"><ContentControl Template="{StaticResource OlIconIgnore}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Ignore" /></StackPanel>
+                          </Button>
+                          <Button Name="CleanUpButton" Classes="olSmall" Click="HomeCleanUpClicked" ToolTip.Tip="Clean Up Conversation, Folder, Folder &amp; Subfolders (planned features)">
+                            <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18" Margin="0,0,4,0"><ContentControl Template="{StaticResource OlIconCleanUp}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Clean Up" /><Viewbox Width="8" Height="8" Margin="3,1,0,0" VerticalAlignment="Center"><ContentControl Template="{StaticResource OlIconChevronDown}" Width="32" Height="32" /></Viewbox></StackPanel>
+                          </Button>
+                          <Button Name="PreviewJunkImportButton" Classes="olSmall" Click="HomeJunkClicked" ToolTip.Tip="Block Sender, Never Block Sender, Not Junk and Junk E-mail Options">
+                            <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18" Margin="0,0,4,0"><ContentControl Template="{StaticResource OlIconBlockSender}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Junk" /><Viewbox Width="8" Height="8" Margin="3,1,0,0" VerticalAlignment="Center"><ContentControl Template="{StaticResource OlIconChevronDown}" Width="32" Height="32" /></Viewbox></StackPanel>
+                          </Button>
+                        </StackPanel>
                         <Button Classes="olLarge" Tag="delete" Click="MailActionClicked" ToolTip.Tip="Move selected Microsoft mail to Deleted Items">
                           <StackPanel><ContentControl Template="{StaticResource OlIconDelete}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Delete" /></StackPanel>
                         </Button>
-                        <StackPanel VerticalAlignment="Top" Margin="2,0,0,0">
-                          <Button Classes="olSmall" Tag="Ignore message" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconIgnore}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Ignore" /></StackPanel>
-                          </Button>
-                          <Button Classes="olSmall" Tag="Clean up" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconCleanUp}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Clean Up" /></StackPanel>
-                          </Button>
-                          <Button Name="PreviewJunkImportButton" Classes="olSmall" Click="HomeJunkClicked" ToolTip.Tip="Block Sender, Never Block Sender, Not Junk and Junk E-mail Options">
-                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconJunk}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Junk" /></StackPanel>
-                          </Button>
-                        </StackPanel>
-                        <Button Classes="olLarge" Tag="archive" Click="MailActionClicked" Margin="6,0,0,0" ToolTip.Tip="Archive selected Microsoft mail">
+                        <Button Classes="olLarge" Tag="archive" Click="MailActionClicked" ToolTip.Tip="Archive selected Microsoft mail">
                           <StackPanel><ContentControl Template="{StaticResource OlIconArchive}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Archive" /></StackPanel>
                         </Button>
                       </StackPanel>
-                      
-                                        </DockPanel>
+                    </DockPanel>
                   </Border>
 
                   <!-- Respond -->

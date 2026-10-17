@@ -27,11 +27,15 @@ public sealed partial class MainWindow
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { return []; }
     }
 
-    /// <summary>At start: Outlook's lists for every Microsoft account, read when Outlook is closed and its file changed (in the background).</summary>
+    /// <summary>
+    /// At start: Outlook's lists for the Microsoft accounts whose Junk Email Options say "Read Outlook's lists when OpenOutlook starts" (off by
+    /// default, owner 2026-10-17), read when Outlook is closed and its file changed (in the background). "Read Outlook's lists now" always works.
+    /// </summary>
     private void StartOutlookJunkListRead()
     {
         if (Environment.GetEnvironmentVariable("OPENOUTLOOK_NO_MIRROR") == "1" || !OperatingSystem.IsWindows()) return;
-        var accounts = JunkListAccounts();
+        var accounts = JunkListAccounts().Where(a => JunkListsStore.Load(a.AccountId).ReadOutlookAtStart).ToList();   // off unless ticked in Junk Email Options
+        if (accounts.Count == 0) return;
         _ = Task.Run(() => { foreach (var account in accounts) ReadOutlookJunkLists(account, force: false); });
     }
 
@@ -90,19 +94,19 @@ public sealed partial class MainWindow
     /// <summary>Outlook's Junk submenu (right-click and Home > Junk). Items act on the selected Microsoft messages.</summary>
     private MenuItem JunkMenu()
     {
-        MenuItem Item(string header, string action)
+        MenuItem Item(string header, string action, string? icon = null)
         {
-            var item = new MenuItem { Header = header, Tag = action };
+            var item = new MenuItem { Header = header, Tag = action, Icon = icon is null ? null : MenuIcon(icon) };
             item.Click += async (_, _) => await JunkActionAsync(action);
             return item;
         }
         var junk = new MenuItem { Header = "Junk" };
-        var block = Item("_Block Sender", "block");
+        var block = Item("_Block Sender", "block", "OlIconBlockSender");
         var never = Item("_Never Block Sender", "safeSender");
         var domain = Item("Never Block Sender's _Domain", "safeDomain");
         var group = Item("Never Block this Group or _Mailing List", "safeGroup");
-        var notJunk = Item("N_ot Junk", "notJunk");
-        var options = Item("Junk E-mail _Options...", "options");
+        var notJunk = Item("N_ot Junk", "notJunk", "OlIconMail");
+        var options = Item("Junk E-mail _Options...", "options", "OlIconJunkOptions");
         foreach (var x in new Control[] { block, never, domain, group, new Separator(), notJunk, options }) junk.Items.Add(x);
         junk.SubmenuOpened += (_, _) =>
         {
@@ -114,6 +118,31 @@ public sealed partial class MainWindow
             domain.Header = first is not null && JunkLists.Address(first.FromAddress) is { } a ? $"Never Block Sender's _Domain ({a[a.IndexOf('@')..]})" : "Never Block Sender's _Domain";
         };
         return junk;
+    }
+
+    /// <summary>A ribbon icon (32 x 32 canvas) scaled into a 16 px menu or small-button slot.</summary>
+    internal static Control MenuIcon(string key) => new Viewbox
+    {
+        Width = 16, Height = 16,
+        Child = new ContentControl
+        {
+            Width = 32, Height = 32,
+            Template = Avalonia.Application.Current?.TryFindResource(key, out var t) == true ? t as Avalonia.Controls.Templates.IControlTemplate : null,
+        },
+    };
+
+    /// <summary>Home > Clean Up: Outlook's three commands, not built yet (shown greyed, "Planned feature").</summary>
+    private void HomeCleanUpClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control button) return;
+        var flyout = new MenuFlyout();
+        foreach (var header in new[] { "Clean Up Conversation", "Clean Up Folder", "Clean Up Folder & Subfolders" })
+        {
+            var item = new MenuItem { Header = header, IsEnabled = false };
+            ToolTip.SetTip(item, "Planned feature");
+            flyout.Items.Add(item);
+        }
+        flyout.ShowAt(button);
     }
 
     private void HomeJunkClicked(object? sender, RoutedEventArgs e)

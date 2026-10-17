@@ -119,6 +119,26 @@
     </Canvas>
   </ControlTemplate>
 
+  <!-- Outlook's Junk / Block Sender: a person with a red no-entry sign at the lower left -->
+  <ControlTemplate x:Key="OlIconBlockSender">
+    <Canvas Width="32" Height="32">
+      <Ellipse Canvas.Left="13" Canvas.Top="3" Width="10" Height="10" Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="{DynamicResource OlCard}" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.6" Fill="{DynamicResource OlCard}" Data="M9,28 C9,19 27,19 27,28" />
+      <Ellipse Canvas.Left="2" Canvas.Top="16" Width="13" Height="13" Stroke="#C00000" StrokeThickness="2" Fill="{DynamicResource OlCard}" />
+      <Path Stroke="#C00000" StrokeThickness="2" Data="M4.8,18.8 L12.2,26.2" />
+    </Canvas>
+  </ControlTemplate>
+
+  <!-- Junk E-mail Options: an envelope with the red no-entry sign -->
+  <ControlTemplate x:Key="OlIconJunkOptions">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Fill="{DynamicResource OlCard}" Data="M3,7 L25,7 L25,22 L3,22 Z" />
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Data="M3.8,7.8 L14,15.5 L24.2,7.8" />
+      <Ellipse Canvas.Left="17" Canvas.Top="17" Width="13" Height="13" Stroke="#C00000" StrokeThickness="2" Fill="{DynamicResource OlCard}" />
+      <Path Stroke="#C00000" StrokeThickness="2" Data="M19.8,19.8 L27.2,27.2" />
+    </Canvas>
+  </ControlTemplate>
+
   <ControlTemplate x:Key="OlIconRemoveJunk">
     <Canvas Width="32" Height="32">
       <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.4" Fill="{DynamicResource OlCard}" Data="M8,10 L22,10 L21,27 L9,27 Z" />

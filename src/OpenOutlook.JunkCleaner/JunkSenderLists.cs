@@ -283,6 +283,8 @@ public sealed record JunkListsAccount
     public bool TrustContacts { get; init; }
     /// <summary>OpenOutlook applies the lists itself (safe mail out of Junk Email, blocked mail into it).</summary>
     public bool ApplyLists { get; init; } = true;
+    /// <summary>Read Outlook's lists from its offline file when OpenOutlook starts (off: only "Read Outlook's lists now"; owner 2026-10-17).</summary>
+    public bool ReadOutlookAtStart { get; init; }
 
     public JunkLists Effective => FromOutlook.Without(RemovedFromOutlook).Union(Own);
 

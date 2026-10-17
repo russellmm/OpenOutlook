@@ -1762,6 +1762,7 @@ public sealed class MainWindowHeadlessTests
             var junkMenu = ((MenuFlyout)list.ContextFlyout!).Items.OfType<MenuItem>().Single(i => (string?)i.Header == "Junk");
             Assert.Equal(["_Block Sender", "_Never Block Sender", "Never Block Sender's _Domain", "Never Block this Group or _Mailing List", "N_ot Junk", "Junk E-mail _Options..."],
                 junkMenu.Items.OfType<MenuItem>().Select(i => (string)i.Header!));
+            Assert.Equal([true, false, false, false, true, true], junkMenu.Items.OfType<MenuItem>().Select(i => i.Icon is not null));   // Outlook's icons
 
             var inbox = Rows(("m1", "Deals@Spam.example"));
             await window.JunkActionAsync("block");
@@ -1833,6 +1834,8 @@ public sealed class MainWindowHeadlessTests
             window.Show();
             Dispatcher.UIThread.RunJobs();
             Assert.Equal("Junk Email Options - person@hotmail.test", window.Title);
+            var atStart = window.GetLogicalDescendants().OfType<CheckBox>().Distinct().First(c => (c.Content as string)?.StartsWith("Read Outlook's lists _when") == true);
+            Assert.False(atStart.IsChecked);                                                           // reading at start is off unless ticked
             var safe = OpenOutlook.JunkCleaner.JunkListKind.SafeSenders;
             Assert.Equal(["@amazon.com", "old@x.com"], window.Shown(safe));
             window.SelectTab(1);
@@ -1854,8 +1857,10 @@ public sealed class MainWindowHeadlessTests
             Assert.Equal(["@shop.example"], window.Visible(safe));
             window.Search(safe, "");
             Assert.Equal(3, window.Visible(safe).Count);
+            atStart.IsChecked = true;
             window.ApplyChanges();
             var result = Assert.Single(saved);
+            Assert.True(result.ReadOutlookAtStart);
             Assert.Equal(["old@x.com"], result.RemovedFromOutlook.SafeSenders);
             Assert.Equal(["@shop.example", "new@y.com"], result.Own.SafeSenders);
             Assert.Equal(["1ppmgfh@peterlink.ru", "menu@added.example"], result.Effective.BlockedSenders);     // not overwritten by the window
@@ -1884,6 +1889,35 @@ public sealed class MainWindowHeadlessTests
             await window.ReadFromOutlookAsync();
             Assert.Equal(1, reads);
             Assert.Equal("Read Outlook's lists.", window.LastMessage);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Home_delete_group_is_laid_out_like_outlook_with_junk_and_clean_up_drop_downs()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1400, Height = 800 };
+        ShowWithSnapshotReader(window);
+        try
+        {
+            var junk = window.FindControl<Button>("PreviewJunkImportButton")!;
+            var cleanUp = window.FindControl<Button>("CleanUpButton")!;
+            var column = (StackPanel)junk.Parent!;
+            var group = (StackPanel)column.Parent!;
+            Assert.Same(column, group.Children[0]);                                                    // Ignore / Clean Up / Junk first, as in Outlook
+            Assert.Equal(["delete", "archive"], group.Children.OfType<Button>().Select(b => (string)b.Tag!));
+            Assert.Equal(["Ignore", "Clean Up", "Junk"], column.Children.OfType<Button>()
+                .Select(b => b.GetLogicalDescendants().OfType<TextBlock>().First().Text));
+            foreach (var b in new[] { junk, cleanUp })                                                  // a drop-down arrow, and the icon scaled into its 18 px slot
+            {
+                var boxes = b.GetLogicalDescendants().OfType<Viewbox>().ToList();
+                Assert.Equal(2, boxes.Count);
+                Assert.Equal(18, boxes[0].Width);
+            }
+            var rect = junk.TranslatePoint(new Point(0, 0), window)!.Value;
+            Shot(window, "home-delete-group");
+            Assert.True(rect.X > 0);
         }
         finally { window.Close(); }
     }

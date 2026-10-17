@@ -46,14 +46,23 @@ public sealed class GraphJunkMailReader
     }
 
     /// <summary>List at most maxMessages from Junk Email, across at most the required number of pages.</summary>
-    public async Task<IReadOnlyList<GraphJunkMessage>> ListJunkMessagesAsync(
-        int pageSize = 50, int maxMessages = 500, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<GraphJunkMessage>> ListJunkMessagesAsync(
+        int pageSize = 50, int maxMessages = 500, CancellationToken cancellationToken = default) =>
+        ListWellKnownAsync("junkemail", pageSize, maxMessages, cancellationToken);
+
+    /// <summary>List at most maxMessages from the Inbox (newest first, Graph's order): where mail from blocked senders is looked for.</summary>
+    public Task<IReadOnlyList<GraphJunkMessage>> ListInboxMessagesAsync(
+        int pageSize = 50, int maxMessages = 200, CancellationToken cancellationToken = default) =>
+        ListWellKnownAsync("inbox", pageSize, maxMessages, cancellationToken);
+
+    private async Task<IReadOnlyList<GraphJunkMessage>> ListWellKnownAsync(string wellKnown,
+        int pageSize, int maxMessages, CancellationToken cancellationToken)
     {
         if (pageSize is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(pageSize));
         if (maxMessages is < 1 or > 1000) throw new ArgumentOutOfRangeException(nameof(maxMessages));
         var token = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
         await VerifyAccountAsync(token, cancellationToken).ConfigureAwait(false);
-        var folder = await GetJunkFolderForVerifiedAccountAsync(token, cancellationToken).ConfigureAwait(false);
+        var folder = await GetWellKnownFolderAsync(wellKnown, token, cancellationToken).ConfigureAwait(false);
         var path = $"{Root}/me/mailFolders/{Uri.EscapeDataString(folder.Id)}/messages";
         var next = new Uri(Origin + path + $"?$select={MessageSelect}&$top={Math.Min(pageSize, maxMessages)}");
         var result = new List<GraphJunkMessage>();
@@ -108,9 +117,13 @@ public sealed class GraphJunkMailReader
         GraphAccountVerification.Mark(_expectedGraphUserId, token);
     }
 
-    private async Task<GraphMailFolder> GetJunkFolderForVerifiedAccountAsync(string token, CancellationToken ct)
+    private Task<GraphMailFolder> GetJunkFolderForVerifiedAccountAsync(string token, CancellationToken ct) =>
+        GetWellKnownFolderAsync("junkemail", token, ct);
+
+    private async Task<GraphMailFolder> GetWellKnownFolderAsync(string wellKnown, string token, CancellationToken ct)
     {
-        using var json = await GetJsonAsync(new Uri(Origin + Root + "/me/mailFolders/junkemail?$select=id,displayName"), token, ct)
+        if (wellKnown is not ("junkemail" or "inbox")) throw new ArgumentException("Unknown folder.", nameof(wellKnown));
+        using var json = await GetJsonAsync(new Uri(Origin + Root + $"/me/mailFolders/{wellKnown}?$select=id,displayName"), token, ct)
             .ConfigureAwait(false);
         return new GraphMailFolder(RequiredString(json.RootElement, "id"), OptionalString(json.RootElement, "displayName"));
     }

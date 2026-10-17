@@ -8,6 +8,9 @@ public sealed record JunkCleanerHit(string MessageId, string Subject, string Sen
 public sealed record JunkCleanerRunResult(int Scanned, IReadOnlyList<JunkCleanerHit> Matched, IReadOnlyList<JunkCleanerHit> Moved,
     IReadOnlyList<string> Failures, bool CapReached);
 
+/// <summary>What applying the Safe / Blocked Senders lists did: safe mail moved from Junk Email to the Inbox, blocked mail from the Inbox to Junk Email.</summary>
+public sealed record JunkListRunResult(IReadOnlyList<JunkCleanerHit> Rescued, IReadOnlyList<JunkCleanerHit> Blocked, IReadOnlyList<string> Failures);
+
 /// <summary>
 /// Cleans one Microsoft account's Junk Email folder: lists it, matches the account's keywords and rules, and moves matches to Deleted Items
 /// (never a permanent delete). The same Graph account id is used for the scan, the settings and the moves.
@@ -17,10 +20,14 @@ public sealed class MicrosoftJunkCleanerRunner(GraphJunkMailReader reader, Graph
     /// <summary>Messages moved in one run at most, so a bad keyword cannot empty a folder.</summary>
     public const int MaxMovesPerRun = 500;
 
-    /// <summary>Scans and matches without changing anything (the manual run's preview).</summary>
-    public async Task<JunkCleanerRunResult> ScanAsync(JunkCleanerAccountSettings settings, CancellationToken ct = default)
+    /// <summary>Moves made by one <see cref="ApplyListsAsync"/> run at most.</summary>
+    public const int MaxListMovesPerRun = 200;
+
+    /// <summary>Scans and matches without changing anything (the manual run's preview). Mail the lists call safe is never matched.</summary>
+    public async Task<JunkCleanerRunResult> ScanAsync(JunkCleanerAccountSettings settings, CancellationToken ct = default, JunkLists? lists = null, ISet<string>? contacts = null)
     {
-        var messages = await reader.ListJunkMessagesAsync(50, 1000, ct).ConfigureAwait(false);
+        var all = await reader.ListJunkMessagesAsync(50, 1000, ct).ConfigureAwait(false);
+        var messages = lists is null ? all : all.Where(m => Verdict(lists, m, contacts) != JunkListVerdict.Safe).ToList();
         var preview = new MicrosoftJunkPreviewMatcher(accountId).Preview(accountId, settings, messages);
         var byId = messages.ToDictionary(m => m.Id, StringComparer.Ordinal);
         var matched = preview.Matches.Select(m =>
@@ -57,6 +64,44 @@ public sealed class MicrosoftJunkCleanerRunner(GraphJunkMailReader reader, Graph
     }
 
     /// <summary>The scheduled run: scan, then move everything that matched.</summary>
-    public async Task<JunkCleanerRunResult> CleanAsync(JunkCleanerAccountSettings settings, CancellationToken ct = default) =>
-        await MoveAsync(await ScanAsync(settings, ct).ConfigureAwait(false), null, ct).ConfigureAwait(false);
+    public async Task<JunkCleanerRunResult> CleanAsync(JunkCleanerAccountSettings settings, CancellationToken ct = default, JunkLists? lists = null, ISet<string>? contacts = null) =>
+        await MoveAsync(await ScanAsync(settings, ct, lists, contacts).ConfigureAwait(false), null, ct).ConfigureAwait(false);
+
+    public static JunkListVerdict Verdict(JunkLists lists, GraphJunkMessage m, ISet<string>? contacts) =>
+        lists.Classify(m.From ?? m.Sender, m.ToRecipients.Concat(m.CcRecipients), contacts);
+
+    /// <summary>
+    /// Applies the lists: mail in Junk Email that they call safe goes to the Inbox; mail among the newest 200 of the Inbox from a blocked sender
+    /// goes to Junk Email (never deleted). At most <see cref="MaxListMovesPerRun"/> moves; one failure never stops the rest.
+    /// </summary>
+    public async Task<JunkListRunResult> ApplyListsAsync(JunkLists lists, ISet<string>? contacts = null, CancellationToken ct = default)
+    {
+        var rescued = new List<JunkCleanerHit>(); var blocked = new List<JunkCleanerHit>(); var failures = new List<string>();
+        if (lists.Count == 0 && contacts is not { Count: > 0 }) return new JunkListRunResult(rescued, blocked, failures);
+        static JunkCleanerHit Hit(GraphJunkMessage m, string reason) => new(m.Id, m.Subject ?? "(no subject)", m.From ?? m.Sender ?? "", [reason]);
+        var junk = await reader.ListJunkMessagesAsync(50, 500, ct).ConfigureAwait(false);
+        var toInbox = junk.Where(m => Verdict(lists, m, contacts) == JunkListVerdict.Safe).Select(m => Hit(m, "Safe sender")).ToList();
+        var inbox = await reader.ListInboxMessagesAsync(50, 200, ct).ConfigureAwait(false);
+        var toJunk = inbox.Where(m => Verdict(lists, m, contacts) == JunkListVerdict.Blocked).Select(m => Hit(m, "Blocked sender")).ToList();
+        var budget = MaxListMovesPerRun;
+        foreach (var (hits, destination, done) in new[] { (toInbox, "inbox", rescued), (toJunk, "junkemail", blocked) })
+            foreach (var hit in hits)
+            {
+                if (budget-- <= 0) break;
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    await writer.MoveAsync(await accessToken(ct).ConfigureAwait(false), hit.MessageId, destination, ct).ConfigureAwait(false);
+                    done.Add(hit);
+                }
+                catch (GraphMailException e) when (e.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                {
+                    failures.Add("Microsoft declined mail access; sign in again from Account Settings.");
+                    return new JunkListRunResult(rescued, blocked, failures);
+                }
+                catch (Exception e) when (e is GraphMailException or HttpRequestException or ArgumentException)
+                { failures.Add($"\"{hit.Subject}\": {e.Message}"); }
+            }
+        return new JunkListRunResult(rescued, blocked, failures);
+    }
 }

@@ -67,6 +67,40 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         return string.Equals(parent, RequiredId(deleted.RootElement), StringComparison.Ordinal);
     }
 
+    /// <summary>The sender's address (Graph "from", else "sender") and the To / Cc addresses of a message: what the junk lists match.</summary>
+    public async Task<(string? From, IReadOnlyList<string> Recipients)> GetAddressesAsync(string token, string messageId, CancellationToken ct = default)
+    {
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        using var message = await RequestJsonAsync(HttpMethod.Get, MessageUri(messageId) +
+            "?$select=id,from,sender,toRecipients,ccRecipients", token, null, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        var root = message.RootElement;
+        if (RequiredId(root) != messageId) throw new GraphMailException("Graph returned a different message.");
+        static string? AddressOf(JsonElement recipient) =>
+            recipient.ValueKind == JsonValueKind.Object && recipient.TryGetProperty("emailAddress", out var e) && e.ValueKind == JsonValueKind.Object &&
+            e.TryGetProperty("address", out var a) && a.ValueKind == JsonValueKind.String &&
+            a.GetString() is { Length: > 0 and <= 320 } text && !text.Any(char.IsControl) ? text : null;
+        static string? One(JsonElement root, string name) => root.TryGetProperty(name, out var r) ? AddressOf(r) : null;
+        var recipients = new List<string>();
+        foreach (var list in new[] { "toRecipients", "ccRecipients" })
+            if (root.TryGetProperty(list, out var items) && items.ValueKind == JsonValueKind.Array)
+                recipients.AddRange(items.EnumerateArray().Take(500).Select(AddressOf).OfType<string>());
+        return (One(root, "from") ?? One(root, "sender"), recipients);
+    }
+
+    /// <summary>
+    /// Reports a message to Microsoft as "junk", "notJunk" or "phish" (Graph beta <c>reportMessage</c>; it trains Microsoft's filter), optionally
+    /// moving it (junk / phish to Junk Email, not junk to the Inbox). Returns the message's id after the report.
+    /// </summary>
+    public async Task<string> ReportMessageAsync(string token, string messageId, string reportAction, bool move, CancellationToken ct = default)
+    {
+        if (reportAction is not ("junk" or "notJunk" or "phish")) throw new ArgumentException("Unknown report action.", nameof(reportAction));
+        ValidateId(messageId);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        using var result = await RequestJsonAsync(HttpMethod.Post, "https://graph.microsoft.com/beta/me/messages/" + Uri.EscapeDataString(messageId) +
+            "/reportMessage", token, new { IsMessageMoveRequested = move, ReportAction = reportAction }, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        return RequiredId(result.RootElement);
+    }
+
     /// <summary>Moves a message to a folder (an id or a well-known name such as "deleteditems"). The moved message has a new id, which is returned.</summary>
     public async Task<string> MoveAsync(string token, string messageId, string destinationId, CancellationToken ct = default)
     {

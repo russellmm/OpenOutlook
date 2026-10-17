@@ -6,7 +6,7 @@ namespace OpenOutlook.Providers.Microsoft;
 
 public sealed record GraphInboxMessage(string Id, string Subject, string From, string To,
     DateTimeOffset? Received, int? SizeBytes, bool HasAttachments, bool IsRead, string Preview,
-    bool IsFlagged = false, bool IsDraft = false, int Importance = 1);
+    bool IsFlagged = false, bool IsDraft = false, int Importance = 1, string FromAddress = "");
 
 public sealed record GraphInboxPage(string FolderName, int TotalCount, int UnreadCount,
     IReadOnlyList<GraphInboxMessage> Messages, bool HasMore);
@@ -97,7 +97,7 @@ public sealed class GraphInboxReader
                 address, to, received, null,
                 Boolean(item, "hasAttachments"), Boolean(item, "isRead"),
                 OptionalString(item, "bodyPreview", 4096) ?? "", IsFlagged(item), OptionalBoolean(item, "isDraft"),
-                OptionalString(item, "importance", 16)?.ToLowerInvariant() switch { "high" => 2, "low" => 0, _ => 1 }));
+                OptionalString(item, "importance", 16)?.ToLowerInvariant() switch { "high" => 2, "low" => 0, _ => 1 }, FromAddressOf(item)));
         }
         var hasMore = page.RootElement.TryGetProperty("@odata.nextLink", out var next) && next.ValueKind == JsonValueKind.String;
         return new GraphInboxPage(folderName, total, unread, messages, hasMore);
@@ -258,6 +258,12 @@ public sealed class GraphInboxReader
         var status = OptionalString(flag, "flagStatus", 32);
         return string.Equals(status, "flagged", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>The sender's email address itself (Address gives the display name when there is one); the junk lists match it.</summary>
+    private static string FromAddressOf(JsonElement root) =>
+        root.TryGetProperty("from", out var wrapper) && wrapper.ValueKind == JsonValueKind.Object &&
+        wrapper.TryGetProperty("emailAddress", out var email) && email.ValueKind == JsonValueKind.Object
+            ? OptionalString(email, "address", 320) ?? "" : "";
 
     private static string Address(JsonElement root, string name)
     {

@@ -224,6 +224,7 @@ public sealed partial class MainWindow : Window
             _ = WarmUpMicrosoftAsync();                             // token and connection ready before the first click
             StartJunkScheduler();                                   // silent Junk Cleaner runs
             StartReminderScheduler();                               // calendar reminders (docs/reminders-plan.md)
+            StartOutlookJunkListRead();                             // Outlook's Safe / Blocked Senders, when Outlook is closed (docs/junk-lists-plan.md)
             if (Environment.GetEnvironmentVariable("OPENOUTLOOK_SELFTEST_HTML") == "1") _ = RunHtmlSelfTestAsync();      // diagnostics: renders a sample message and logs the outcome
             var unavailable = savedArchives.Count(path => !_stores.ContainsKey(path) && !_missingArchives.Contains(path));
             if (_missingArchives.Count > 0)

@@ -1724,6 +1724,137 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Junk_menu_block_sender_and_not_junk_update_the_lists_and_move_the_mail()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        ShowWithSnapshotReader(window);
+        try
+        {
+            var account = new OpenOutlook.Auth.ConnectedAccount(
+                OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "headless-junk-" + Guid.NewGuid().ToString("N")[..8], "person@hotmail.test", "client", DateTimeOffset.UtcNow,
+                ["Mail.ReadWrite", "Mail.Send"]);
+            var moves = new List<(string Id, string To)>();
+            var handler = new JunkGraph(moves, account.AccountId);
+            typeof(MainWindow).GetField("_graphHttp", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, new HttpClient(handler));
+            typeof(MainWindow).GetField("_activeMicrosoftAccount", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, account);
+            var folderType = typeof(MainWindow).GetNestedType("MicrosoftFolderSelection", BindingFlags.NonPublic)!;
+            var folderField = typeof(MainWindow).GetField("_activeMicrosoftFolder", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            folderField.SetValue(window, Activator.CreateInstance(folderType, account, "inbox", "Inbox"));
+            var session = new MicrosoftMailSession(account, new OpenOutlook.Auth.UnavailableSecretStore(), new HttpClient());
+            typeof(MicrosoftMailSession).GetField("_accessToken", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(session, "headless-token");
+            typeof(MicrosoftMailSession).GetField("_expiresAt", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(session, DateTimeOffset.UtcNow.AddHours(1));
+            var sessions = (System.Collections.IDictionary)typeof(MainWindow).GetField("_microsoftSessions", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            sessions[account.AccountId] = session;
+            System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow> Rows(params (string Id, string From)[] items)
+            {
+                var rows = new System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow>(items.Select(i =>
+                    new GraphMessageListRow(new OpenOutlook.Providers.Microsoft.GraphInboxMessage(i.Id, "Subject " + i.Id, "Shop", "person@hotmail.test",
+                        DateTimeOffset.UtcNow, 100, false, true, "", FromAddress: i.From))));
+                typeof(MainWindow).GetField("_graphRows", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, rows);
+                var grid = window.FindControl<DataGrid>("MessageList")!;
+                grid.ItemsSource = new Avalonia.Collections.DataGridCollectionView(rows);
+                grid.SelectedItem = rows[0];
+                return rows;
+            }
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            CallVoid(window, "InitMessageContextMenu");
+            var junkMenu = ((MenuFlyout)list.ContextFlyout!).Items.OfType<MenuItem>().Single(i => (string?)i.Header == "Junk");
+            Assert.Equal(["_Block Sender", "_Never Block Sender", "Never Block Sender's _Domain", "Never Block this Group or _Mailing List", "N_ot Junk", "Junk E-mail _Options..."],
+                junkMenu.Items.OfType<MenuItem>().Select(i => (string)i.Header!));
+
+            var inbox = Rows(("m1", "Deals@Spam.example"));
+            await window.JunkActionAsync("block");
+            await WaitUntil(() => moves.Count == 1);
+            Assert.Equal(("m1", "junkemail"), moves[0]);
+            Assert.Empty(inbox);                                                                     // off the list at once
+            Assert.Contains("deals@spam.example", window.JunkListsStore.Load(account.AccountId).Effective.BlockedSenders);
+
+            folderField.SetValue(window, Activator.CreateInstance(folderType, account, "junk-id", "Junk Email"));
+            Rows(("m2", "news@friend.example"));
+            window.NotJunkPromptOverride = who => { Assert.Equal("\"news@friend.example\"", who); return Task.FromResult<bool?>(true); };
+            await window.JunkActionAsync("notJunk");
+            await WaitUntil(() => moves.Count == 2);
+            Assert.Equal(("m2", "inbox"), moves[1]);
+            Assert.Contains("news@friend.example", window.JunkListsStore.Load(account.AccountId).Effective.SafeSenders);
+            var junk = Rows(("m3", "x@cancel.example"));
+            window.NotJunkPromptOverride = _ => Task.FromResult<bool?>(null);                       // Cancel: nothing happens
+            await window.JunkActionAsync("notJunk");
+            Assert.Equal(2, moves.Count);
+            Assert.Single(junk);
+        }
+        finally { window.Close(); }
+    }
+
+    private sealed class JunkGraph(List<(string Id, string To)> moves, string accountId) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var url = request.RequestUri!.AbsoluteUri;
+            HttpResponseMessage Json(string body, HttpStatusCode code = HttpStatusCode.OK) =>
+                new(code) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"), RequestMessage = request };
+            if (url.EndsWith("/me?$select=id", StringComparison.Ordinal)) return Json("{\"id\":\"" + accountId + "\"}");
+            if (request.Method == HttpMethod.Post && url.EndsWith("/move", StringComparison.Ordinal))
+            {
+                var id = url.Split("/messages/")[1].Split('/')[0];
+                using var body = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+                lock (moves) moves.Add((id, body.RootElement.GetProperty("destinationId").GetString()!));
+                return Json("{\"id\":\"moved-" + id + "\"}", HttpStatusCode.Created);
+            }
+            return Json("{\"value\":[]}");
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Junk_email_options_window_edits_imports_exports_and_keeps_a_removed_outlook_entry_removed()
+    {
+        var saved = new List<OpenOutlook.JunkCleaner.JunkListsAccount>();
+        var account = new OpenOutlook.JunkCleaner.JunkListsAccount
+        {
+            AccountId = "acc",
+            FromOutlook = new OpenOutlook.JunkCleaner.JunkLists().With(OpenOutlook.JunkCleaner.JunkListKind.SafeSenders, ["@amazon.com", "old@x.com"])
+                .With(OpenOutlook.JunkCleaner.JunkListKind.BlockedSenders, ["1ppmgfh@peterlink.ru"]),
+            OutlookOptions = new OpenOutlook.JunkCleaner.OutlookJunkOptions(0xFFFFFFFF, false, false, false),
+            OutlookReadAt = DateTimeOffset.UtcNow, OutlookSource = @"C:\Users\x\AppData\Local\Microsoft\Outlook\person@hotmail.test.ost",
+        };
+        var reads = 0;
+        var window = new JunkEmailOptionsWindow("person@hotmail.test", account, saved.Add,
+            () => { reads++; return Task.FromResult((account, "Read Outlook's lists.")); });
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Junk Email Options - person@hotmail.test", window.Title);
+            var safe = OpenOutlook.JunkCleaner.JunkListKind.SafeSenders;
+            Assert.Equal(["@amazon.com", "old@x.com"], window.Shown(safe));
+            window.SelectTab(1);
+            Shot(window, "junk-email-options");
+
+            window.PromptOverride = (_, _) => Task.FromResult<string?>("New@Y.com");
+            await window.AddAsync(safe);
+            window.PromptOverride = (_, _) => Task.FromResult<string?>("not an address");
+            await window.AddAsync(safe);
+            Assert.Contains("not a valid", window.LastMessage);
+            window.Select(safe, "old@x.com");
+            window.Remove(safe);
+            Assert.Equal(1, window.ImportBytes(safe, System.Text.Encoding.UTF8.GetBytes("@amazon.com\r\nshop.example\r\n")));
+            Assert.Equal(["@amazon.com", "@shop.example", "new@y.com"], window.Shown(safe));
+            Assert.Equal("@amazon.com\r\n@shop.example\r\nnew@y.com\r\n", System.Text.Encoding.UTF8.GetString(window.ExportBytes(safe)));
+            Assert.True(window.HasChanges);
+            window.ApplyChanges();
+            var result = Assert.Single(saved);
+            Assert.Equal(["old@x.com"], result.RemovedFromOutlook.SafeSenders);
+            Assert.Equal(["@shop.example", "new@y.com"], result.Own.SafeSenders);
+            Assert.Equal(["1ppmgfh@peterlink.ru"], result.Effective.BlockedSenders);
+            Assert.False(window.HasChanges);
+            await window.ReadFromOutlookAsync();
+            Assert.Equal(1, reads);
+            Assert.Equal("Read Outlook's lists.", window.LastMessage);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public async Task A_missing_attached_data_file_is_listed_as_not_found_and_remove_takes_it_off_the_list()
     {
         ResetRegistry();

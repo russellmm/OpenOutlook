@@ -130,7 +130,7 @@
                           <Button Classes="olSmall" Tag="Clean up" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
                             <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconCleanUp}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Clean Up" /></StackPanel>
                           </Button>
-                          <Button Name="PreviewJunkImportButton" Classes="olSmall" Click="PreviewJunkImportClicked" ToolTip.Tip="Preview a legacy OutlookJunkCleaner configuration (read-only)">
+                          <Button Name="PreviewJunkImportButton" Classes="olSmall" Click="HomeJunkClicked" ToolTip.Tip="Block Sender, Never Block Sender, Not Junk and Junk E-mail Options">
                             <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconJunk}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Junk" /></StackPanel>
                           </Button>
                         </StackPanel>

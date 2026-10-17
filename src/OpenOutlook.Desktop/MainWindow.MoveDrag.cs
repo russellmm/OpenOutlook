@@ -80,6 +80,7 @@ public partial class MainWindow
         flyout.Items.Add(copyItem);
         flyout.Items.Add(new Separator());
         flyout.Items.Add(Action("Delete", "delete"));
+        flyout.Items.Add(JunkMenu());
         flyout.Items.Add(new Separator());
         flyout.Items.Add(MessagePropertiesMenuItem());
         flyout.Opening += (_, _) =>

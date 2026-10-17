@@ -107,7 +107,8 @@ public partial class MainWindow
         {
             StatusText.Text = $"Looking through the Junk folder of {account.DisplayAddress}…";
             var runner = MakeJunkRunner(account);
-            var scan = await runner.ScanAsync(settings);
+            var lists = JunkListsStore.Load(account.AccountId);
+            var scan = await runner.ScanAsync(settings, default, lists.Effective, await TrustedContactsAsync(account, lists));      // safe senders are never offered
             if (scan.Matched.Count == 0) return $"Nothing in the Junk folder matches ({scan.Scanned} messages looked at).";
             var dialog = new JunkPreviewDialog(account.DisplayAddress, scan);
             await dialog.ShowDialog(owner);
@@ -244,10 +245,56 @@ public partial class MainWindow
         _junkTimer.Start();
     }
 
+    private readonly Dictionary<string, DateTime> _junkListLastRun = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (DateTime At, HashSet<string> Addresses)> _contactAddresses = new(StringComparer.Ordinal);
+    private static readonly TimeSpan JunkListInterval = TimeSpan.FromMinutes(5);
+
+    /// <summary>The account's contacts' addresses for "Also trust email from my Contacts" (read at most once an hour).</summary>
+    private async Task<HashSet<string>?> TrustedContactsAsync(ConnectedAccount account, JunkListsAccount lists)
+    {
+        if (!lists.TrustContacts || !account.CanManageMicrosoftContacts) return null;
+        if (_contactAddresses.TryGetValue(account.AccountId, out var cached) && DateTime.UtcNow - cached.At < TimeSpan.FromHours(1)) return cached.Addresses;
+        var token = await GetMicrosoftSession(account).GetAccessTokenAsync();
+        var client = new GraphContactsClient(_graphHttp, account.AccountId);
+        var addresses = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var folder in (await client.ListFoldersAsync(token)).Take(20))
+            foreach (var contact in await client.ListContactsAsync(token, folder))
+                foreach (var e in contact.Emails) if (JunkLists.Address(e.Address) is { } a) addresses.Add(a);
+        _contactAddresses[account.AccountId] = (DateTime.UtcNow, addresses);
+        return addresses;
+    }
+
+    /// <summary>Applies the Safe / Blocked Senders lists of every account every 5 minutes (docs/junk-lists-plan.md). Never throws; problems go to the log.</summary>
+    internal async Task RunDueJunkListsAsync()
+    {
+        foreach (var account in JunkAccounts().Where(a => a.CanWriteMicrosoftMail))
+        {
+            var lists = JunkListsStore.Load(account.AccountId);
+            if (!lists.ApplyLists || lists.Effective.Count == 0 && !lists.TrustContacts) continue;
+            if (_junkListLastRun.TryGetValue(account.AccountId, out var last) && DateTime.UtcNow - last < JunkListInterval) continue;
+            _junkListLastRun[account.AccountId] = DateTime.UtcNow;
+            try
+            {
+                var result = await MakeJunkRunner(account).ApplyListsAsync(lists.Effective, await TrustedContactsAsync(account, lists));
+                if (result.Rescued.Count > 0 || result.Blocked.Count > 0 || result.Failures.Count > 0)
+                    AppLog.Note("junk-lists", $"{account.DisplayAddress}: {result.Rescued.Count} message(s) from safe senders moved to the Inbox, {result.Blocked.Count} from blocked senders moved to Junk Email" +
+                        (result.Failures.Count > 0 ? "; " + string.Join("; ", result.Failures.Take(3)) : "") +
+                        string.Concat(result.Rescued.Concat(result.Blocked).Take(10).Select(h => $" | {h.Reasons[0]}: {h.Sender} \"{h.Subject}\"")));
+                if ((result.Rescued.Count > 0 || result.Blocked.Count > 0) && _activeMicrosoftFolder?.Account.AccountId == account.AccountId)
+                    await RefreshMicrosoftFolderAsync();
+            }
+            catch (Exception e) when (e is GraphMailException or HttpRequestException or ArgumentException or OperationCanceledException or IOException or InvalidOperationException)
+            { AppLog.Error("junk-lists", e, "applying the junk lists failed"); }
+        }
+    }
+
     /// <summary>Silently cleans every account whose interval has passed. Never throws; problems go to the log.</summary>
     internal async Task RunDueJunkCleansAsync()
     {
         if (_junkBusy) return;
+        _junkBusy = true;
+        try { await RunDueJunkListsAsync(); }
+        finally { _junkBusy = false; }
         foreach (var account in JunkAccounts())
         {
             var settings = JunkSettingsFor(account.AccountId);
@@ -257,7 +304,8 @@ public partial class MainWindow
             _junkBusy = true;
             try
             {
-                var result = await MakeJunkRunner(account).CleanAsync(settings);
+                var lists = JunkListsStore.Load(account.AccountId);
+                var result = await MakeJunkRunner(account).CleanAsync(settings, default, lists.Effective, await TrustedContactsAsync(account, lists));
                 if (result.Moved.Count > 0 || result.Failures.Count > 0) _junkLog.Append(account.DisplayAddress, result, scheduled: true);
                 if (result.Moved.Count > 0) await AfterJunkRunAsync(account, result);
             }

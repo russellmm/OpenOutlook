@@ -67,6 +67,36 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         return string.Equals(parent, RequiredId(deleted.RootElement), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Who the account wrote to recently: the To / Cc / Bcc names and addresses of the newest <paramref name="top"/> messages in Sent Items with their sent
+    /// times (one request). Fills the To / Cc suggestions before OpenOutlook has sent anything itself.
+    /// </summary>
+    public async Task<IReadOnlyList<(string Name, string Address, DateTimeOffset Sent)>> ListSentRecipientsAsync(string token, int top = 200, CancellationToken ct = default)
+    {
+        if (top is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(top));
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        using var json = await RequestJsonAsync(HttpMethod.Get, Origin + "/me/mailFolders/sentitems/messages?$select=sentDateTime,toRecipients,ccRecipients,bccRecipients&$top=" +
+            top.ToString(System.Globalization.CultureInfo.InvariantCulture) + "&$orderby=sentDateTime%20desc", token, null, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        var result = new List<(string, string, DateTimeOffset)>();
+        if (!json.RootElement.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Array) throw new GraphMailException("Graph returned an invalid Sent Items list.");
+        foreach (var message in value.EnumerateArray().Take(top))
+        {
+            if (message.ValueKind != JsonValueKind.Object) continue;
+            var sent = message.TryGetProperty("sentDateTime", out var d) && d.ValueKind == JsonValueKind.String &&
+                DateTimeOffset.TryParse(d.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var when) ? when : default;
+            foreach (var list in new[] { "toRecipients", "ccRecipients", "bccRecipients" })
+                if (message.TryGetProperty(list, out var items) && items.ValueKind == JsonValueKind.Array)
+                    foreach (var item in items.EnumerateArray().Take(100))
+                        if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("emailAddress", out var e) && e.ValueKind == JsonValueKind.Object &&
+                            e.TryGetProperty("address", out var a) && a.ValueKind == JsonValueKind.String && a.GetString() is { Length: > 0 and <= 320 } address && !address.Any(char.IsControl))
+                        {
+                            var name = e.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String && n.GetString() is { Length: <= 320 } nm && !nm.Any(char.IsControl) ? nm : "";
+                            result.Add((name, address, sent));
+                        }
+        }
+        return result;
+    }
+
     /// <summary>The sender's address (Graph "from", else "sender") and the To / Cc addresses of a message: what the junk lists match.</summary>
     public async Task<(string? From, IReadOnlyList<string> Recipients)> GetAddressesAsync(string token, string messageId, CancellationToken ct = default)
     {

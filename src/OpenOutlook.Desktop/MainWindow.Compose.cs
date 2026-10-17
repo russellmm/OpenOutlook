@@ -56,7 +56,7 @@ public partial class MainWindow
         }
         var initial = accounts.FirstOrDefault(a => preferred is not null && a.Address == preferred.DisplayAddress && a.CanSend)
                       ?? accounts.FirstOrDefault(a => a.CanSend) ?? accounts[0];
-        new ComposeWindow(accounts, initial, seed, draftId).Show(this);
+        new ComposeWindow(accounts, initial, seed, draftId) { RecipientLookup = LookupRecipientsAsync, RecentRecipients = RecentRecipients }.Show(this);
     }
 
     private bool IsSelf(string address, ConnectedAccount account) =>

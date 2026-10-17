@@ -44,6 +44,16 @@ public sealed class ComposeWindow : Window
     private string _htmlBody = "";
     private ComposeDraft? _savedContent;
     private readonly ComposeSeed? _seed;
+    private IReadOnlyList<RecipientEntry> _contacts = [], _recent = [], _directory = [];
+    private readonly List<RecipientSuggestions> _suggestions = [];
+
+    /// <summary>
+    /// The account's contacts and the addresses it wrote to recently, for the To / Cc / Bcc suggestions and Select Names (set by the main window;
+    /// null in tests that do not need them). Asked again when the From account changes.
+    /// </summary>
+    public Func<string, Task<(IReadOnlyList<RecipientEntry> Contacts, IReadOnlyList<RecipientEntry> Recent)>>? RecipientLookup { get; set; }
+    /// <summary>Where sent recipients are remembered (recent-recipients.json); tests point it elsewhere.</summary>
+    public RecentRecipientsStore RecentRecipients { get; set; } = new();
 
     public ComposeWindow(IReadOnlyList<ComposeAccount> accounts, ComposeAccount initial, ComposeSeed? seed = null, string? draftId = null)
     {
@@ -69,6 +79,55 @@ public sealed class ComposeWindow : Window
         RefreshAttachments();
         if (_draftId is not null) Opened += async (_, _) => await LoadDraftAsync();
         Opened += (_, _) => (string.IsNullOrWhiteSpace(_to.Text) ? _to : _body).Focus();
+        Opened += async (_, _) => await LoadRecipientsAsync();
+        foreach (var box in new[] { _to, _cc, _bcc }) _suggestions.Add(new RecipientSuggestions(box, () => _directory));
+    }
+
+    /// <summary>Contacts and recent addresses of the From account (never fails the window: problems leave the lists as they were).</summary>
+    internal async Task LoadRecipientsAsync()
+    {
+        _recent = RecentRecipients.Load(_account.Address);
+        _directory = RecipientDirectory.Merge(_contacts, _recent);
+        if (RecipientLookup is null) return;
+        try
+        {
+            var (contacts, recent) = await RecipientLookup(_account.Address);
+            _contacts = contacts; _recent = recent;
+            _directory = RecipientDirectory.Merge(_contacts, _recent);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) { AppLog.Note("compose", "contacts / recent recipients not loaded: " + e.Message); }
+    }
+
+    /// <summary>To / Cc / Bcc buttons and Address Book: Outlook's Select Names dialog; OK adds its three boxes to the message.</summary>
+    internal async Task OpenSelectNamesAsync(string field)
+    {
+        var dialog = new SelectNamesWindow(_account.Address, _contacts, RecipientDirectory.Merge([], _recent), field);
+        await dialog.ShowDialog(this);
+        if (dialog.Result is not { } chosen) return;
+        ApplySelectedNames(chosen.To, chosen.Cc, chosen.Bcc);
+    }
+
+    internal void ApplySelectedNames(string to, string cc, string bcc)
+    {
+        if (!string.IsNullOrWhiteSpace(to)) _to.Text = RecipientDirectory.Append(_to.Text, RecipientDirectory.Addresses(to));
+        if (!string.IsNullOrWhiteSpace(cc)) _cc.Text = RecipientDirectory.Append(_cc.Text, RecipientDirectory.Addresses(cc));
+        if (!string.IsNullOrWhiteSpace(bcc)) { _bcc.Text = RecipientDirectory.Append(_bcc.Text, RecipientDirectory.Addresses(bcc)); _bccRow.IsVisible = true; }
+    }
+
+    internal IReadOnlyList<RecipientEntry> Directory => _directory;
+    internal RecipientSuggestions SuggestionsFor(string field) => _suggestions[field switch { "Cc" => 1, "Bcc" => 2, _ => 0 }];
+    internal TextBox FieldBox(string field) => field switch { "Cc" => _cc, "Bcc" => _bcc, _ => _to };
+
+    /// <summary>After a send: its To / Cc / Bcc addresses become the first suggestions next time (never fails the send).</summary>
+    private void RememberRecipients(ComposeDraft content)
+    {
+        try
+        {
+            var used = new[] { content.To, content.Cc, content.Bcc }.SelectMany(RecipientDirectory.Addresses)
+                .Select(a => (_directory.FirstOrDefault(d => string.Equals(d.Address, a, StringComparison.OrdinalIgnoreCase))?.Name ?? "", a));
+            RecentRecipients.Record(_account.Address, used, DateTimeOffset.UtcNow);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Note("compose", "recent recipients not saved: " + e.Message); }
     }
 
     // ---------------------------------------------------------------- layout
@@ -120,7 +179,7 @@ public sealed class ComposeWindow : Window
             Group("Basic Text", Stack(Row(Combo("Font", 110), Combo("Size", 56), Mini(null, "Grow Font", null), Mini(null, "Shrink Font", null), Mini(null, "Bullets", null), Mini(null, "Numbering", null), Mini(null, "Clear Formatting", null)),
                 Row(Mini(null, "Bold", null, "B", FontWeight.Bold), Mini(null, "Italic", null, "I", FontWeight.Normal, FontStyle.Italic), Mini(null, "Underline", null, "U"), Mini(null, "Highlight", null), Mini(null, "Font Color", null),
                     Mini(null, "Align Left", null), Mini(null, "Center", null), Mini(null, "Align Right", null), Mini(null, "Decrease Indent", null), Mini(null, "Increase Indent", null)))),
-            Group("Names", Big("OlIconAddressBook", "Address Book", null), Big("OlIconPeople", "Check Names", null)),
+            Group("Names", Big("OlIconAddressBook", "Address Book", () => OpenSelectNamesAsync("To")), Big("OlIconPeople", "Check Names", null)),
             Group("Include", Big("OlIconPaperclip", "Attach File", async () => await AddAttachmentsAsync()), Big(null, "Signature", null)),
             Group("Tags", Stack(Mini("OlIconFlag", "Follow Up", null), Mini(null, "High Importance", null), Mini(null, "Low Importance", null))),
             Group("Apps", Big("OlIconAllApps", "All Apps", null)),
@@ -170,9 +229,9 @@ public sealed class ComposeWindow : Window
         fromRow.Children.Add(_from);
         Place(grid, fromRow, 1, 0);
 
-        Place(grid, FieldRow("To", "Address Book: " + NotYet, _to), 1, 1);
-        Place(grid, FieldRow("Cc", "Address Book: " + NotYet, _cc), 1, 2);
-        var bcc = FieldRow("Bcc", "Address Book: " + NotYet, _bcc);
+        Place(grid, FieldRow("To", "Select names from your contacts or recent recipients", _to), 1, 1);
+        Place(grid, FieldRow("Cc", "Select names from your contacts or recent recipients", _cc), 1, 2);
+        var bcc = FieldRow("Bcc", "Select names from your contacts or recent recipients", _bcc);
         _bccRow.Children.Add(bcc);
         _bccRow.IsVisible = false;
         Place(grid, _bccRow, 1, 3);
@@ -216,7 +275,7 @@ public sealed class ComposeWindow : Window
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("72,*"), Margin = new Thickness(0, 0, 0, 4) };
         var pill = Pill(label, tip);
-        pill.Click += (_, _) => _status.Text = "The address book is " + NotYet.ToLowerInvariant() + ".";
+        pill.Click += async (_, _) => await OpenSelectNamesAsync(label);
         row.Children.Add(pill);
         Grid.SetColumn(box, 1);
         row.Children.Add(box);
@@ -325,6 +384,8 @@ public sealed class ComposeWindow : Window
         }
         _account = chosen;
         _backend = chosen.CreateBackend();
+        _contacts = [];
+        _ = LoadRecipientsAsync();
         _dirty = true;
         _status.Text = $"Sending from {chosen.Address}.";
         UpdateTitle();
@@ -503,6 +564,7 @@ public sealed class ComposeWindow : Window
             {
                 await _backend.SendAsync(_draftId, content, _files, progress);
                 _sent = true;
+                RememberRecipients(content);
                 Close();
                 return true;
             }

@@ -86,6 +86,7 @@ public sealed class JunkListApplyTests
             var url = request.RequestUri!.AbsoluteUri;
             calls.Add((url, request.Content?.ReadAsStringAsync().Result));
             if (url.EndsWith("/me?$select=id", StringComparison.Ordinal)) return Json("{\"id\":\"acct\"}");
+            if (url.Contains("m2/reportMessage", StringComparison.Ordinal)) return Json("{}");
             if (url.Contains("reportMessage", StringComparison.Ordinal)) return Json("{\"id\":\"m1-moved\"}");
             return Json("""{"id":"m1","from":{"emailAddress":{"name":"Shop","address":"Deals@Shop.example"}},"toRecipients":[{"emailAddress":{"address":"list@groups.example"}}],"ccRecipients":[{"emailAddress":{"address":"me@hotmail.test"}}]}""");
         }));
@@ -94,11 +95,12 @@ public sealed class JunkListApplyTests
         Assert.Equal("Deals@Shop.example", from);
         Assert.Equal(["list@groups.example", "me@hotmail.test"], recipients);
         Assert.Equal("m1-moved", await writer.ReportMessageAsync("t", "m1", "notJunk", move: true));
-        var report = calls.Single(c => c.Url.Contains("reportMessage"));
+        var report = calls.First(c => c.Url.Contains("reportMessage"));
         Assert.StartsWith("https://graph.microsoft.com/beta/me/messages/m1/reportMessage", report.Url);
         using var body = JsonDocument.Parse(report.Body!);
         Assert.True(body.RootElement.GetProperty("IsMessageMoveRequested").GetBoolean());
         Assert.Equal("notJunk", body.RootElement.GetProperty("ReportAction").GetString());
         await Assert.ThrowsAsync<ArgumentException>(() => writer.ReportMessageAsync("t", "m1", "spam", move: false));
+        Assert.Equal("m2", await writer.ReportMessageAsync("t", "m2", "junk", move: false));                 // Hotmail's reply has no id
     }
 }

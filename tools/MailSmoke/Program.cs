@@ -399,7 +399,7 @@ if (step == "openeditable")
 // Everything below signs in to the owner's real accounts, and the end of the file SENDS MAIL between them. It runs only for a step named
 // explicitly ("sendtest" for the send / reply / forward test). An unknown or missing step used to fall through to that test: a typo, or an
 // old build that did not have a new step yet, sent real messages (it happened four times on 2026-10-15).
-var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rendergmail", "renderlive", "livegmail", "livepush", "scanlocal", "launchtest", "render", "localfolder", "mirror", "gmailtiming", "openpath", "gmailsync", "timing", "junkscan", "attach" };
+var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rendergmail", "renderlive", "livegmail", "livepush", "scanlocal", "launchtest", "render", "localfolder", "mirror", "gmailtiming", "openpath", "gmailsync", "timing", "junkscan", "attach", "reportnotjunk" };
 if (!liveSteps.Contains(step))
 {
     Console.Error.WriteLine(step.Length == 0 ? "MailSmoke: name a step." : $"MailSmoke: unknown step '{step}'.");
@@ -422,6 +422,34 @@ GmailMailbox? gBox = null;
 MicrosoftMailSession? mSession = null;
 if (gAcc is not null) { var s = new MicrosoftMailSession(gAcc, secrets, tokenHttp); gBox = new GmailMailbox(gHttp, ct => new ValueTask<string>(s.GetAccessTokenAsync(ct)), gAcc.DisplayAddress); }
 if (mAcc is not null) mSession = new MicrosoftMailSession(mAcc, secrets, tokenHttp);
+
+// reportnotjunk list            : the Junk Email folder, each sender checked against Outlook's lists (read from a copy of its .ost) - read-only
+// reportnotjunk run <n> [nomove]: reports message n of that list to Microsoft as not junk (Graph beta reportMessage), moved to the Inbox
+//                                 unless nomove; the owner then checks Outlook's Safe Senders (docs/junk-lists-plan.md step 5)
+if (step == "reportnotjunk" && mAcc is not null)
+{
+    var reader = new GraphJunkMailReader(graphHttp, ct => new ValueTask<string>(mSession!.GetAccessTokenAsync(ct)), mAcc.AccountId);
+    var junk = await reader.ListJunkMessagesAsync(50, 100);
+    var copy = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", ".local", "ost", "hotmail.ost");
+    var lists = File.Exists(copy) ? OpenOutlook.Desktop.OutlookJunkListReader.ReadFile(copy).Lists : OpenOutlook.JunkCleaner.JunkLists.Empty;
+    Console.WriteLine($"Outlook's lists from {(File.Exists(copy) ? Path.GetFullPath(copy) : "(no .ost copy)")}: {lists.SafeSenders.Count} safe, {lists.BlockedSenders.Count} blocked");
+    for (var i = 0; i < junk.Count; i++)
+    {
+        var m = junk[i];
+        var verdict = MicrosoftJunkCleanerRunner.Verdict(lists, m, null);
+        Console.WriteLine($"{i,3} {verdict,-7} {m.From ?? m.Sender,-45} {m.Subject}");
+    }
+    if (args.Length >= 3 && args[1] == "run" && int.TryParse(args[2], out var n) && n >= 0 && n < junk.Count)
+    {
+        var m = junk[n];
+        var move = !(args.Length >= 4 && args[3] == "nomove");
+        var writer = new GraphMailWriter(graphHttp, mAcc.AccountId);
+        Console.WriteLine($"reporting #{n} as not junk (move to Inbox: {move}): {m.From ?? m.Sender} \"{m.Subject}\"");
+        try { Console.WriteLine("ok, message id now " + (await writer.ReportMessageAsync(await mSession!.GetAccessTokenAsync(), m.Id, "notJunk", move))[..12] + "..."); }
+        catch (Exception e) { Console.WriteLine("reportMessage failed: " + e.GetType().Name + ": " + e.Message); }
+    }
+    return 0;
+}
 
 if (step == "rendergmail" && gBox is not null)
 {

@@ -1,4 +1,9 @@
-# Junk: Not Junk, Block Sender and Junk Email Options - plan (2026-10-16, not started; owner chose section 2 + reading Outlook's lists, 1b)
+# Junk: Not Junk, Block Sender and Junk Email Options - plan (2026-10-16; steps 1-4 built the same day, see `docs/FEATURES.md` section 9)
+
+> Built: lists model and store, Outlook rule decoder and .ost reader, Junk Email Options window, right-click / Home > Junk menu, lists applied
+> every 5 minutes. Step 5 (live `reportMessage`): run on one message (Bloedel Reserve, Junk Email -> Inbox, 2026-10-16); Graph answered 200 and
+> moved it; whether Microsoft added the sender to Safe Senders is for the owner to check in Outlook. Not built: Blocked Encodings, "Automatically
+> add people I email", writing lists back to Outlook (Graph cannot).
 
 Owner request (with screenshots of classic Outlook): the message right-click **Junk** menu (Block Sender, Never Block Sender, Never Block
 Sender's Domain, Never Block this Group or Mailing List, Not Junk, Junk E-mail Options...) and the **Junk Email Options** dialog (tabs Options,

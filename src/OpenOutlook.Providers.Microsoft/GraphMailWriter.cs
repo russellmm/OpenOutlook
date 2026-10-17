@@ -89,7 +89,7 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
 
     /// <summary>
     /// Reports a message to Microsoft as "junk", "notJunk" or "phish" (Graph beta <c>reportMessage</c>; it trains Microsoft's filter), optionally
-    /// moving it (junk / phish to Junk Email, not junk to the Inbox). Returns the message's id after the report.
+    /// moving it (junk / phish to Junk Email, not junk to the Inbox). Returns the message's id after the report (the old one when Graph does not say).
     /// </summary>
     public async Task<string> ReportMessageAsync(string token, string messageId, string reportAction, bool move, CancellationToken ct = default)
     {
@@ -98,7 +98,8 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         await VerifyAsync(token, ct).ConfigureAwait(false);
         using var result = await RequestJsonAsync(HttpMethod.Post, "https://graph.microsoft.com/beta/me/messages/" + Uri.EscapeDataString(messageId) +
             "/reportMessage", token, new { IsMessageMoveRequested = move, ReportAction = reportAction }, HttpStatusCode.OK, ct).ConfigureAwait(false);
-        return RequiredId(result.RootElement);
+        // Hotmail answered 200 with a body without "id" (2026-10-16): the report and the move happened, the new id is not told.
+        return result.RootElement.ValueKind == JsonValueKind.Object && result.RootElement.TryGetProperty("id", out _) ? RequiredId(result.RootElement) : messageId;
     }
 
     /// <summary>Moves a message to a folder (an id or a well-known name such as "deleteditems"). The moved message has a new id, which is returned.</summary>

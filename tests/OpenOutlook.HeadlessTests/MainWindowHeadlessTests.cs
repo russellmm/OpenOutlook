@@ -1782,6 +1782,13 @@ public sealed class MainWindowHeadlessTests
             await window.JunkActionAsync("notJunk");
             Assert.Equal(2, moves.Count);
             Assert.Single(junk);
+
+            await window.JunkActionAsync("safeSender");                                              // Never Block Sender in Junk Email: moved at once
+            await WaitUntil(() => moves.Count == 3);
+            Assert.Equal(("m3", "inbox"), moves[2]);
+            Assert.Empty(junk);
+            Assert.Contains("x@cancel.example", window.JunkListsStore.Load(account.AccountId).Effective.SafeSenders);
+            Assert.Contains("moved to the Inbox", window.FindControl<TextBlock>("StatusText")!.Text);
         }
         finally { window.Close(); }
     }
@@ -1818,7 +1825,8 @@ public sealed class MainWindowHeadlessTests
             OutlookReadAt = DateTimeOffset.UtcNow, OutlookSource = @"C:\Users\x\AppData\Local\Microsoft\Outlook\person@hotmail.test.ost",
         };
         var reads = 0;
-        var window = new JunkEmailOptionsWindow("person@hotmail.test", account, saved.Add,
+        var stored = account;
+        var window = new JunkEmailOptionsWindow("person@hotmail.test", account, change => { stored = change(stored); saved.Add(stored); return stored; },
             () => { reads++; return Task.FromResult((account, "Read Outlook's lists.")); });
         try
         {
@@ -1841,11 +1849,16 @@ public sealed class MainWindowHeadlessTests
             Assert.Equal(["@amazon.com", "@shop.example", "new@y.com"], window.Shown(safe));
             Assert.Equal("@amazon.com\r\n@shop.example\r\nnew@y.com\r\n", System.Text.Encoding.UTF8.GetString(window.ExportBytes(safe)));
             Assert.True(window.HasChanges);
+            stored = stored.WithAdded(OpenOutlook.JunkCleaner.JunkListKind.BlockedSenders, "menu@added.example");   // the right-click menu, while the window is open
+            window.Search(safe, "SHOP");
+            Assert.Equal(["@shop.example"], window.Visible(safe));
+            window.Search(safe, "");
+            Assert.Equal(3, window.Visible(safe).Count);
             window.ApplyChanges();
             var result = Assert.Single(saved);
             Assert.Equal(["old@x.com"], result.RemovedFromOutlook.SafeSenders);
             Assert.Equal(["@shop.example", "new@y.com"], result.Own.SafeSenders);
-            Assert.Equal(["1ppmgfh@peterlink.ru"], result.Effective.BlockedSenders);
+            Assert.Equal(["1ppmgfh@peterlink.ru", "menu@added.example"], result.Effective.BlockedSenders);     // not overwritten by the window
             Assert.False(window.HasChanges);
             var tld = OpenOutlook.JunkCleaner.JunkListKind.BlockedTopLevelDomains;
             Assert.Equal(2, window.ImportBytes(tld, System.Text.Encoding.UTF8.GetBytes(".it\r\nru\r\nRU\r\n")));         // ".it" and "RU" are read as it / ru

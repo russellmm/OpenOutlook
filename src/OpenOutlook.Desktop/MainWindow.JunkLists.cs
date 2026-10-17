@@ -61,10 +61,20 @@ public sealed partial class MainWindow
 
     internal JunkEmailOptionsWindow OpenJunkEmailOptions(ConnectedAccount account)
     {
-        var window = new JunkEmailOptionsWindow(account.DisplayAddress, JunkListsStore.Load(account.AccountId), SaveJunkLists,
+        var window = new JunkEmailOptionsWindow(account.DisplayAddress, JunkListsStore.Load(account.AccountId), change => ChangeJunkLists(account, change),
             () => Task.Run(() => ReadOutlookJunkLists(account, force: true)));
         window.Show(this);
         return window;
+    }
+
+    /// <summary>Applies a change to the account's lists as they are stored now and saves it (the options window and the menu never overwrite each other).</summary>
+    private JunkListsAccount ChangeJunkLists(ConnectedAccount account, Func<JunkListsAccount, JunkListsAccount> change)
+    {
+        var updated = change(JunkListsStore.Load(account.AccountId));
+        SaveJunkLists(updated);
+        AppLog.Note("junk-lists", $"Junk Email Options saved for {account.DisplayAddress}: {updated.Effective.SafeSenders.Count} safe senders, {updated.Effective.SafeRecipients.Count} safe recipients, {updated.Effective.BlockedSenders.Count} blocked senders, {updated.Effective.BlockedTopLevelDomains.Count} blocked top-level domains");
+        _junkListLastRun.Remove(account.AccountId);                                                  // applied at the next minute's tick
+        return updated;
     }
 
     private void SaveJunkLists(JunkListsAccount account)
@@ -173,25 +183,28 @@ public sealed partial class MainWindow
                 if (!InJunkEmailFolder) MoveMicrosoftMessages(account, folder, messages, "junkemail");
                 StatusText.Text = $"{string.Join(", ", senders.Take(3))}{(senders.Count > 3 ? "..." : "")} added to Blocked Senders" +
                     (InJunkEmailFolder ? "." : $"; {Plural(messages.Count, "message")} moved to Junk Email.");
-                AppLog.Note("junk-lists", $"blocked {senders.Count} sender(s) for {account.DisplayAddress}");
+                AppLog.Note("junk-lists", $"Block Sender ({account.DisplayAddress}): {string.Join(", ", senders)}" + (InJunkEmailFolder ? "" : $"; {messages.Count} message(s) moved to Junk Email"));
                 break;
             case "safeSender":
                 if (senders.Count == 0) { StatusText.Text = "The selected message has no sender address."; return; }
                 SaveJunkLists(lists.WithAdded(JunkListKind.SafeSenders, senders.ToArray()));
-                StatusText.Text = $"{string.Join(", ", senders.Take(3))}{(senders.Count > 3 ? "..." : "")} added to Safe Senders.";
+                StatusText.Text = $"{string.Join(", ", senders.Take(3))}{(senders.Count > 3 ? "..." : "")} added to Safe Senders" + RescueFromJunk(account, folder, messages);
+                AppLog.Note("junk-lists", $"Never Block Sender ({account.DisplayAddress}): {string.Join(", ", senders)}" + (InJunkEmailFolder ? $"; {messages.Count} message(s) moved to the Inbox" : ""));
                 break;
             case "safeDomain":
                 var domains = senders.Select(s => s[s.IndexOf('@')..]).Distinct().ToArray();
                 if (domains.Length == 0) { StatusText.Text = "The selected message has no sender address."; return; }
                 SaveJunkLists(lists.WithAdded(JunkListKind.SafeSenders, domains));
-                StatusText.Text = $"{string.Join(", ", domains.Take(3))} added to Safe Senders.";
+                StatusText.Text = $"{string.Join(", ", domains.Take(3))} added to Safe Senders" + RescueFromJunk(account, folder, messages);
+                AppLog.Note("junk-lists", $"Never Block Sender's Domain ({account.DisplayAddress}): {string.Join(", ", domains)}" + (InJunkEmailFolder ? $"; {messages.Count} message(s) moved to the Inbox" : ""));
                 break;
             case "safeGroup":
                 var own = account.DisplayAddress.Trim().ToLowerInvariant();
                 var groups = addresses.SelectMany(a => a.Recipients).Select(JunkLists.Address).OfType<string>().Where(r => r != own).Distinct().ToArray();
                 if (groups.Length == 0) { StatusText.Text = "The message was sent only to you, so there is no group or mailing list to add."; return; }
                 SaveJunkLists(lists.WithAdded(JunkListKind.SafeRecipients, groups));
-                StatusText.Text = $"{string.Join(", ", groups.Take(3))}{(groups.Length > 3 ? "..." : "")} added to Safe Recipients.";
+                StatusText.Text = $"{string.Join(", ", groups.Take(3))}{(groups.Length > 3 ? "..." : "")} added to Safe Recipients" + RescueFromJunk(account, folder, messages);
+                AppLog.Note("junk-lists", $"Never Block this Group ({account.DisplayAddress}): {string.Join(", ", groups)}" + (InJunkEmailFolder ? $"; {messages.Count} message(s) moved to the Inbox" : ""));
                 break;
             case "notJunk":
                 if (!InJunkEmailFolder) { StatusText.Text = "Not Junk works on messages in the Junk Email folder."; return; }
@@ -200,8 +213,21 @@ public sealed partial class MainWindow
                 if (trust == true && senders.Count > 0) SaveJunkLists(lists.WithAdded(JunkListKind.SafeSenders, senders.ToArray()));
                 MoveMicrosoftMessages(account, folder, messages, "inbox");
                 StatusText.Text = $"{Plural(messages.Count, "message")} moved to the Inbox" + (trust == true && senders.Count > 0 ? "; sender added to Safe Senders." : ".");
+                AppLog.Note("junk-lists", $"Not Junk ({account.DisplayAddress}): {messages.Count} message(s) moved to the Inbox from {string.Join(", ", senders)}" + (trust == true && senders.Count > 0 ? "; added to Safe Senders" : ""));
                 break;
         }
+    }
+
+    /// <summary>
+    /// After Never Block Sender / Domain / Group in Junk Email: the selected messages go to the Inbox now (Outlook leaves them; the owner expected
+    /// them to move, 2026-10-17), and the next minute's list run moves the sender's other mail out of Junk Email. Returns the status-line tail.
+    /// </summary>
+    private string RescueFromJunk(ConnectedAccount account, MicrosoftFolderSelection folder, IReadOnlyList<GraphInboxMessage> messages)
+    {
+        _junkListLastRun.Remove(account.AccountId);
+        if (!InJunkEmailFolder) return ".";
+        MoveMicrosoftMessages(account, folder, messages, "inbox");
+        return messages.Count == 1 ? "; the message was moved to the Inbox." : $"; {messages.Count} messages were moved to the Inbox.";
     }
 
     /// <summary>Takes the messages off the list at once and moves them in the background (one at a time, in order); a refusal puts them back.</summary>
@@ -221,6 +247,7 @@ public sealed partial class MainWindow
                     done++;
                 }
                 _ = Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => RefreshMicrosoftFolderCountsAsync(account, CancellationToken.None, force: true));
+                AppLog.Note("junk-lists", $"{done} message(s) moved to {(destination == "inbox" ? "the Inbox" : "Junk Email")}");
             }
             catch (Exception error) when (error is GraphMailException or HttpRequestException or ArgumentException or OperationCanceledException or InvalidOperationException)
             {
@@ -228,6 +255,7 @@ public sealed partial class MainWindow
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
                 {
                     UndoLocalChange(account, failed);
+                    AppLog.Error("junk-lists", error, $"moving {failed.Length} message(s) to {destination} failed");
                     StatusText.Text = "Microsoft did not accept the move: " + error.Message;
                     if (_activeMicrosoftFolder == folder) await RefreshMicrosoftFolderAsync();
                 });

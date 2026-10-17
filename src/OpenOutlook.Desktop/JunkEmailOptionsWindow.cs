@@ -16,7 +16,10 @@ namespace OpenOutlook.Desktop;
 public sealed class JunkEmailOptionsWindow : Window
 {
     private static readonly JunkListKind[] Kinds = [JunkListKind.SafeSenders, JunkListKind.SafeRecipients, JunkListKind.BlockedSenders, JunkListKind.BlockedTopLevelDomains];
-    private readonly Action<JunkListsAccount> _save;
+    /// <summary>Saves: applies the given change to the account as it is stored now (the right-click menu may have changed it meanwhile) and returns the result.</summary>
+    private readonly Func<Func<JunkListsAccount, JunkListsAccount>, JunkListsAccount> _save;
+    private readonly Dictionary<JunkListKind, List<string>> _loaded = [];
+    private readonly Dictionary<JunkListKind, string> _filters = [];
     private readonly Func<Task<(JunkListsAccount Account, string Message)>>? _readFromOutlook;
     private JunkListsAccount _account;
     private readonly Dictionary<JunkListKind, List<string>> _lists = [];
@@ -34,7 +37,7 @@ public sealed class JunkEmailOptionsWindow : Window
     internal Func<string, string?, Task<string?>>? PromptOverride { get; set; }
     internal string LastMessage { get; private set; } = "";
 
-    public JunkEmailOptionsWindow(string address, JunkListsAccount account, Action<JunkListsAccount> save,
+    public JunkEmailOptionsWindow(string address, JunkListsAccount account, Func<Func<JunkListsAccount, JunkListsAccount>, JunkListsAccount> save,
         Func<Task<(JunkListsAccount Account, string Message)>>? readFromOutlook = null)
     {
         _account = account; _save = save; _readFromOutlook = readFromOutlook;
@@ -75,6 +78,10 @@ public sealed class JunkEmailOptionsWindow : Window
     /// <summary>The account as last applied.</summary>
     public JunkListsAccount Account => _account;
     internal IReadOnlyList<string> Shown(JunkListKind kind) => _lists[kind];
+    /// <summary>What the list control shows (after the search box).</summary>
+    internal IReadOnlyList<string> Visible(JunkListKind kind) => _boxes[kind].ItemsSource?.OfType<string>().ToList() ?? [];
+    internal void Search(JunkListKind kind, string text) { _searchBoxes[kind].Text = text; _filters[kind] = text; Refresh(kind); }
+    private readonly Dictionary<JunkListKind, TextBox> _searchBoxes = [];
     internal bool HasChanges => _apply.IsEnabled;
     internal void SelectTab(int index) => _tabs.SelectedIndex = index;
     internal void Select(JunkListKind kind, params string[] entries) { _boxes[kind].SelectedItems!.Clear(); foreach (var e in entries) _boxes[kind].SelectedItems!.Add(e); }
@@ -83,7 +90,7 @@ public sealed class JunkEmailOptionsWindow : Window
     {
         _loading = true;
         var effective = account.Effective;
-        foreach (var kind in Kinds) _lists[kind] = effective.Get(kind).ToList();
+        foreach (var kind in Kinds) { _lists[kind] = effective.Get(kind).ToList(); _loaded[kind] = _lists[kind].ToList(); }
         _trustContacts.IsChecked = account.TrustContacts;
         _applyLists.IsChecked = account.ApplyLists;
         foreach (var kind in Kinds) Refresh(kind);
@@ -100,14 +107,25 @@ public sealed class JunkEmailOptionsWindow : Window
 
     private void Changed() { if (!_loading) _apply.IsEnabled = true; }
 
+    /// <summary>
+    /// Saves what was added and removed in this window since it was opened (or last applied), on top of the lists as they are stored now:
+    /// an entry the right-click menu added meanwhile is kept (it was lost before 2026-10-17 when the window saved its whole, older copy).
+    /// </summary>
     internal void ApplyChanges()
     {
-        var account = _account;
-        foreach (var kind in Kinds) account = account.WithEdited(kind, _lists[kind]);
-        account = account with { TrustContacts = _trustContacts.IsChecked == true, ApplyLists = _applyLists.IsChecked == true };
-        if (_apply.IsEnabled) _save(account);
-        _account = account;
-        _apply.IsEnabled = false;
+        if (!_apply.IsEnabled) return;
+        var added = Kinds.ToDictionary(k => k, k => _lists[k].Except(_loaded[k]).ToList());
+        var removed = Kinds.ToDictionary(k => k, k => _loaded[k].Except(_lists[k]).ToHashSet());
+        var trust = _trustContacts.IsChecked == true; var apply = _applyLists.IsChecked == true;
+        var saved = _save(stored =>
+        {
+            var account = stored;
+            foreach (var kind in Kinds)
+                account = account.WithEdited(kind, stored.Effective.Get(kind).Where(e => !removed[kind].Contains(e)).Concat(added[kind]));
+            return account with { TrustContacts = trust, ApplyLists = apply };
+        });
+        _account = saved;
+        Load(saved);
     }
 
     private Control OptionsTab()
@@ -176,6 +194,9 @@ public sealed class JunkEmailOptionsWindow : Window
     {
         var box = new ListBox { SelectionMode = SelectionMode.Multiple, Height = 300, Padding = new Thickness(0), Background = Themed.Brush("OlCard", Brushes.White) };
         _boxes[kind] = box;
+        var search = new TextBox { Watermark = "Search this list", Text = _filters.GetValueOrDefault(kind, ""), Margin = new Thickness(0, 0, 0, 6) };
+        search.TextChanged += (_, _) => { _filters[kind] = search.Text ?? ""; Refresh(kind); };
+        _searchBoxes[kind] = search;
         var count = CountLabel(kind, HorizontalAlignment.Left);
         var add = Btn("Add..."); var edit = Btn("Edit..."); var remove = Btn("Remove");
         var import = Btn("Import from File..."); var export = Btn("Export to File...");
@@ -188,7 +209,11 @@ public sealed class JunkEmailOptionsWindow : Window
         edit.IsEnabled = remove.IsEnabled = false;
         var side = new StackPanel { Spacing = 8, Width = 150, Margin = new Thickness(12, 0, 0, 0), Children = { add, edit, remove, new Border { Height = 150 }, import, export } };
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        grid.Children.Add(new Border { BorderBrush = Themed.Brush("OlHairline", Brushes.LightGray), BorderThickness = new Thickness(1), Child = box });
+        var left = new DockPanel();
+        DockPanel.SetDock(search, Dock.Top);
+        left.Children.Add(search);
+        left.Children.Add(new Border { BorderBrush = Themed.Brush("OlHairline", Brushes.LightGray), BorderThickness = new Thickness(1), Child = box });
+        grid.Children.Add(left);
         Grid.SetColumn(side, 1); grid.Children.Add(side);
         var page = Page([Text(intro), grid, count, .. below]);
         return page;
@@ -220,10 +245,13 @@ public sealed class JunkEmailOptionsWindow : Window
 
     private void Refresh(JunkListKind kind)
     {
-        if (_boxes.TryGetValue(kind, out var box)) box.ItemsSource = _lists[kind].ToList();
+        var filter = _filters.GetValueOrDefault(kind, "").Trim();
+        var shown = filter.Length == 0 ? _lists[kind] : _lists[kind].Where(e => e.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (_boxes.TryGetValue(kind, out var box)) box.ItemsSource = shown.ToList();
         var fromOutlook = _account.FromOutlook.Get(kind).Intersect(_lists[kind]).Count();
         foreach (var count in _counts.GetValueOrDefault(kind) ?? [])
-            count.Text = $"{_lists[kind].Count} entr{(_lists[kind].Count == 1 ? "y" : "ies")}" + (fromOutlook > 0 ? $", {fromOutlook} read from Outlook" : "");
+            count.Text = (filter.Length > 0 ? $"{shown.Count} of " : "") + $"{_lists[kind].Count} entr{(_lists[kind].Count == 1 ? "y" : "ies")}" + (fromOutlook > 0 ? $", {fromOutlook} read from Outlook" : "") +
+                (filter.Length > 0 ? $" (search: \"{filter}\")" : "");
     }
 
     private void Set(JunkListKind kind, IEnumerable<string> entries)

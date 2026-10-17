@@ -277,22 +277,7 @@
                     </StackPanel>
                   </Border>
 
-                  <!-- Junk -->
-                  <Border Classes="olGroup">
-                    <DockPanel LastChildFill="True">
-                      <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Junk" />
-
-                    <StackPanel Orientation="Horizontal">
-                      <Button Classes="olLarge" Tag="Phishing" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconJunk}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Phishing" /></StackPanel>
-                      </Button>
-                      <Button Classes="olLarge" Name="CleanJunkButton" Click="CleanJunkNowClicked" ToolTip.Tip="Remove messages that match your Junk Cleaner keywords from the Junk folder">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconRemoveJunk}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Clean Junk" /></StackPanel>
-                      </Button>
-                    </StackPanel>
-                    
-                                                          </DockPanel>
-                  </Border>
+                  <!-- Junk: Report Phishing and Clean Junk Folder are in Home > Delete > Junk (owner 2026-10-17) -->
                 </StackPanel>
               </ScrollViewer>
             </TabItem>

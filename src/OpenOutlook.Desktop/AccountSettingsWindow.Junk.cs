@@ -23,6 +23,9 @@ public sealed partial class AccountSettingsWindow
     private readonly CheckBox _junkFlagged = new() { Content = "Also remove junk that is flagged" };
     private readonly CheckBox _junkBcc = new() { Content = "Also remove junk with anyone in Bcc",
         [ToolTip.TipProperty] = "Real mail never shows you its Bcc list; junk that names recipients in a Bcc field is a mass mailing. Applies to every sender." };
+    private readonly CheckBox _junkNotToMe = new() { Content = "Also remove junk not addressed to me (my address is not on the To line)",
+        [ToolTip.TipProperty] = "Junk that lists other people, or nobody, on its To line instead of this account's address. Cc and Bcc do not count. " +
+            "Mail sent to another of your addresses (an alias) is not addressed to this account either, so it would be removed." };
     private readonly CheckBox _junkBehalf = new() { Content = "Also remove junk sent \"on behalf of\" someone else" };
     private readonly TextBox _junkLog = new() { IsReadOnly = true, AcceptsReturn = true, FontSize = 12, MinHeight = 110, TextWrapping = TextWrapping.NoWrap };
     private bool _junkLoading;
@@ -73,6 +76,7 @@ public sealed partial class AccountSettingsWindow
         _junkBehalf.IsCheckedChanged += (_, _) => SaveJunk();
         _junkFlagged.IsCheckedChanged += (_, _) => SaveJunk();
         _junkBcc.IsCheckedChanged += (_, _) => SaveJunk();
+        _junkNotToMe.IsCheckedChanged += (_, _) => SaveJunk();
         _junkInterval.ValueChanged += (_, _) => SaveJunk();
         TextBlock Label(string t) => new() { Text = t, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 10, 0, 4), Foreground = Themed.Brush("OlText", Brushes.Black) };
         var intro = new TextBlock
@@ -95,7 +99,7 @@ public sealed partial class AccountSettingsWindow
                 _junkEnabled, _junkAuto, interval,
                 Label("Remove junk whose From line contains any of these keywords (separate them with commas)"), _junkKeywordInfo, _junkKeywords,
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { saveKeywords, reload, openFile } },
-                Label("Other rules"), _junkHigh, _junkNoTo, _junkBehalf, _junkFlagged, _junkBcc,
+                Label("Other rules"), _junkHigh, _junkNoTo, _junkNotToMe, _junkBehalf, _junkFlagged, _junkBcc,
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 8, 0, 0), Children = { clean, import } },
                 Label($"What was removed (newest first; the history keeps the latest {JunkCleanerLog.MaxEntries:N0} entries)"), _junkLog
             }
@@ -131,7 +135,7 @@ public sealed partial class AccountSettingsWindow
         try
         {
             var account = SelectedJunkAccount();
-            foreach (var c in new Control[] { _junkEnabled, _junkAuto, _junkInterval, _junkKeywords, _junkHigh, _junkNoTo, _junkBehalf, _junkFlagged, _junkBcc }) c.IsEnabled = account is not null;
+            foreach (var c in new Control[] { _junkEnabled, _junkAuto, _junkInterval, _junkKeywords, _junkHigh, _junkNoTo, _junkNotToMe, _junkBehalf, _junkFlagged, _junkBcc }) c.IsEnabled = account is not null;
             var s = account is null ? null : _host.JunkSettings(account.AccountId);
             _junkEnabled.IsChecked = s?.Enabled == true;
             _junkAuto.IsChecked = s?.AutoClean == true;
@@ -145,6 +149,7 @@ public sealed partial class AccountSettingsWindow
             _junkBehalf.IsChecked = s?.Rules.DeleteOnBehalfOf == true;
             _junkFlagged.IsChecked = s?.Rules.DeleteFlagged == true;
             _junkBcc.IsChecked = s?.Rules.DeleteWithBcc == true;
+            _junkNotToMe.IsChecked = s?.Rules.DeleteNotToMe == true;
         }
         finally { _junkLoading = false; }
         RefreshJunkLog();
@@ -158,7 +163,7 @@ public sealed partial class AccountSettingsWindow
         {
             AccountId = a.AccountId, Enabled = _junkEnabled.IsChecked == true, AutoClean = _junkAuto.IsChecked == true,
             IntervalMinutes = Math.Clamp((int)(_junkInterval.Value ?? 15), 1, 60), Keywords = keywords,
-            Rules = new JunkRuleOptions(_junkHigh.IsChecked == true, _junkNoTo.IsChecked == true, _junkBehalf.IsChecked == true, _junkFlagged.IsChecked == true, _junkBcc.IsChecked == true)
+            Rules = new JunkRuleOptions(_junkHigh.IsChecked == true, _junkNoTo.IsChecked == true, _junkBehalf.IsChecked == true, _junkFlagged.IsChecked == true, _junkBcc.IsChecked == true, _junkNotToMe.IsChecked == true)
         });
     }
 

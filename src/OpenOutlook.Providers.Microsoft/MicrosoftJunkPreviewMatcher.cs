@@ -20,9 +20,14 @@ public sealed record MicrosoftJunkPreview(string AccountId, int ScannedCount,
 public sealed class MicrosoftJunkPreviewMatcher
 {
     private readonly string _boundAccountId;
+    private readonly string? _ownAddress;
 
-    public MicrosoftJunkPreviewMatcher(string boundAccountId) =>
+    /// <param name="ownAddress">The account's email address, for "not addressed to you"; null turns that rule off.</param>
+    public MicrosoftJunkPreviewMatcher(string boundAccountId, string? ownAddress = null)
+    {
         _boundAccountId = JunkCleanerSettingsStore.ValidateAccountId(boundAccountId);
+        _ownAddress = ownAddress;
+    }
 
     /// <summary>Match only an opted-in account whose scan ID and settings ID both equal the bound Graph user ID.</summary>
     public MicrosoftJunkPreview Preview(string scannedAccountId, JunkCleanerAccountSettings settings,
@@ -65,7 +70,7 @@ public sealed class MicrosoftJunkPreviewMatcher
             // HasToRecipients is null if the Graph field was absent or malformed. Never infer
             // 'no To' from ToRecipients.Count: the old reader collapsed missing and empty lists.
             var reasons = JunkMatcher.MatchReasons(fields, keywords, importance,
-                message.HasToRecipients, settings.Rules, message.IsFlagged, message.HasBccRecipients);
+                message.HasToRecipients, settings.Rules, message.IsFlagged, message.HasBccRecipients, message.ToRecipients, _ownAddress);
             if (reasons.Count != 0)
             {
                 // The portable matcher embeds the matching keyword in its reason; preview

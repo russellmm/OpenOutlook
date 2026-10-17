@@ -65,7 +65,8 @@ public sealed class JunkCleanerSettingsStore
             ["deleteMissingTo"] = settings.Rules.DeleteMissingTo,
             ["deleteOnBehalfOf"] = settings.Rules.DeleteOnBehalfOf,
             ["deleteFlagged"] = settings.Rules.DeleteFlagged,
-            ["deleteWithBcc"] = settings.Rules.DeleteWithBcc
+            ["deleteWithBcc"] = settings.Rules.DeleteWithBcc,
+            ["deleteNotToMe"] = settings.Rules.DeleteNotToMe
         };
         File.WriteAllText(path, JsonSerializer.Serialize(dto, JsonOptions));
     }
@@ -84,7 +85,7 @@ public sealed class JunkCleanerSettingsStore
             AlwaysClean = source.AlwaysClean,
             IntervalMinutes = Math.Clamp(source.IntervalMinutes.GetValueOrDefault(5), 1, 60),
             Rules = new JunkRuleOptions(source.DeleteHighImportance, source.DeleteMissingTo,
-                source.DeleteOnBehalfOf, DeleteWithBcc: source.DeleteWithBcc == true),
+                source.DeleteOnBehalfOf, DeleteWithBcc: source.DeleteWithBcc == true, DeleteNotToMe: source.DeleteNotToMe == true),
             DeleteFlagged = source.DeleteFlagged
         };
     }

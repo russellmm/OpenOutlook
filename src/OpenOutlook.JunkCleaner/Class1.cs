@@ -15,7 +15,8 @@ public readonly record struct JunkRuleOptions(
     bool DeleteMissingTo = false,
     bool DeleteOnBehalfOf = false,
     bool DeleteFlagged = false,
-    bool DeleteWithBcc = false);
+    bool DeleteWithBcc = false,
+    bool DeleteNotToMe = false);
 
 public static class JunkMatcher
 {
@@ -27,7 +28,8 @@ public static class JunkMatcher
 
     public static IReadOnlyList<string> MatchReasons(
         FromFields fields, IReadOnlyList<string> keywords, int? importance,
-        bool? hasToAddress, JunkRuleOptions options, bool? isFlagged = null, bool? hasBcc = null)
+        bool? hasToAddress, JunkRuleOptions options, bool? isFlagged = null, bool? hasBcc = null,
+        IReadOnlyList<string>? toRecipients = null, string? ownAddress = null)
     {
         var reasons = new List<string>();
         var haystack = BuildHaystack(fields);
@@ -50,6 +52,11 @@ public static class JunkMatcher
         // through a visible "BCC:" header, 2026-10-16). Unknown is not a match.
         if (options.DeleteWithBcc && hasBcc == true)
             reasons.Add("Bcc recipients");
+        // Junk not addressed to the account itself (owner 2026-10-17): the account's address is not on the To line (Cc and Bcc do not count). Unknown
+        // To recipients or an unknown own address is not a match; an empty To line is (it is not addressed to the account either).
+        if (options.DeleteNotToMe && !string.IsNullOrWhiteSpace(ownAddress) && toRecipients is not null && hasToAddress is not null &&
+            !toRecipients.Any(r => string.Equals(r?.Trim(), ownAddress.Trim(), StringComparison.OrdinalIgnoreCase)))
+            reasons.Add("Not addressed to you");
         return reasons;
     }
 

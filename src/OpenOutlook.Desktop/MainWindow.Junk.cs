@@ -86,14 +86,15 @@ public partial class MainWindow
     {
         var session = GetMicrosoftSession(account);
         var reader = new GraphJunkMailReader(_graphHttp, async ct => await session.GetAccessTokenAsync(ct), account.AccountId);
-        return new MicrosoftJunkCleanerRunner(reader, new GraphMailWriter(_graphHttp, account.AccountId), ct => session.GetAccessTokenAsync(ct), account.AccountId);
+        return new MicrosoftJunkCleanerRunner(reader, new GraphMailWriter(_graphHttp, account.AccountId), ct => session.GetAccessTokenAsync(ct), account.AccountId,
+            ownAddress: account.DisplayAddress);
     }
 
     /// <summary>Why this account cannot be cleaned right now, or null when it can.</summary>
     private static string? JunkProblem(ConnectedAccount account, JunkCleanerAccountSettings s) =>
         !account.CanWriteMicrosoftMail ? "This sign-in has read-only mail access. Sign in again from Account Settings to allow organising mail."
         : !s.Enabled ? "The Junk Cleaner is turned off for this account. Turn it on in Account Settings > Junk Cleaner."
-        : s.Keywords.Count == 0 && !s.Rules.DeleteHighImportance && !s.Rules.DeleteMissingTo && !s.Rules.DeleteOnBehalfOf && !s.Rules.DeleteFlagged && !s.Rules.DeleteWithBcc ? "Add at least one keyword or rule in Account Settings > Junk Cleaner first."
+        : s.Keywords.Count == 0 && !s.Rules.DeleteHighImportance && !s.Rules.DeleteMissingTo && !s.Rules.DeleteOnBehalfOf && !s.Rules.DeleteFlagged && !s.Rules.DeleteWithBcc && !s.Rules.DeleteNotToMe ? "Add at least one keyword or rule in Account Settings > Junk Cleaner first."
         : null;
 
     /// <summary>The manual run: scan, show what would be removed, remove what the user keeps ticked.</summary>
@@ -164,7 +165,7 @@ public partial class MainWindow
                 Keywords = JunkCleanerSettingsStore.NormalizeKeywords(current.Keywords.Concat(imported.Keywords)),
                 Rules = new JunkRuleOptions(current.Rules.DeleteHighImportance || imported.Rules.DeleteHighImportance,
                     current.Rules.DeleteMissingTo || imported.Rules.DeleteMissingTo, current.Rules.DeleteOnBehalfOf || imported.Rules.DeleteOnBehalfOf, preview.DeleteFlagged ?? current.Rules.DeleteFlagged,
-                    current.Rules.DeleteWithBcc || imported.Rules.DeleteWithBcc),
+                    current.Rules.DeleteWithBcc || imported.Rules.DeleteWithBcc, current.Rules.DeleteNotToMe || imported.Rules.DeleteNotToMe),
                 IntervalMinutes = imported.IntervalMinutes, Enabled = true            // automatic cleaning stays as it was; turn it on deliberately
             });
             return $"Imported {preview.Keywords.Count} keywords. The Junk Cleaner is on for this account; automatic cleaning is unchanged.";

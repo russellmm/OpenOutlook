@@ -15,7 +15,7 @@ public sealed record JunkListRunResult(IReadOnlyList<JunkCleanerHit> Rescued, IR
 /// Cleans one Microsoft account's Junk Email folder: lists it, matches the account's keywords and rules, and moves matches to Deleted Items
 /// (never a permanent delete). The same Graph account id is used for the scan, the settings and the moves.
 /// </summary>
-public sealed class MicrosoftJunkCleanerRunner(GraphJunkMailReader reader, GraphMailWriter writer, Func<CancellationToken, Task<string>> accessToken, string accountId, int maxMoves = MicrosoftJunkCleanerRunner.MaxMovesPerRun)
+public sealed class MicrosoftJunkCleanerRunner(GraphJunkMailReader reader, GraphMailWriter writer, Func<CancellationToken, Task<string>> accessToken, string accountId, int maxMoves = MicrosoftJunkCleanerRunner.MaxMovesPerRun, string? ownAddress = null)
 {
     /// <summary>Messages moved in one run at most, so a bad keyword cannot empty a folder.</summary>
     public const int MaxMovesPerRun = 500;
@@ -28,7 +28,7 @@ public sealed class MicrosoftJunkCleanerRunner(GraphJunkMailReader reader, Graph
     {
         var all = await reader.ListJunkMessagesAsync(50, 1000, ct).ConfigureAwait(false);
         var messages = lists is null ? all : all.Where(m => Verdict(lists, m, contacts) != JunkListVerdict.Safe).ToList();
-        var preview = new MicrosoftJunkPreviewMatcher(accountId).Preview(accountId, settings, messages);
+        var preview = new MicrosoftJunkPreviewMatcher(accountId, ownAddress).Preview(accountId, settings, messages);
         var byId = messages.ToDictionary(m => m.Id, StringComparer.Ordinal);
         var matched = preview.Matches.Select(m =>
         {

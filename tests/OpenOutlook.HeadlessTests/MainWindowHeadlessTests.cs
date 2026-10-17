@@ -1760,9 +1760,10 @@ public sealed class MainWindowHeadlessTests
             var list = window.FindControl<DataGrid>("MessageList")!;
             CallVoid(window, "InitMessageContextMenu");
             var junkMenu = ((MenuFlyout)list.ContextFlyout!).Items.OfType<MenuItem>().Single(i => (string?)i.Header == "Junk");
-            Assert.Equal(["_Block Sender", "_Never Block Sender", "Never Block Sender's _Domain", "Never Block this Group or _Mailing List", "N_ot Junk", "Junk E-mail _Options..."],
-                junkMenu.Items.OfType<MenuItem>().Select(i => (string)i.Header!));
-            Assert.Equal([true, false, false, false, true, true], junkMenu.Items.OfType<MenuItem>().Select(i => i.Icon is not null));   // Outlook's icons
+            Assert.Equal(["_Block Sender", "_Never Block Sender", "Never Block Sender's _Domain", "Never Block this Group or _Mailing List", "N_ot Junk", "Junk E-mail _Options...",
+                "Report _Phishing", "_Clean Junk Folder..."], junkMenu.Items.OfType<MenuItem>().Select(i => (string)i.Header!));
+            Assert.Equal([true, false, false, false, true, true, true, true], junkMenu.Items.OfType<MenuItem>().Select(i => i.Icon is not null));   // Outlook's icons
+            Assert.Null(window.FindControl<Button>("CleanJunkButton"));                                // the separate Junk ribbon group is gone
 
             var inbox = Rows(("m1", "Deals@Spam.example"));
             await window.JunkActionAsync("block");

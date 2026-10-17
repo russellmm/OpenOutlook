@@ -107,13 +107,19 @@ public sealed partial class MainWindow
         var group = Item("Never Block this Group or _Mailing List", "safeGroup");
         var notJunk = Item("N_ot Junk", "notJunk", "OlIconMail");
         var options = Item("Junk E-mail _Options...", "options", "OlIconJunkOptions");
-        foreach (var x in new Control[] { block, never, domain, group, new Separator(), notJunk, options }) junk.Items.Add(x);
+        // Outlook's Report > Phishing and the Junk Cleaner's run, here since the separate Junk ribbon group went away (owner 2026-10-17)
+        var phishing = new MenuItem { Header = "Report _Phishing", Tag = "phishing", Icon = MenuIcon("OlIconJunk"), IsEnabled = false };
+        ToolTip.SetTip(phishing, "Planned feature");
+        var clean = new MenuItem { Header = "_Clean Junk Folder...", Tag = "clean", Icon = MenuIcon("OlIconRemoveJunk") };
+        ToolTip.SetTip(clean, "Remove messages that match your Junk Cleaner keywords and rules from the Junk Email folder (a preview first)");
+        clean.Click += (s, a) => CleanJunkNowClicked(s, a);
+        foreach (var x in new Control[] { block, never, domain, group, new Separator(), notJunk, options, new Separator(), phishing, clean }) junk.Items.Add(x);
         junk.SubmenuOpened += (_, _) =>
         {
             var microsoft = _activeMicrosoftFolder is not null && MessageList.SelectedItems.OfType<GraphMessageListRow>().Any();
             block.IsEnabled = never.IsEnabled = domain.IsEnabled = group.IsEnabled = microsoft;
             notJunk.IsEnabled = microsoft && InJunkEmailFolder;
-            options.IsEnabled = _activeMicrosoftFolder is not null || JunkListAccounts().Count > 0;
+            options.IsEnabled = clean.IsEnabled = _activeMicrosoftFolder is not null || JunkListAccounts().Count > 0;
             var first = MessageList.SelectedItems.OfType<GraphMessageListRow>().FirstOrDefault()?.Message;
             domain.Header = first is not null && JunkLists.Address(first.FromAddress) is { } a ? $"Never Block Sender's _Domain ({a[a.IndexOf('@')..]})" : "Never Block Sender's _Domain";
         };
@@ -162,7 +168,8 @@ public sealed partial class MainWindow
                 item.IsEnabled = item.Tag switch
                 {
                     "notJunk" => microsoft && InJunkEmailFolder,
-                    "options" => _activeMicrosoftFolder is not null || JunkListAccounts().Count > 0,
+                    "options" or "clean" => _activeMicrosoftFolder is not null || JunkListAccounts().Count > 0,
+                    "phishing" => false,
                     null => true,
                     _ => microsoft,
                 };

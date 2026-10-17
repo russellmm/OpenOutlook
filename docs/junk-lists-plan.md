@@ -1,4 +1,4 @@
-# Junk: Not Junk, Block Sender and Junk Email Options - plan (2026-10-16, not started)
+# Junk: Not Junk, Block Sender and Junk Email Options - plan (2026-10-16, not started; owner chose section 2 + reading Outlook's lists, 1b)
 
 Owner request (with screenshots of classic Outlook): the message right-click **Junk** menu (Block Sender, Never Block Sender, Never Block
 Sender's Domain, Never Block this Group or Mailing List, Not Junk, Junk E-mail Options...) and the **Junk Email Options** dialog (tabs Options,
@@ -19,6 +19,29 @@ Safe Senders, Safe Recipients, Blocked Senders, International). Microsoft (Hotma
     working on 2025-12-30.
 - Other routes are out: EWS is being retired for Exchange Online (and needs work / school accounts); MAPI over HTTP, what Outlook desktop
   itself speaks, is a very large protocol to implement for one dialog.
+
+## 1b. Reading Outlook's lists from its offline file (Windows, Outlook desktop installed) - verified 2026-10-16
+
+Outlook desktop keeps a copy of the mailbox in `%LOCALAPPDATA%\Microsoft\Outlook\<address>.ost` (4K-page format, wVer 36, which our
+engine already reads). With Outlook closed, a copy of the owner's `rmarrash@hotmail.com.ost` (380 MB) was read with the engine (read-only
+probe, the original untouched):
+
+- Inbox (nid 0x2182) > associated contents table (0x218F) > message class `IPM.ExtendedRule.Message`, subject "Junk E-mail Rule",
+  `PidTagRuleMessageProvider` (0x65EB) "JunkEmailRule" ([MS-OXCSPAM]).
+- Settings on the same message: 0x6100 include contacts (0 = off), 0x6101 junk threshold (0xFFFFFFFF = No Automatic Filtering),
+  0x6102 permanently delete (0), 0x6103 add people I email to Safe Senders (0), 0x6107 phishing links enabled (1). All match the owner's
+  screenshots.
+- The lists are in `PidTagExtendedRuleMessageCondition` (0x0E9A, 90 KB): no named properties, then a restriction tree with 32-bit counts:
+  `AND( OR( OR[blocked addresses], AND( OR( spam-confidence test, OR[blocked domains] ), NOT OR( OR[safe domains], SUB recipients OR[] ) ) ),
+  NOT OR( OR[safe addresses], SUB recipients OR[safe recipients], OR[] ) )`. Every entry is a content restriction on
+  `PidTagSenderEmailAddress` (0x0C1F001F; full string, ignore case for addresses; substring for `@domain`) or, under the recipients
+  subrestriction, on `PidTagEmailAddress` (0x3003001F). Counts: blocked 432 addresses + 8 domains, safe senders 880 + 22 domains, safe
+  recipients 8 - the owner's lists exactly.
+- Outlook locks the file while it runs (a copy failed with "busy"), so it can be read only while Outlook is closed. OpenOutlook reads it at
+  start when Outlook is not running and the file changed since the last read, keeps the result, and shows "read from Outlook on <date>".
+  Linux and PCs without Outlook use OpenOutlook's own lists and Outlook's exported text files.
+- How the lists are used: entries read from Outlook are merged with OpenOutlook's own (an entry removed in Outlook disappears at the next
+  read unless it was added in OpenOutlook). OpenOutlook does not write the .ost (Outlook would overwrite it, and it is Outlook's cache).
 
 ## 2. Proposal: OpenOutlook's own lists, filled from Outlook once, applied by OpenOutlook
 

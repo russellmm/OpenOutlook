@@ -21,7 +21,7 @@ public partial class MainWindow
 
     private static readonly System.Collections.Generic.Dictionary<string, string> OptionCategoryNames = new(StringComparer.Ordinal)
     {
-        ["calendar"] = "Calendar", ["groups"] = "Groups", ["people"] = "People", ["tasks"] = "Tasks",
+        ["groups"] = "Groups", ["people"] = "People", ["tasks"] = "Tasks",
         ["search"] = "Search", ["language"] = "Language", ["accessibility"] = "Accessibility",
         ["advanced"] = "Advanced", ["ribbon"] = "Customize Ribbon", ["qat"] = "Quick Access Toolbar",
         ["addins"] = "Add-ins"
@@ -41,6 +41,7 @@ public partial class MainWindow
         _options = _optionsStore.Load();
         ApplyMailOptions(_options);
         ApplyTrustCenterOptions(_options);
+        ApplyCalendarOptions(_options);
         OptionsHost.IsVisible = true;
         OptionsFeedback.Text = "";
         SelectOptionsCategory("general");
@@ -69,6 +70,7 @@ public partial class MainWindow
     {
         _options = CollectMailOptions(_options);
         _options = CollectTrustCenterOptions(_options);
+        _options = CollectCalendarOptions(_options);
         try
         {
             _optionsStore.Save(_options);
@@ -77,6 +79,7 @@ public partial class MainWindow
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         { StatusText.Text = "Options changed, but they could not be saved. Check the settings folder."; }
         CloseOptionsDialog();
+        _ = RemindersOptionsChangedAsync();
     }
 
     private void OptionsCancelClicked(object? sender, RoutedEventArgs e) => CloseOptionsDialog();
@@ -93,12 +96,27 @@ public partial class MainWindow
         PageGeneral.IsVisible = key == "general";
         PageMail.IsVisible = key == "mail";
         PageTrustCenter.IsVisible = key == "trust";
+        PageCalendar.IsVisible = key == "calendar";
         PageOptionPlaceholder.IsVisible = OptionCategoryNames.TryGetValue(key, out var name);
         if (name is not null) OptionsPlaceholderHeading.Text = name;
     }
 
     private void OptionsPlaceholderClicked(object? sender, RoutedEventArgs e) =>
         OptionsFeedback.Text = $"{(sender as Button)?.Tag} is planned for a future version of OpenOutlook.";
+
+    // ---- Calendar (Reminders) ----
+
+    private void ApplyCalendarOptions(OptionsSettings s)
+    {
+        OptShowReminders.IsChecked = s.ShowReminders;
+        OptReminderLookBack.Value = Math.Clamp(s.ReminderLookBackDays, 1, 90);
+    }
+
+    private OptionsSettings CollectCalendarOptions(OptionsSettings s) => s with
+    {
+        ShowReminders = OptShowReminders.IsChecked == true,
+        ReminderLookBackDays = (int)Math.Clamp(OptReminderLookBack.Value ?? 30, 1, 90)
+    };
 
     // ---- Trust Center (Automatic Download) ----
 

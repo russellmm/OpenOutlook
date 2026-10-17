@@ -109,6 +109,12 @@ public sealed record OptionsSettings
     [System.Text.Json.Serialization.JsonIgnore]
     public long PictureBudgetPixels => TrustPictureMemoryMegapixels is 128 or 256 ? TrustPictureMemoryMegapixels * 1024L * 1024 : SafeInlineImage.MaximumMessagePixels;
 
+    // Calendar > Reminders (docs/reminders-plan.md)
+    /// <summary>Show the Reminders window when a calendar reminder comes due (Outlook's "Show reminders").</summary>
+    public bool ShowReminders { get; init; } = true;
+    /// <summary>How far back a reminder that came due while OpenOutlook was closed is still shown, in days (1 to 90).</summary>
+    public int ReminderLookBackDays { get; init; } = 30;
+
     // Reading Pane dialog
     public bool ReadPaneMarkOnView { get; init; } = true;
     public int ReadPaneWaitSeconds { get; init; } = 2;
@@ -193,6 +199,7 @@ public sealed class OptionsSettingsStore
         RichTextToInternet = Cap(s.RichTextToInternet, "Convert to HTML format"),
         AfterMoveOrDelete = Cap(s.AfterMoveOrDelete, "return to the current folder"),
         ReadPaneWaitSeconds = Math.Clamp(s.ReadPaneWaitSeconds, 0, 300),
+        ReminderLookBackDays = Math.Clamp(s.ReminderLookBackDays, 1, 90),
         FrenchMode = Cap(s.FrenchMode, "Traditional and new spellings"),
         SpanishMode = Cap(s.SpanishMode, "Tuteo verb forms only"),
     };

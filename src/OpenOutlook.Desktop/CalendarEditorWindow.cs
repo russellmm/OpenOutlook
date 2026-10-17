@@ -60,7 +60,15 @@ public sealed class CalendarEditorWindow : Window
         Opened += (_, _) => _subject.Focus();
     }
 
-    /// <summary>Show As and Reminder exist as Outlook-style controls but do not change anything yet: picking another value reverts and says so.</summary>
+    /// <summary>Outlook's Reminder choices (minutes before the start; null = None). 15 minutes is the default, as in Outlook.</summary>
+    public static readonly (string Label, int? Minutes)[] ReminderChoices =
+    [
+        ("None", null), ("0 minutes", 0), ("5 minutes", 5), ("10 minutes", 10), ("15 minutes", 15), ("30 minutes", 30),
+        ("1 hour", 60), ("2 hours", 120), ("3 hours", 180), ("4 hours", 240), ("8 hours", 480),
+        ("0.5 days", 720), ("1 day", 1440), ("2 days", 2880), ("1 week", 10080),
+    ];
+
+    /// <summary>Show As exists as an Outlook-style control but does not change anything yet: picking another value reverts and says so.</summary>
     private void InitOptions()
     {
         foreach (var option in new[] { "Free", "Tentative", "Busy", "Out of Office" }) _showAs.Items.Add(option);
@@ -74,17 +82,9 @@ public sealed class CalendarEditorWindow : Window
             }
         };
         ToolTip.SetTip(_showAs, "Show As: Planned Feature");
-        foreach (var option in new[] { "None", "5 minutes", "10 minutes", "15 minutes", "30 minutes", "1 hour" }) _reminder.Items.Add(option);
-        _reminder.SelectedIndex = 3;
-        _reminder.SelectionChanged += (_, _) =>
-        {
-            if (_reminder.SelectedIndex != 3)
-            {
-                _reminder.SelectedIndex = 3;
-                Info("Reminder: planned feature.");
-            }
-        };
-        ToolTip.SetTip(_reminder, "Reminder: Planned Feature");
+        foreach (var (label, _) in ReminderChoices) _reminder.Items.Add(label);
+        _reminder.SelectedIndex = Array.FindIndex(ReminderChoices, c => c.Minutes == 15);
+        ToolTip.SetTip(_reminder, "When OpenOutlook (and Outlook, and your phone) reminds you of this item");
     }
 
     // ---------------------------------------------------------------- layout
@@ -301,10 +301,20 @@ public sealed class CalendarEditorWindow : Window
 
     private void Save()
     {
+        if (Build() is { } item) Close(item);
+    }
+
+    /// <summary>Selects a Reminder choice by its label ("1 hour").</summary>
+    internal void ChooseReminder(string label) => _reminder.SelectedIndex = Array.FindIndex(ReminderChoices, c => c.Label == label);
+    internal void SetSubject(string subject) => _subject.Text = subject;
+
+    /// <summary>The item as entered, or null after telling the user what is missing.</summary>
+    internal NewCalendarEvent? Build()
+    {
         var subject = _subject.Text?.Trim() ?? "";
-        if (subject.Length is < 1 or > 4096) { Fail("Enter a subject."); return; }
+        if (subject.Length is < 1 or > 4096) { Fail("Enter a subject."); return null; }
         if (_startDate.SelectedDate is null || _endDate.SelectedDate is null)
-        { Fail("Choose a start and an end date."); return; }
+        { Fail("Choose a start and an end date."); return null; }
         var first = DateOnly.FromDateTime(_startDate.SelectedDate.Value.DateTime);
         var last = DateOnly.FromDateTime(_endDate.SelectedDate.Value.DateTime);
         var allDay = _allDay.IsChecked == true;
@@ -313,7 +323,7 @@ public sealed class CalendarEditorWindow : Window
         if (!allDay)
         {
             if (_startTime.SelectedTime is not { } startSpan || _endTime.SelectedTime is not { } endSpan)
-            { Fail("Choose a start and an end time."); return; }
+            { Fail("Choose a start and an end time."); return null; }
             startTime = TimeOnly.FromTimeSpan(startSpan);
             endTime = TimeOnly.FromTimeSpan(endSpan);
         }
@@ -321,25 +331,26 @@ public sealed class CalendarEditorWindow : Window
         var localStart = first.ToDateTime(startTime, DateTimeKind.Unspecified);
         var localEnd = last.ToDateTime(endTime, DateTimeKind.Unspecified);
         if (TimeZoneInfo.Local.IsInvalidTime(localStart) || TimeZoneInfo.Local.IsInvalidTime(localEnd))
-        { Fail("That time does not exist in your local time zone. Choose another time."); return; }
+        { Fail("That time does not exist in your local time zone. Choose another time."); return null; }
         if (TimeZoneInfo.Local.IsAmbiguousTime(localStart) || TimeZoneInfo.Local.IsAmbiguousTime(localEnd))
-        { Fail("That time occurs twice in your local time zone. Choose another time."); return; }
+        { Fail("That time occurs twice in your local time zone. Choose another time."); return null; }
         var start = new DateTimeOffset(localStart, TimeZoneInfo.Local.GetUtcOffset(localStart));
         var end = new DateTimeOffset(localEnd, TimeZoneInfo.Local.GetUtcOffset(localEnd));
         if (end <= start || end - start > TimeSpan.FromDays(366))
-        { Fail("The end must be after the start."); return; }
+        { Fail("The end must be after the start."); return null; }
         var zone = TimeZoneInfo.Local.Id;
         if (TimeZoneInfo.TryConvertIanaIdToWindowsId(zone, out var windowsZone)) zone = windowsZone;
         var attendees = _isMeeting
             ? (_attendees.Text ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : [];
         if (_isMeeting && attendees.Length == 0)
-        { Fail("Add at least one attendee for a meeting."); return; }
+        { Fail("Add at least one attendee for a meeting."); return null; }
         if (attendees.Length > 100 || attendees.Any(address =>
                 !MailAddress.TryCreate(address, out var parsed) || parsed.Address != address))
-        { Fail("Enter valid attendee email addresses separated by semicolons."); return; }
-        Close(new NewCalendarEvent(subject, start, end, allDay, _location.Text ?? "", _body.Text ?? "",
-            attendees, Guid.NewGuid(), zone));
+        { Fail("Enter valid attendee email addresses separated by semicolons."); return null; }
+        var reminder = ReminderChoices[Math.Clamp(_reminder.SelectedIndex, 0, ReminderChoices.Length - 1)].Minutes;
+        return new NewCalendarEvent(subject, start, end, allDay, _location.Text ?? "", _body.Text ?? "",
+            attendees, Guid.NewGuid(), zone, reminder);
     }
 
     private void Fail(string message)

@@ -52,6 +52,8 @@ public sealed class GraphCalendarClientTests
         Assert.Equal("e71f4655-8d56-42d8-b53e-ef14c8a80aad",
             posted.RootElement.GetProperty("transactionId").GetString());
         Assert.Equal("UTC", posted.RootElement.GetProperty("start").GetProperty("timeZone").GetString());
+        Assert.True(posted.RootElement.GetProperty("isReminderOn").GetBoolean());                       // Outlook's default: 15 minutes
+        Assert.Equal(15, posted.RootElement.GetProperty("reminderMinutesBeforeStart").GetInt32());
         Assert.Equal(3, calls.Count(path => path == "GET /v1.0/me"));
         Assert.Equal("POST /v1.0/me/calendars/calendar/events", calls[^1]);
         posted.Dispose();
@@ -125,6 +127,30 @@ public sealed class GraphCalendarClientTests
         Assert.True((old with { RequestedScopes = MicrosoftAccountPermissions.PlannedPersonalScopes })
             .CanWriteMicrosoftCalendar);
         Assert.False((old with { Provider = OAuthProvider.Google }).CanWriteMicrosoftCalendar);
+    }
+
+    [Fact]
+    public async Task The_reminder_choice_is_sent_with_a_new_event_and_none_turns_it_off()
+    {
+        var bodies = new List<JsonDocument>();
+        using var http = new HttpClient(new Handler(async request =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/v1.0/me") return Json(HttpStatusCode.OK, """{"id":"owner"}""");
+            bodies.Add(JsonDocument.Parse(await request.Content!.ReadAsStringAsync()));
+            return Json(HttpStatusCode.Created,
+                """{"id":"created","subject":"S","start":{"dateTime":"2026-10-20T16:00:00","timeZone":"UTC"},"end":{"dateTime":"2026-10-20T17:00:00","timeZone":"UTC"},"isAllDay":false}""");
+        }));
+        var client = new GraphCalendarClient(http, "owner");
+        var start = new DateTimeOffset(2026, 10, 20, 16, 0, 0, TimeSpan.Zero);
+        NewCalendarEvent Event(int? minutes) => new("S", start, start.AddHours(1), false, "", "", [], Guid.NewGuid(), "UTC", minutes);
+        await client.CreateEventAsync("access", "calendar", Event(60));
+        await client.CreateEventAsync("access", "calendar", Event(null));
+        Assert.True(bodies[0].RootElement.GetProperty("isReminderOn").GetBoolean());
+        Assert.Equal(60, bodies[0].RootElement.GetProperty("reminderMinutesBeforeStart").GetInt32());
+        Assert.False(bodies[1].RootElement.GetProperty("isReminderOn").GetBoolean());
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CreateEventAsync("access", "calendar", Event(-1)));
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CreateEventAsync("access", "calendar", Event(5 * 7 * 24 * 60)));
+        foreach (var b in bodies) b.Dispose();
     }
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>

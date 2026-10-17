@@ -1,4 +1,7 @@
-# Calendar reminders - plan (2026-10-16, not started)
+# Calendar reminders - plan (2026-10-16; steps 1 to 6 built the same day, see `docs/calendar.md`)
+
+> Built: everything below except the taskbar flash and reminder sound, re-checks on wake / network change (the 5-minute poll covers them), and the
+> Reminder box on *editing* an event (events cannot be edited yet). The "today" paragraph describes the state before the work.
 
 Owner request: OpenOutlook should pop up calendar reminders like Outlook's "Reminder(s)" window. **Reminders that came due while OpenOutlook
 was closed (for example a week away) must still show up when it starts; once dismissed they must never show again.** Today the appointment

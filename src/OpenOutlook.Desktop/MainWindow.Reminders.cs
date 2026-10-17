@@ -23,7 +23,8 @@ public sealed partial class MainWindow
     /// <summary>The reminders due now, newest first (what the Reminders window lists).</summary>
     internal IReadOnlyList<ReminderItem> DueReminders { get; private set; } = [];
 
-    private TimeSpan ReminderLookBack => ReminderSchedule.DefaultLookBack;
+    /// <summary>Options > Calendar: how far back a missed reminder still shows (1 to 90 days, default 30).</summary>
+    private TimeSpan ReminderLookBack => TimeSpan.FromDays(Math.Clamp(_options.ReminderLookBackDays, 1, 90));
 
     private void StartReminderScheduler()
     {
@@ -46,7 +47,7 @@ public sealed partial class MainWindow
     /// <summary>Reads every account's reminders from Graph, retries unconfirmed dismissals and snoozes, then re-evaluates. Never throws.</summary>
     internal async Task RefreshRemindersAsync()
     {
-        if (_reminderBusy) return;
+        if (_reminderBusy || !_options.ShowReminders) return;                                // Options > Calendar > Show reminders off: Graph is not asked
         _reminderBusy = true;
         try
         {
@@ -149,7 +150,7 @@ public sealed partial class MainWindow
     /// <summary>Keeps the Reminders window in step with the due list: shown (again, also after X) when a reminder newly comes due, hidden when none is left.</summary>
     private void OnRemindersChanged(bool newlyDue)
     {
-        if (DueReminders.Count == 0)
+        if (DueReminders.Count == 0 || !_options.ShowReminders)
         {
             if (_remindersWindow is { IsVisible: true }) _remindersWindow.Hide();
             _remindersWindow?.SetItems([], DateTimeOffset.UtcNow);
@@ -171,6 +172,14 @@ public sealed partial class MainWindow
         _calendarPage?.SelectAccount(item.AccountId);
         _calendarPage?.GoToDay(DateOnly.FromDateTime(item.EventStart.ToLocalTime().DateTime));
         Activate();
+    }
+
+    /// <summary>After Options > OK: turning reminders off hides the window at once; on, or a longer look-back, reads Graph again.</summary>
+    private async Task RemindersOptionsChangedAsync()
+    {
+        if (_reminderPollTimer is null) return;                                              // the scheduler is off (tests)
+        if (!_options.ShowReminders) { _reminderServer.Clear(); EvaluateReminders(); return; }
+        await RefreshRemindersAsync();
     }
 
     private void CloseRemindersWindow()

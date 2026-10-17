@@ -1679,6 +1679,47 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public void Options_calendar_page_turns_reminders_off_and_sets_the_look_back()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        var store = new OptionsSettingsStore();
+        var before = store.Load();
+        try
+        {
+            ShowWithSnapshotReader(window);
+            CallVoid(window, "OpenOptionsDialog");
+            CallVoid(window, "SelectOptionsCategory", "calendar");
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(window.FindControl<StackPanel>("PageCalendar")!.IsVisible);
+            Assert.False(window.FindControl<StackPanel>("PageOptionPlaceholder")!.IsVisible);
+            var show = window.FindControl<CheckBox>("OptShowReminders")!;
+            var days = window.FindControl<NumericUpDown>("OptReminderLookBack")!;
+            Assert.True(show.IsChecked);
+            Assert.Equal(30, days.Value);
+            show.IsChecked = false;
+            days.Value = 7;
+            CallVoid(window, "OptionsOkClicked", null, new RoutedEventArgs());
+            Dispatcher.UIThread.RunJobs();
+            var saved = store.Load();
+            Assert.False(saved.ShowReminders);
+            Assert.Equal(7, saved.ReminderLookBackDays);
+
+            var start = DateTimeOffset.UtcNow.AddHours(-1);                                   // due, but reminders are off
+            var server = (Dictionary<string, IReadOnlyList<ReminderItem>>)typeof(MainWindow)
+                .GetField("_reminderServer", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            server["hotmail"] = [new ReminderItem("hotmail", "ev-off", "Off", "", start, start.AddHours(1), start.AddMinutes(-15))];
+            CallVoid(window, "EvaluateReminders");
+            Assert.Null(typeof(MainWindow).GetField("_remindersWindow", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window));
+        }
+        finally
+        {
+            store.Save(before);
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
     public async Task A_missing_attached_data_file_is_listed_as_not_found_and_remove_takes_it_off_the_list()
     {
         ResetRegistry();

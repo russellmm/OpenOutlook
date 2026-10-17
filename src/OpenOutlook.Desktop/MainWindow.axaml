@@ -1272,6 +1272,25 @@
                   </Border>
                 </StackPanel>
 
+                <StackPanel Name="PageCalendar" IsVisible="False" Margin="36,14,48,26">
+                  <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,6">
+                    <ContentControl Template="{StaticResource OlIconCalendar}" Width="34" Height="34" />
+                    <TextBlock Grid.Column="1" Classes="olOptBody" FontSize="15.5" Text="Change the settings for calendars, meetings, and time zones." Margin="14,0,0,0" VerticalAlignment="Center" />
+                  </Grid>
+                  <TextBlock Classes="olOptSection" Text="Reminders" />
+                  <Border Classes="olOptRule" />
+                  <StackPanel Spacing="8" Margin="52,0,0,16">
+                    <CheckBox Name="OptShowReminders" Content="Show _reminders"
+                              ToolTip.Tip="The Reminders window opens when a reminder of a Microsoft account's calendar comes due. Dismissing or snoozing it there also does so in Outlook and on your phone." />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Classes="olOptBody" VerticalAlignment="Center" Text="Show reminders that came due while OpenOutlook was closed, up to this many days back:" />
+                      <NumericUpDown Name="OptReminderLookBack" Minimum="1" Maximum="90" Increment="1" FormatString="0" Width="104" />
+                    </StackPanel>
+                    <TextBlock Classes="olOptBody" Foreground="{DynamicResource OlTextSecondary}" TextWrapping="Wrap" MaxWidth="640" HorizontalAlignment="Left"
+                               Text="A reminder you dismiss is never shown again, here or in Outlook. Older reminders that were never dismissed are not shown." />
+                  </StackPanel>
+                </StackPanel>
+
                 <!-- Everything else is a named placeholder until its category is built -->
                 <StackPanel Name="PageOptionPlaceholder" IsVisible="False" Margin="36,20,48,24">
                   <TextBlock Name="OptionsPlaceholderHeading" Classes="olBsHeading" Text="Calendar" />

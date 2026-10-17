@@ -83,6 +83,25 @@ public sealed class RemindersHeadlessTests
         finally { window.CloseForGood(); }
     }
 
+    [AvaloniaFact]
+    public void The_appointment_reminder_box_offers_outlooks_choices_defaults_to_15_minutes_and_is_saved()
+    {
+        var editor = new CalendarEditorWindow(new DateOnly(2026, 10, 20), meeting: false);
+        try
+        {
+            editor.Show();
+            editor.SetSubject("Dentist");
+            Assert.Equal(15, editor.Build()!.ReminderMinutesBeforeStart);
+            editor.ChooseReminder("1 hour");
+            Assert.Equal(60, editor.Build()!.ReminderMinutesBeforeStart);
+            editor.ChooseReminder("None");
+            Assert.Null(editor.Build()!.ReminderMinutesBeforeStart);
+            Assert.Equal(["None", "0 minutes", "5 minutes", "10 minutes", "15 minutes", "30 minutes", "1 hour", "2 hours", "3 hours", "4 hours",
+                "8 hours", "0.5 days", "1 day", "2 days", "1 week"], CalendarEditorWindow.ReminderChoices.Select(c => c.Label));
+        }
+        finally { editor.Close(); }
+    }
+
     private static void Shot(Window w, string name)
     {
         var dir = Environment.GetEnvironmentVariable("OO_HEADLESS_OUT");

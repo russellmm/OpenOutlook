@@ -13,7 +13,7 @@ public sealed record GraphCalendarEvent(string Id, string Subject, DateTimeOffse
 
 public sealed record NewCalendarEvent(string Subject, DateTimeOffset Start, DateTimeOffset End,
     bool IsAllDay, string Location, string Body, IReadOnlyList<string> Attendees, Guid TransactionId,
-    string TimeZoneId = "UTC");
+    string TimeZoneId = "UTC", int? ReminderMinutesBeforeStart = 15);      // null: no reminder (Outlook's "None")
 
 /// <summary>Personal Microsoft calendar access through a no-redirect Graph transport.</summary>
 public sealed class GraphCalendarClient(HttpClient http, string expectedAccountId)
@@ -91,6 +91,8 @@ public sealed class GraphCalendarClient(HttpClient http, string expectedAccountI
         if (item.IsAllDay && (item.Start.TimeOfDay != TimeSpan.Zero || item.End.TimeOfDay != TimeSpan.Zero ||
                               string.IsNullOrWhiteSpace(item.TimeZoneId) || item.TimeZoneId.Length > 128))
             throw new ArgumentException("All-day event boundaries must be midnight in one time zone.", nameof(item));
+        if (item.ReminderMinutesBeforeStart is < 0 or > 4 * 7 * 24 * 60)
+            throw new ArgumentException("A reminder can be up to four weeks before the start.", nameof(item));
         await VerifyAsync(token, ct).ConfigureAwait(false);
         object Time(DateTimeOffset value) => new
         {
@@ -111,7 +113,9 @@ public sealed class GraphCalendarClient(HttpClient http, string expectedAccountI
             {
                 emailAddress = new { address }, type = "required"
             }).ToArray(),
-            transactionId = item.TransactionId.ToString("D")
+            transactionId = item.TransactionId.ToString("D"),
+            isReminderOn = item.ReminderMinutesBeforeStart is not null,
+            reminderMinutesBeforeStart = item.ReminderMinutesBeforeStart ?? 0
         };
         var url = Origin + "/me/calendars/" + Uri.EscapeDataString(calendarId) + "/events";
         using var json = await RequestAsync(HttpMethod.Post, url, token, payload, ct).ConfigureAwait(false);

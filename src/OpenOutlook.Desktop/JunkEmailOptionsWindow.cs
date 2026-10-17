@@ -42,8 +42,7 @@ public sealed class JunkEmailOptionsWindow : Window
         Width = 640; Height = 680; MinWidth = 560; MinHeight = 560;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Themed.Brush("OlCard", Brushes.White);
-        Styles.Add(new Avalonia.Styling.Style(x => x.OfType<ListBoxItem>())                        // a dense list, like Outlook's
-        { Setters = { new Avalonia.Styling.Setter(ListBoxItem.PaddingProperty, new Thickness(6, 1)), new Avalonia.Styling.Setter(ListBoxItem.MinHeightProperty, 0.0) } });
+        DenseLists(this);
         Styles.Add(new Avalonia.Styling.Style(x => x.OfType<TabItem>())
         { Setters = { new Avalonia.Styling.Setter(TabItem.PaddingProperty, new Thickness(8, 4)), new Avalonia.Styling.Setter(TabItem.MinHeightProperty, 0.0) } });
 
@@ -150,15 +149,20 @@ public sealed class JunkEmailOptionsWindow : Window
             encodings);
     }
 
-    private async Task EditTopLevelDomainsAsync()
+    internal Window? TopLevelDomainDialog { get; private set; }
+
+    internal async Task EditTopLevelDomainsAsync()
     {
         var dialog = new Window
         {
             Title = "Blocked Top-Level Domain List", Width = 420, Height = 460, WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = Themed.Brush("OlCard", Brushes.White),
         };
+        DenseLists(dialog);
+        TopLevelDomainDialog = dialog;
         var close = new Button { Content = "OK", MinWidth = 90, IsDefault = true, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(12) };
         close.Click += (_, _) => dialog.Close();
+        ToolTip.SetTip(close, "Back to Junk Email Options; OK or Apply there saves the list");
         var dock = new DockPanel();
         DockPanel.SetDock(close, Dock.Bottom);
         dock.Children.Add(close);
@@ -170,7 +174,7 @@ public sealed class JunkEmailOptionsWindow : Window
 
     private Control ListTab(JunkListKind kind, string intro, params Control[] below)
     {
-        var box = new ListBox { SelectionMode = SelectionMode.Multiple, Height = 300, Padding = new Thickness(0) };
+        var box = new ListBox { SelectionMode = SelectionMode.Multiple, Height = 300, Padding = new Thickness(0), Background = Themed.Brush("OlCard", Brushes.White) };
         _boxes[kind] = box;
         var count = CountLabel(kind, HorizontalAlignment.Left);
         var add = Btn("Add..."); var edit = Btn("Edit..."); var remove = Btn("Remove");
@@ -197,6 +201,11 @@ public sealed class JunkEmailOptionsWindow : Window
         labels.Add(label);
         return label;
     }
+
+    /// <summary>Outlook's lists are dense: one line per entry, no padding band around the list (used by this window and its dialogs).</summary>
+    private static void DenseLists(Window window) =>
+        window.Styles.Add(new Avalonia.Styling.Style(x => x.OfType<ListBoxItem>())
+        { Setters = { new Avalonia.Styling.Setter(ListBoxItem.PaddingProperty, new Thickness(6, 1)), new Avalonia.Styling.Setter(ListBoxItem.MinHeightProperty, 0.0) } });
 
     private static TextBlock Tab(string text) => new() { Text = text, FontSize = 13.5 };
 

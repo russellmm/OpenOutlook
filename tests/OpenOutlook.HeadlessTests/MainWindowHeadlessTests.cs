@@ -1847,6 +1847,20 @@ public sealed class MainWindowHeadlessTests
             Assert.Equal(["@shop.example", "new@y.com"], result.Own.SafeSenders);
             Assert.Equal(["1ppmgfh@peterlink.ru"], result.Effective.BlockedSenders);
             Assert.False(window.HasChanges);
+            var tld = OpenOutlook.JunkCleaner.JunkListKind.BlockedTopLevelDomains;
+            Assert.Equal(2, window.ImportBytes(tld, System.Text.Encoding.UTF8.GetBytes(".it\r\nru\r\nRU\r\n")));         // ".it" and "RU" are read as it / ru
+            Assert.Equal(["it", "ru"], window.Shown(tld));
+            var dialogTask = window.EditTopLevelDomainsAsync();                                     // the International tab's dialog
+            Dispatcher.UIThread.RunJobs();
+            var dialog = window.TopLevelDomainDialog!;
+            var rows = dialog.GetVisualDescendants().OfType<ListBoxItem>().ToList();
+            Assert.Equal(2, rows.Count);
+            Assert.True(rows[1].Bounds.Top - rows[0].Bounds.Top < 30, $"rows {rows[1].Bounds.Top - rows[0].Bounds.Top} px apart");   // dense, like Outlook
+            Shot(dialog, "junk-tld-dialog");
+            dialog.Close();
+            await dialogTask;
+            window.ApplyChanges();
+            Assert.Equal(["it", "ru"], saved[^1].Effective.BlockedTopLevelDomains);
             await window.ReadFromOutlookAsync();
             Assert.Equal(1, reads);
             Assert.Equal("Read Outlook's lists.", window.LastMessage);

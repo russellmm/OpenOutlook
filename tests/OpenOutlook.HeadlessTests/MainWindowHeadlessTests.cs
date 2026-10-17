@@ -1924,6 +1924,56 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Compose_contacts_are_read_again_after_people_changes_one()
+    {
+        var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "recip-" + Guid.NewGuid().ToString("N")[..8],
+            "person@hotmail.test", "client", DateTimeOffset.UtcNow, OpenOutlook.Auth.MicrosoftAccountPermissions.PlannedPersonalScopes);
+        ResetRegistry().Upsert(account);
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        var dir = Path.Combine(Path.GetTempPath(), "oo-recipcache-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            ShowWithSnapshotReader(window);
+            var contacts = new List<string> { """{"id":"c1","displayName":"Michael Bryan","emailAddresses":[{"address":"michael.bryan@intel.com","name":"Michael Bryan"}]}""" };
+            var reads = 0;
+            var handler = new LambdaGraph(request =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                if (path == "/v1.0/me") return "{\"id\":\"" + account.AccountId + "\"}";
+                if (path == "/v1.0/me/contacts") { reads++; return "{\"value\":[" + string.Join(",", contacts) + "]}"; }
+                return "{\"value\":[]}";                                                            // contact folders, Sent Items
+            });
+            typeof(MainWindow).GetField("_graphHttp", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, new HttpClient(handler));
+            var session = new MicrosoftMailSession(account, new OpenOutlook.Auth.UnavailableSecretStore(), new HttpClient());
+            typeof(MicrosoftMailSession).GetField("_accessToken", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(session, "headless-token");
+            typeof(MicrosoftMailSession).GetField("_expiresAt", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(session, DateTimeOffset.UtcNow.AddHours(1));
+            ((System.Collections.IDictionary)typeof(MainWindow).GetField("_microsoftSessions", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!)[account.AccountId] = session;
+            window.RecentRecipients = new RecentRecipientsStore(dir);
+
+            var first = await window.LookupRecipientsAsync("person@hotmail.test");
+            Assert.Equal(["michael.bryan@intel.com"], first.Contacts.Select(c => c.Address));
+            contacts.Add("""{"id":"c2","displayName":"Jessica Marrash","emailAddresses":[{"address":"jessica.marrash@gmail.com","name":"Jessica Marrash"}]}""");
+            Assert.Single((await window.LookupRecipientsAsync("person@hotmail.test")).Contacts);          // within the 5 minutes: the cached list
+            window.ForgetRecipientContacts(account.AccountId);                                           // People saved a contact
+            var after = await window.LookupRecipientsAsync("person@hotmail.test");
+            Assert.Contains(after.Contacts, c => c.Address == "jessica.marrash@gmail.com" && c.Name == "Jessica Marrash");
+            Assert.Equal(2, reads);
+        }
+        finally
+        {
+            window.Close();
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    private sealed class LambdaGraph(Func<HttpRequestMessage, string> body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(body(request), System.Text.Encoding.UTF8, "application/json"), RequestMessage = request });
+    }
+
+    [AvaloniaFact]
     public async Task A_missing_attached_data_file_is_listed_as_not_found_and_remove_takes_it_off_the_list()
     {
         ResetRegistry();

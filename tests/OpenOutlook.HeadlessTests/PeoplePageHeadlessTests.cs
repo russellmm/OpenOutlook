@@ -45,6 +45,27 @@ public sealed class PeoplePageHeadlessTests
         return (http, calls);
     }
 
+    [AvaloniaFact]
+    public async Task Saving_a_contact_tells_the_compose_suggestions_to_read_the_contacts_again()
+    {
+        var account = "people-save-" + Guid.NewGuid().ToString("N");
+        using var http = new HttpClient(new Handler(request =>
+        {
+            var r = request.RequestUri!.AbsolutePath == "/v1.0/me" ? Json("{\"id\":\"" + account + "\"}")
+                : new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("""{"id":"c-new","displayName":"Jessica Marrash","emailAddresses":[{"address":"jessica.marrash@gmail.com","name":"Jessica Marrash"}]}""") };
+            r.RequestMessage = request;
+            return r;
+        }));
+        var page = new PeoplePage(new Window(), http, _ => Task.FromResult("token"), _ => Task.CompletedTask, null, (_, _, _) => { }, (_, _) => Task.CompletedTask);
+        var changed = new List<string>();
+        page.ContactsChanged += changed.Add;
+        var save = typeof(PeoplePage).GetMethod("SaveAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var contact = new GraphContact { DisplayName = "Jessica Marrash", GivenName = "Jessica", Surname = "Marrash", Emails = [new GraphEmailAddress("jessica.marrash@gmail.com", "Jessica Marrash")] };
+        var error = await (Task<string?>)save.Invoke(page, [Hotmail(account), new GraphContactFolder("", "Contacts"), contact, null])!;
+        Assert.Null(error);
+        Assert.Equal([account], changed);
+    }
+
     private static ConnectedAccount Hotmail(string id, string[]? scopes = null) =>
         new(OAuthProvider.MicrosoftConsumers, id, "person@hotmail.test", "client", DateTimeOffset.UtcNow, scopes ?? MicrosoftAccountPermissions.PlannedPersonalScopes);
 

@@ -49,6 +49,8 @@ public sealed class PeoplePage : UserControl
     public Control Ribbon { get; }
     /// <summary>The page's own status line (also handed to the main window's status bar by the caller when wanted).</summary>
     public event Action<string>? Status;
+    /// <summary>A contact of the account (its id) was created, changed or deleted here: the compose window's suggestions read the contacts again.</summary>
+    public event Action<string>? ContactsChanged;
 
     public PeoplePage(Window owner, HttpClient http, Func<ConnectedAccount, Task<string>> token, Func<ConnectedAccount?, Task> accountSetup,
         Action? openFile, Action<ConnectedAccount, string, string> email, Func<ConnectedAccount, string, Task> meeting)
@@ -446,6 +448,7 @@ public sealed class PeoplePage : UserControl
             }
             _contacts = _contacts.Where(c => c.Id != saved.Id).Append(saved).OrderBy(ContactFormat.SortKey, StringComparer.CurrentCultureIgnoreCase).ToArray();
             RenderList(saved.Id);
+            ContactsChanged?.Invoke(account.AccountId);
             Say((contact.Id.Length == 0 ? "Contact saved." : "Contact updated.") + (note ?? ""), note is not null);
             return null;
         }
@@ -464,6 +467,7 @@ public sealed class PeoplePage : UserControl
             var index = _list.SelectedIndex;
             _contacts = _contacts.Where(c => c.Id != contact.Id).ToArray();
             _photos.Remove(contact.Id);
+            ContactsChanged?.Invoke(account.AccountId);
             RenderList();
             if (_list.ItemCount > 0) _list.SelectedIndex = Math.Clamp(index, 0, _list.ItemCount - 1);
             Say("Contact deleted.", false);

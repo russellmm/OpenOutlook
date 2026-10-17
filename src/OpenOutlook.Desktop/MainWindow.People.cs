@@ -30,6 +30,7 @@ public sealed partial class MainWindow
                 () => OpenBackstage("info"),
                 EmailContact, ScheduleMeetingWithAsync);
             _peoplePage.Status += text => { if (text.Length > 0) StatusText.Text = text; };
+            _peoplePage.ContactsChanged += ForgetRecipientContacts;
             PeopleContent.Content = _peoplePage;
             PeopleRibbonContent.Content = _peoplePage.Ribbon;
             RefreshPeopleAccounts();

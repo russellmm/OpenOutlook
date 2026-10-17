@@ -4,7 +4,8 @@ using OpenOutlook.Providers.Microsoft;
 namespace OpenOutlook.Desktop;
 
 /// <summary>
-/// What the compose window offers as recipients (owner 2026-10-17): the account's Microsoft contacts (read at most once an hour) and the addresses
+/// What the compose window offers as recipients (owner 2026-10-17): the account's Microsoft contacts (read again after 5 minutes, and at once after a
+/// contact is saved or deleted in People - owner: a new contact did not appear while the cache lasted an hour) and the addresses
 /// it wrote to (recent-recipients.json: every send; for a Microsoft account the newest 200 Sent Items are read once per run while the list is short).
 /// Gmail accounts have recent recipients only (Google contacts are not connected).
 /// </summary>
@@ -13,6 +14,10 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, (DateTime At, IReadOnlyList<RecipientEntry> Contacts)> _recipientContacts = new(StringComparer.Ordinal);
     private readonly HashSet<string> _sentItemsRead = new(StringComparer.Ordinal);
     internal RecentRecipientsStore RecentRecipients { get; set; } = new();
+    private static readonly TimeSpan RecipientContactsFor = TimeSpan.FromMinutes(5);
+
+    /// <summary>People changed a contact of this account: the next compose window reads the contacts again.</summary>
+    internal void ForgetRecipientContacts(string accountId) => _recipientContacts.Remove(accountId);
 
     internal async Task<(IReadOnlyList<RecipientEntry> Contacts, IReadOnlyList<RecipientEntry> Recent)> LookupRecipientsAsync(string address)
     {
@@ -36,7 +41,7 @@ public sealed partial class MainWindow
             }
             if (account.CanManageMicrosoftContacts)
             {
-                if (_recipientContacts.TryGetValue(account.AccountId, out var cached) && DateTime.UtcNow - cached.At < TimeSpan.FromHours(1)) contacts = cached.Contacts;
+                if (_recipientContacts.TryGetValue(account.AccountId, out var cached) && DateTime.UtcNow - cached.At < RecipientContactsFor) contacts = cached.Contacts;
                 else
                 {
                     var client = new GraphContactsClient(_graphHttp, account.AccountId);

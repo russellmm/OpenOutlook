@@ -61,6 +61,14 @@ public sealed record JunkLists
 
     public int Count => SafeSenders.Count + SafeRecipients.Count + BlockedSenders.Count + BlockedTopLevelDomains.Count;
 
+    /// <summary>The list an entry cannot be on at the same time (Safe Senders and Blocked Senders exclude each other); null for the others.</summary>
+    public static JunkListKind? Opposite(JunkListKind kind) => kind switch
+    {
+        JunkListKind.SafeSenders => JunkListKind.BlockedSenders,
+        JunkListKind.BlockedSenders => JunkListKind.SafeSenders,
+        _ => null,
+    };
+
     /// <summary>
     /// The verdict for a message: Safe when the sender is a safe sender or any recipient a safe recipient (or the sender is a contact and
     /// <paramref name="trustedContacts"/> is given); else Blocked when the sender is a blocked sender or ends with a blocked top-level domain.
@@ -292,9 +300,19 @@ public sealed record JunkListsAccount
         };
     }
 
-    /// <summary>Adds entries to one list (right-click "Block Sender" / "Never Block Sender"); an Outlook entry removed earlier comes back.</summary>
-    public JunkListsAccount WithAdded(JunkListKind kind, params string[] entries) =>
-        WithEdited(kind, Effective.Get(kind).Concat(entries));
+    /// <summary>
+    /// Adds entries to one list (right-click "Block Sender" / "Never Block Sender"); an Outlook entry removed earlier comes back. As in Outlook,
+    /// an entry is on Safe Senders or on Blocked Senders, never both: adding it to one takes the same entry off the other (owner 2026-10-17:
+    /// Block Sender, then Not Junk, left info@bloedelreserve.org on both).
+    /// </summary>
+    public JunkListsAccount WithAdded(JunkListKind kind, params string[] entries)
+    {
+        var added = JunkLists.Normalize(kind, entries);
+        var account = WithEdited(kind, Effective.Get(kind).Concat(added));
+        return JunkLists.Opposite(kind) is { } other
+            ? account.WithEdited(other, account.Effective.Get(other).Except(added, StringComparer.Ordinal))
+            : account;
+    }
 }
 
 public sealed class JunkListsStore

@@ -1860,6 +1860,13 @@ public sealed class MainWindowHeadlessTests
             Assert.Equal(["@shop.example", "new@y.com"], result.Own.SafeSenders);
             Assert.Equal(["1ppmgfh@peterlink.ru", "menu@added.example"], result.Effective.BlockedSenders);     // not overwritten by the window
             Assert.False(window.HasChanges);
+            window.PromptOverride = (_, _) => Task.FromResult<string?>("shop.example");                      // to Blocked Senders: leaves Safe Senders
+            await window.AddAsync(OpenOutlook.JunkCleaner.JunkListKind.BlockedSenders);
+            Assert.DoesNotContain("@shop.example", window.Shown(safe));
+            Assert.Contains("taken off the Safe Senders list", window.LastMessage);
+            window.ApplyChanges();
+            Assert.DoesNotContain("@shop.example", stored.Effective.SafeSenders);
+            Assert.Contains("@shop.example", stored.Effective.BlockedSenders);
             var tld = OpenOutlook.JunkCleaner.JunkListKind.BlockedTopLevelDomains;
             Assert.Equal(2, window.ImportBytes(tld, System.Text.Encoding.UTF8.GetBytes(".it\r\nru\r\nRU\r\n")));         // ".it" and "RU" are read as it / ru
             Assert.Equal(["it", "ru"], window.Shown(tld));

@@ -267,6 +267,17 @@ public sealed class JunkEmailOptionsWindow : Window
         if (text is null) return;
         if (JunkLists.NormalizeEntry(kind, text) is not { } entry) { LastMessage = $"\"{text}\" is not a valid email address or domain name."; await TellAsync(LastMessage); return; }
         Set(kind, _lists[kind].Append(entry));
+        TakeOffOpposite(kind, [entry]);
+    }
+
+    /// <summary>Safe Senders and Blocked Senders exclude each other, as in Outlook: an entry added to one leaves the other.</summary>
+    private void TakeOffOpposite(JunkListKind kind, IReadOnlyCollection<string> entries)
+    {
+        if (JunkLists.Opposite(kind) is not { } other) return;
+        var moved = _lists[other].Where(entries.Contains).ToList();
+        if (moved.Count == 0) return;
+        Set(other, _lists[other].Except(moved));
+        LastMessage = $"{string.Join(", ", moved.Take(3))} {(moved.Count == 1 ? "was" : "were")} taken off the {(other == JunkListKind.BlockedSenders ? "Blocked Senders" : "Safe Senders")} list.";
     }
 
     internal async Task EditAsync(JunkListKind kind)
@@ -276,6 +287,7 @@ public sealed class JunkEmailOptionsWindow : Window
         if (text is null) return;
         if (JunkLists.NormalizeEntry(kind, text) is not { } entry) { LastMessage = $"\"{text}\" is not a valid email address or domain name."; await TellAsync(LastMessage); return; }
         Set(kind, _lists[kind].Where(e => e != old).Append(entry));
+        TakeOffOpposite(kind, [entry]);
     }
 
     internal void Remove(JunkListKind kind)
@@ -290,7 +302,8 @@ public sealed class JunkEmailOptionsWindow : Window
         var entries = JunkLists.ParseTextFile(kind, bytes);
         var added = entries.Except(_lists[kind]).Count();
         Set(kind, _lists[kind].Concat(entries));
-        LastMessage = $"{added} new entr{(added == 1 ? "y" : "ies")} imported ({entries.Count} in the file).";
+        TakeOffOpposite(kind, entries.ToList());
+        LastMessage = $"{added} new entr{(added == 1 ? "y" : "ies")} imported ({entries.Count} in the file)." + (LastMessage.Contains("taken off") ? " " + LastMessage : "");
         return added;
     }
 

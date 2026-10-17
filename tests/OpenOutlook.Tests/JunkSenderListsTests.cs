@@ -82,6 +82,13 @@ public sealed class JunkSenderListsTests
             Assert.Equal(["@amazon.com", "more@z.com", "new@y.com"], reread.Effective.SafeSenders);       // the next read from Outlook
             reread = reread.WithAdded(JunkListKind.SafeSenders, "old@x.com");                                  // Never Block Sender brings it back
             Assert.Contains("old@x.com", reread.Effective.SafeSenders);
+            var blocked = reread.WithAdded(JunkListKind.BlockedSenders, "Info@BloedelReserve.org");           // Block Sender ...
+            Assert.Contains("info@bloedelreserve.org", blocked.Effective.BlockedSenders);
+            var safe = blocked.WithAdded(JunkListKind.SafeSenders, "info@bloedelreserve.org");                // ... then Not Junk: on one list only
+            Assert.Contains("info@bloedelreserve.org", safe.Effective.SafeSenders);
+            Assert.DoesNotContain("info@bloedelreserve.org", safe.Effective.BlockedSenders);
+            Assert.DoesNotContain("info@bloedelreserve.org", safe.WithAdded(JunkListKind.BlockedSenders, "info@bloedelreserve.org").Effective.SafeSenders);
+            Assert.Contains("old@x.com", safe.WithAdded(JunkListKind.SafeRecipients, "old@x.com").Effective.SafeSenders);   // only Safe / Blocked Senders exclude each other
             store.Save(reread);
             Assert.Equal(reread.Effective.SafeSenders, store.Load("acc").Effective.SafeSenders);
             File.WriteAllText(store.Path, "{ broken");

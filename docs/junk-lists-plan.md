@@ -2,7 +2,8 @@
 
 > Built: lists model and store, Outlook rule decoder and .ost reader, Junk Email Options window, right-click / Home > Junk menu, lists applied
 > every 5 minutes. Step 5 (live `reportMessage`): run on one message (Bloedel Reserve, Junk Email -> Inbox, 2026-10-16); Graph answered 200 and
-> moved it; whether Microsoft added the sender to Safe Senders is for the owner to check in Outlook. Not built: Blocked Encodings, "Automatically
+> moved it, but the owner found the sender NOT added to Outlook's Safe Senders: reportMessage only trains Microsoft's filter, so Block
+> Sender / Not Junk do not report (they change OpenOutlook's lists; Outlook's own lists change only in Outlook or on Outlook.com). Not built: Blocked Encodings, "Automatically
 > add people I email", writing lists back to Outlook (Graph cannot).
 
 Owner request (with screenshots of classic Outlook): the message right-click **Junk** menu (Block Sender, Never Block Sender, Never Block

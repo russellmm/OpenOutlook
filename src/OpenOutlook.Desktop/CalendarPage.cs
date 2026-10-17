@@ -155,6 +155,9 @@ public sealed partial class CalendarPage : UserControl
         _views.SelectedIndex = 3;
     }
 
+    /// <summary>Raised after an event is saved (the reminder check reads Graph again, so its reminder is known at once).</summary>
+    public event Action? EventSaved;
+
     public void SelectAccount(string accountId)
     {
         var option = _accounts.Items.OfType<ComboBoxItem>()
@@ -275,6 +278,7 @@ public sealed partial class CalendarPage : UserControl
             _message.Text = pending.Meeting ? "Meeting saved; invitations were sent by Outlook."
                 : "Appointment saved.";
             _pendingCreate = null;
+            EventSaved?.Invoke();
             _retry.IsVisible = _discard.IsVisible = false;
             Render();
             // The returned event is shown immediately. A later navigation fetches Graph's current view.

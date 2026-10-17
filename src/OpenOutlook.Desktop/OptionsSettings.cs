@@ -114,6 +114,8 @@ public sealed record OptionsSettings
     public bool ShowReminders { get; init; } = true;
     /// <summary>How far back a reminder that came due while OpenOutlook was closed is still shown, in days (1 to 90).</summary>
     public int ReminderLookBackDays { get; init; } = 30;
+    /// <summary>How often Graph is asked for new or changed reminders, in minutes (1 to 60). A reminder already known fires on time regardless.</summary>
+    public int ReminderCheckMinutes { get; init; } = 1;
 
     // Reading Pane dialog
     public bool ReadPaneMarkOnView { get; init; } = true;
@@ -200,6 +202,7 @@ public sealed class OptionsSettingsStore
         AfterMoveOrDelete = Cap(s.AfterMoveOrDelete, "return to the current folder"),
         ReadPaneWaitSeconds = Math.Clamp(s.ReadPaneWaitSeconds, 0, 300),
         ReminderLookBackDays = Math.Clamp(s.ReminderLookBackDays, 1, 90),
+        ReminderCheckMinutes = Math.Clamp(s.ReminderCheckMinutes, 1, 60),
         FrenchMode = Cap(s.FrenchMode, "Traditional and new spellings"),
         SpanishMode = Cap(s.SpanishMode, "Tuteo verb forms only"),
     };

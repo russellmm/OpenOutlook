@@ -52,7 +52,7 @@ public sealed class OptionsSettingsStoreTests : IDisposable
     public void OutOfRangeNumbersAreClampedOnSaveAndLoad()
     {
         var store = Store();
-        store.Save(new OptionsSettings { WrapAtCharacter = 99999, AutoSaveMinutes = -5, ReadPaneWaitSeconds = 4000, ReminderLookBackDays = 365 });
+        store.Save(new OptionsSettings { WrapAtCharacter = 99999, AutoSaveMinutes = -5, ReadPaneWaitSeconds = 4000, ReminderLookBackDays = 365, ReminderCheckMinutes = 0 });
         var loaded = store.Load();
         Assert.Equal(700, loaded.WrapAtCharacter);
         Assert.Equal(1, loaded.AutoSaveMinutes);
@@ -60,6 +60,8 @@ public sealed class OptionsSettingsStoreTests : IDisposable
         Assert.Equal(90, loaded.ReminderLookBackDays);                                     // Graph is asked for at most 100 days
         Assert.True(new OptionsSettings().ShowReminders);
         Assert.Equal(30, new OptionsSettings().ReminderLookBackDays);
+        Assert.Equal(1, loaded.ReminderCheckMinutes);
+        Assert.Equal(1, new OptionsSettings().ReminderCheckMinutes);
     }
 
     [Fact]

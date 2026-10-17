@@ -5,13 +5,14 @@ using OpenOutlook.Providers.Microsoft;
 namespace OpenOutlook.Desktop;
 
 /// <summary>
-/// Calendar reminders (docs/reminders-plan.md section 4): every 5 minutes, and once at start-up, Graph's reminderView is read for each Microsoft
+/// Calendar reminders (docs/reminders-plan.md section 4): every minute by default (Options > Calendar), once at start-up and after an event is saved here, Graph's reminderView is read for each Microsoft
 /// account over the look-back (30 days) plus the day ahead; a second timer fires at the next reminder time between polls. Dismissals and snoozes
 /// that Graph has not confirmed yet are sent again on each poll.
 /// </summary>
 public sealed partial class MainWindow
 {
-    private static readonly TimeSpan ReminderPollInterval = TimeSpan.FromMinutes(5);
+    /// <summary>Options > Calendar: how often Graph is asked (1 to 60 minutes, default 1).</summary>
+    private TimeSpan ReminderPollInterval => TimeSpan.FromMinutes(Math.Clamp(_options.ReminderCheckMinutes, 1, 60));
     private static readonly TimeSpan ReminderLookAhead = TimeSpan.FromDays(1);
     private readonly ReminderStateStore _reminderStore = new();                                  // ~/.config/OpenOutlook/reminders-state.json, beside the other settings
     private readonly Dictionary<string, IReadOnlyList<ReminderItem>> _reminderServer = new(StringComparer.Ordinal);
@@ -178,6 +179,7 @@ public sealed partial class MainWindow
     private async Task RemindersOptionsChangedAsync()
     {
         if (_reminderPollTimer is null) return;                                              // the scheduler is off (tests)
+        _reminderPollTimer.Interval = ReminderPollInterval;
         if (!_options.ShowReminders) { _reminderServer.Clear(); EvaluateReminders(); return; }
         await RefreshRemindersAsync();
     }

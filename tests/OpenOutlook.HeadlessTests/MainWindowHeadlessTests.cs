@@ -1699,11 +1699,15 @@ public sealed class MainWindowHeadlessTests
             Assert.Equal(30, days.Value);
             show.IsChecked = false;
             days.Value = 7;
+            var check = window.FindControl<NumericUpDown>("OptReminderCheckMinutes")!;
+            Assert.Equal(1, check.Value);
+            check.Value = 3;
             CallVoid(window, "OptionsOkClicked", null, new RoutedEventArgs());
             Dispatcher.UIThread.RunJobs();
             var saved = store.Load();
             Assert.False(saved.ShowReminders);
             Assert.Equal(7, saved.ReminderLookBackDays);
+            Assert.Equal(3, saved.ReminderCheckMinutes);
 
             var start = DateTimeOffset.UtcNow.AddHours(-1);                                   // due, but reminders are off
             var server = (Dictionary<string, IReadOnlyList<ReminderItem>>)typeof(MainWindow)

@@ -110,12 +110,14 @@ public partial class MainWindow
     {
         OptShowReminders.IsChecked = s.ShowReminders;
         OptReminderLookBack.Value = Math.Clamp(s.ReminderLookBackDays, 1, 90);
+        OptReminderCheckMinutes.Value = Math.Clamp(s.ReminderCheckMinutes, 1, 60);
     }
 
     private OptionsSettings CollectCalendarOptions(OptionsSettings s) => s with
     {
         ShowReminders = OptShowReminders.IsChecked == true,
-        ReminderLookBackDays = (int)Math.Clamp(OptReminderLookBack.Value ?? 30, 1, 90)
+        ReminderLookBackDays = (int)Math.Clamp(OptReminderLookBack.Value ?? 30, 1, 90),
+        ReminderCheckMinutes = (int)Math.Clamp(OptReminderCheckMinutes.Value ?? 1, 1, 60)
     };
 
     // ---- Trust Center (Automatic Download) ----

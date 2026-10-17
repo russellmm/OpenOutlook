@@ -23,6 +23,7 @@ public sealed partial class MainWindow
                 account => GetMicrosoftSession(account).GetAccessTokenAsync(),
                 account => ShowAccountSetupAsync(account),
                 () => OpenBackstage("info"));
+            _calendarPage.EventSaved += () => _ = RefreshRemindersAsync();
             CalendarContent.Content = _calendarPage;
             CalendarRibbonContent.Content = _calendarPage.Ribbon;
             RefreshCalendarAccounts();

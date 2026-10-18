@@ -639,6 +639,18 @@ public sealed partial class ComposeWindow : Window
         }
         if (!HasUnsavedChanges()) return;
         e.Cancel = true;
+        // as Outlook: Yes saves the message in Drafts, No closes without saving (an earlier saved draft stays as it was), Cancel keeps editing
+        _closingPromptOpen = true;
+        string choice;
+        try { choice = await AskSaveChangesAsync(); }
+        finally { _closingPromptOpen = false; }
+        if (choice == "cancel") return;
+        if (choice == "no")
+        {
+            _closingAfterSave = true;
+            Close();
+            return;
+        }
         if (_account.CanSend && await SaveAsync(false))
         {
             _closingAfterSave = true;
@@ -646,6 +658,40 @@ public sealed partial class ComposeWindow : Window
         }
         else
             await OfferDiscardAfterFailedSaveAsync();
+    }
+
+    /// <summary>Test seam: answers "Want to save your changes?" with "yes", "no" or "cancel" without showing it.</summary>
+    internal Func<string>? SaveChoiceOverride { get; set; }
+
+    private async Task<string> AskSaveChangesAsync()
+    {
+        if (SaveChoiceOverride is { } answer) return answer();
+        var dialog = new Window { Title = "OpenOutlook", Width = 400, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false, ShowInTaskbar = false };
+        string Choice(string value) { dialog.Close(value); return value; }
+        var yes = new Button { Content = "Yes", IsDefault = true, MinWidth = 96, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var no = new Button { Content = "No", MinWidth = 96, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 96, HorizontalContentAlignment = HorizontalAlignment.Center };
+        yes.Click += (_, _) => Choice("yes");
+        no.Click += (_, _) => Choice("no");
+        cancel.Click += (_, _) => Choice("cancel");
+        var message = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children =
+        {
+            new TextBlock { Text = "⚠", FontSize = 30, Foreground = new SolidColorBrush(Color.Parse("#E8A200")), VerticalAlignment = VerticalAlignment.Center },
+            new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2, Children =
+            {
+                new TextBlock { Text = "Want to save your changes?", FontSize = 14 },
+                new TextBlock { Text = "Yes keeps this message in Drafts.", FontSize = 12, Foreground = Brushes.Gray },
+            } },
+        } };
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(20, 18, 20, 16), Spacing = 18, Children =
+            {
+                message,
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { yes, no, cancel } }
+            }
+        };
+        return await dialog.ShowDialog<string?>(this) ?? "cancel";                  // closing the dialog with its X keeps the message open, like Cancel
     }
 
     private async Task OfferDiscardAfterFailedSaveAsync()

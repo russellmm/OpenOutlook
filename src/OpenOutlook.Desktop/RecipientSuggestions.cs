@@ -12,7 +12,8 @@ namespace OpenOutlook.Desktop;
 
 /// <summary>
 /// Outlook's address suggestions under a To / Cc / Bcc box (owner's screenshot 2026-10-17): clicking into the box lists the most recently used
-/// addresses, typing narrows them (contacts too); each row is an avatar with initials, the name and the address. Up / Down move, Enter or Tab
+/// addresses, typing narrows them (contacts too). Only a click, typing or Down opens the list - not the focus a new message window gives the To
+/// box (owner 2026-10-18); each row is an avatar with initials, the name and the address. Up / Down move, Enter or Tab
 /// takes the highlighted one, Escape closes, a click takes the clicked one.
 /// A click is taken after the click has finished: closing the pop-up from inside its own pointer handler tore its list half down (Avalonia:
 /// "Visual is attached to visual tree but root could not be found"), and the next refill, run from window activation, ended the program
@@ -37,7 +38,9 @@ public sealed class RecipientSuggestions
     {
         _box = box; _directory = directory;
         Build();
-        box.GotFocus += (_, _) => { if (!_accepting) Update(); };
+        // a click into the box (after the click has put the cursor there); the TextBox handles the press itself, hence handledEventsToo
+        box.AddHandler(InputElement.PointerPressedEvent, (_, _) => Dispatcher.UIThread.Post(() => { if (box.IsFocused && !_accepting) Update(); }),
+            RoutingStrategies.Tunnel, handledEventsToo: true);
         box.TextChanged += (_, _) =>
         {
             if (_acceptedText is { } picked && box.Text == picked) { _acceptedText = null; return; }   // the pick's own change (raised a moment later): the list stays closed

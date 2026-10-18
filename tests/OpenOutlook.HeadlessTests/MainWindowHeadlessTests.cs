@@ -1613,6 +1613,54 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Closing_an_unsent_message_asks_to_save_it_as_a_draft_discard_it_or_keep_editing()
+    {
+        var backend = new RecordingBackend("me@hotmail.test", "Microsoft");
+        var accounts = new List<ComposeAccount> { new("me@hotmail.test", "Microsoft", null, () => backend) };
+        ComposeWindow Open()
+        {
+            var w = new ComposeWindow(accounts, accounts[0]) { Width = 1000, Height = 760 };
+            w.Show();
+            Dispatcher.UIThread.RunJobs();
+            return w;
+        }
+        // nothing typed: closes without asking
+        var asked = 0;
+        var empty = Open();
+        empty.SaveChoiceOverride = () => { asked++; return "cancel"; };
+        empty.Close();
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(empty.IsVisible);
+        Assert.Equal(0, asked);
+
+        var window = Open();
+        try
+        {
+            window.FieldBox("To").Text = "friend@example.org";
+            window.SaveChoiceOverride = () => { asked++; return "cancel"; };       // Cancel: keep editing, nothing saved
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(window.IsVisible);
+            Assert.Equal(1, asked);
+            Assert.Empty(backend.Log);
+
+            window.SaveChoiceOverride = () => "no";                                  // No: closed, nothing saved
+            window.Close();
+            await WaitUntil(() => !window.IsVisible, 3000);
+            Assert.Empty(backend.Log);
+        }
+        finally { if (window.IsVisible) window.Close(); }
+
+        var third = Open();
+        third.FieldBox("To").Text = "friend@example.org";
+        third.SaveChoiceOverride = () => "yes";                                      // Yes: saved in Drafts, then closed
+        third.Close();
+        await WaitUntil(() => !third.IsVisible, 5000);
+        Assert.Equal(["save"], backend.Log);
+        Assert.Equal("friend@example.org", backend.LastDraft!.To);
+    }
+
+    [AvaloniaFact]
     public async Task Html_message_is_formatted_from_the_ribbon_and_can_change_to_plain_text_and_back()
     {
         var backend = new RecordingBackend("me@hotmail.test", "Microsoft");

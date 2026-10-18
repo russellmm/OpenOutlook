@@ -56,8 +56,14 @@ public sealed class RecipientPickerHeadlessTests
             var to = window.FieldBox("To");
             var suggest = window.SuggestionsFor("To");
             to.Focus();
-            suggest.Update();
-            Assert.True(suggest.IsOpen);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(suggest.IsOpen);                                                             // the focus a new message gives the To box does not open the list
+            var press = new Avalonia.Input.Pointer(Avalonia.Input.Pointer.GetNextFreeId(), Avalonia.Input.PointerType.Mouse, true);
+            to.RaiseEvent(new Avalonia.Input.PointerPressedEventArgs(to, press, window, default, 0,
+                new Avalonia.Input.PointerPointProperties(Avalonia.Input.RawInputModifiers.LeftMouseButton, Avalonia.Input.PointerUpdateKind.LeftButtonPressed),
+                Avalonia.Input.KeyModifiers.None));
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(suggest.IsOpen);                                                              // a click into the box does
             Assert.Equal(["jessica.marrash@gmail.com", "ivnavyleague@yahoo.com"], suggest.Shown.Select(e => e.Address));   // most recent first
             to.Text = "bry";
             suggest.Update();

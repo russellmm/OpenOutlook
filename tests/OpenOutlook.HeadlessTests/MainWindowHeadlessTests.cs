@@ -1477,7 +1477,7 @@ public sealed class MainWindowHeadlessTests
             var button = window.GetVisualDescendants().OfType<Button>().First(b => ToolTip.GetTip(b)?.ToString() == layout.CollapsedGroups[0]);
             var inner = (StackPanel)button.Content!;
             var glyph = inner.Children[0];
-            Assert.True(glyph is ContentControl { Template: not null } && glyph.Bounds.Width > 10 && glyph.Bounds.Height > 10 && glyph.GetVisualDescendants().Count() > 3, $"{glyph.GetType().Name} {glyph.Bounds} visual={string.Join(",", glyph.GetVisualDescendants().Select(v => v.GetType().Name))} visible={glyph.IsVisible} opacity={glyph.Opacity}");
+            Assert.True(glyph is Viewbox { Child: ContentControl { Template: not null } } && glyph.Bounds.Width > 10 && glyph.Bounds.Height > 10 && glyph.GetVisualDescendants().Count() > 3, $"{glyph.GetType().Name} {glyph.Bounds} visual={string.Join(",", glyph.GetVisualDescendants().Select(v => v.GetType().Name))} visible={glyph.IsVisible} opacity={glyph.Opacity}");
             Assert.NotNull(button.Flyout);
             Assert.IsType<Border>(((Flyout)button.Flyout!).Content);
 

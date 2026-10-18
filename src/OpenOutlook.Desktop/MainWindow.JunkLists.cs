@@ -127,15 +127,7 @@ public sealed partial class MainWindow
     }
 
     /// <summary>A ribbon icon (32 x 32 canvas) scaled into a 16 px menu or small-button slot.</summary>
-    internal static Control MenuIcon(string key) => new Viewbox
-    {
-        Width = 16, Height = 16,
-        Child = new ContentControl
-        {
-            Width = 32, Height = 32,
-            Template = Avalonia.Application.Current?.TryFindResource(key, out var t) == true ? t as Avalonia.Controls.Templates.IControlTemplate : null,
-        },
-    };
+    internal static Control MenuIcon(string key) => OlIcon.Create(OlIcon.Template(key), 16);
 
     /// <summary>Home > Clean Up: Outlook's three commands, not built yet (shown greyed, "Planned feature").</summary>
     private void HomeCleanUpClicked(object? sender, RoutedEventArgs e)

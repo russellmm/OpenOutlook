@@ -365,7 +365,7 @@ public sealed class ComposeWindow : Window
     private static Control Icon(string key, double size)
     {
         if (Application.Current is { } app && app.TryFindResource(key, out var template) && template is Avalonia.Controls.Templates.IControlTemplate ct)
-            return new ContentControl { Template = ct, Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center };
+            return OlIcon.Create(ct, size);
         return new Border { Width = size, Height = size, CornerRadius = new CornerRadius(3), BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1) };
     }
 

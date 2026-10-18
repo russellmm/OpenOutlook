@@ -648,8 +648,8 @@ public sealed class ContactEditorWindow : Window
     {
         if (Application.Current is { } app && app.TryFindResource(key, out var template) && template is IControlTemplate ct)
         {
-            var control = new ContentControl { Template = ct, Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center };
-            if (fill is not null) control.Foreground = fill;
+            var control = OlIcon.Create(ct, size);
+            if (fill is not null && control is Viewbox { Child: ContentControl inner }) inner.Foreground = fill;
             return control;
         }
         return new Border { Width = size, Height = size, CornerRadius = new CornerRadius(3), BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1) };

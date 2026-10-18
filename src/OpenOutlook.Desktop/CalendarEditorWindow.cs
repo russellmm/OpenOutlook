@@ -395,7 +395,7 @@ public sealed class CalendarEditorWindow : Window
 
     private static Button Rotated(Button button, double angle)
     {
-        ((ContentControl)button.Content).RenderTransform = new RotateTransform(angle);
+        if (button.Content is Control icon) icon.RenderTransform = new RotateTransform(angle);      // the icon (a Viewbox since 2026-10-17)
         return button;
     }
 
@@ -430,7 +430,7 @@ public sealed class CalendarEditorWindow : Window
     private static Control Icon(string key, double size)
     {
         if (Application.Current is { } app && app.TryFindResource(key, out var template) && template is IControlTemplate ct)
-            return new ContentControl { Template = ct, Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center };
+            return OlIcon.Create(ct, size);
         return new Border { Width = size, Height = size, CornerRadius = new CornerRadius(3), BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1) };
     }
 

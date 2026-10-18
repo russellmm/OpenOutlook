@@ -17,10 +17,10 @@
           <!-- As in Outlook: the program icon above the navigation rail, then the Quick Access Toolbar (Send/Receive All Folders, Undo, customize) -->
           <Image Name="TitleAppIcon" Source="/Assets/openoutlook.png" Width="24" Height="24" Margin="4,0,10,0" ToolTip.Tip="OpenOutlook" />
           <Button Name="QuickSendReceiveButton" Classes="olRail" Width="30" Height="30" Click="SendReceiveAllClicked" ToolTip.Tip="Send/Receive All Folders">
-            <ContentControl Template="{StaticResource OlIconSyncAll}" Width="20" Height="20" />
+            <Viewbox Width="20" Height="20"><ContentControl Template="{StaticResource OlIconSyncAll}" Width="32" Height="32" /></Viewbox>
           </Button>
           <Button Name="QuickUndoButton" Classes="olRail" Width="30" Height="30" IsEnabled="False" ToolTip.ShowOnDisabled="True" ToolTip.Tip="Undo — planned">
-            <ContentControl Template="{StaticResource OlIconUndo}" Width="18" Height="18" />
+            <Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconUndo}" Width="32" Height="32" /></Viewbox>
           </Button>
           <Button Name="QuickCustomizeButton" Classes="olRail" Width="20" Height="30" ToolTip.Tip="Customize Quick Access Toolbar">
             <TextBlock Text="▾" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -73,16 +73,16 @@
       <Border Background="{DynamicResource OlChrome}" BorderBrush="{DynamicResource OlCardBorder}" BorderThickness="0,0,1,0">
         <StackPanel Spacing="2" Margin="0,4,0,0">
           <Button Name="MailNavButton" Classes="olRail olRailActive" Click="ShowMailClicked" ToolTip.Tip="Mail">
-            <ContentControl Template="{StaticResource OlIconRailMail}" Width="22" Height="22" />
+            <Viewbox Width="22" Height="22"><ContentControl Template="{StaticResource OlIconRailMail}" Width="32" Height="32" /></Viewbox>
           </Button>
           <Button Name="CalendarNavButton" Classes="olRail" Click="ShowCalendarClicked" ToolTip.Tip="Calendar">
-            <ContentControl Template="{StaticResource OlIconRailCalendar}" Width="22" Height="22" />
+            <Viewbox Width="22" Height="22"><ContentControl Template="{StaticResource OlIconRailCalendar}" Width="32" Height="32" /></Viewbox>
           </Button>
           <Button Name="PeopleNavButton" Classes="olRail" Click="ShowPeopleClicked" ToolTip.Tip="People">
-            <ContentControl Template="{StaticResource OlIconRailPeople}" Width="22" Height="22" />
+            <Viewbox Width="22" Height="22"><ContentControl Template="{StaticResource OlIconRailPeople}" Width="32" Height="32" /></Viewbox>
           </Button>
           <Button Classes="olRail" Click="RibbonPlaceholderClicked" Tag="Tasks" ToolTip.Tip="Tasks — planned">
-            <ContentControl Template="{StaticResource OlIconRailTasks}" Width="22" Height="22" />
+            <Viewbox Width="22" Height="22"><ContentControl Template="{StaticResource OlIconRailTasks}" Width="32" Height="32" /></Viewbox>
           </Button>
         </StackPanel>
       </Border>
@@ -104,10 +104,10 @@
 
                       <StackPanel Orientation="Horizontal">
                         <Button Classes="olLarge" Tag="new" Click="MailActionClicked" ToolTip.Tip="Compose using a connected Microsoft account">
-                          <StackPanel><ContentControl Template="{StaticResource OlIconNewMail}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="New Email" /></StackPanel>
+                          <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconNewMail}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="New Email" /></StackPanel>
                         </Button>
                         <Button Classes="olLarge" Tag="New items" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                          <StackPanel><ContentControl Template="{StaticResource OlIconNewItems}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="New Items" /></StackPanel>
+                          <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconNewItems}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="New Items" /></StackPanel>
                         </Button>
                       </StackPanel>
                       
@@ -132,10 +132,10 @@
                           </Button>
                         </StackPanel>
                         <Button Classes="olLarge" Tag="delete" Click="MailActionClicked" ToolTip.Tip="Move selected Microsoft mail to Deleted Items">
-                          <StackPanel><ContentControl Template="{StaticResource OlIconDelete}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Delete" /></StackPanel>
+                          <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconDelete}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Delete" /></StackPanel>
                         </Button>
                         <Button Classes="olLarge" Tag="archive" Click="MailActionClicked" ToolTip.Tip="Archive selected Microsoft mail">
-                          <StackPanel><ContentControl Template="{StaticResource OlIconArchive}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Archive" /></StackPanel>
+                          <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconArchive}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Archive" /></StackPanel>
                         </Button>
                       </StackPanel>
                     </DockPanel>
@@ -148,20 +148,20 @@
 
                       <StackPanel Orientation="Horizontal">
                         <Button Classes="olLarge" Tag="reply" Click="MailActionClicked" ToolTip.Tip="Reply to selected Microsoft mail">
-                          <StackPanel><ContentControl Template="{StaticResource OlIconReply}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Reply" /></StackPanel>
+                          <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconReply}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Reply" /></StackPanel>
                         </Button>
                         <Button Classes="olLarge" Tag="replyAll" Click="MailActionClicked" ToolTip.Tip="Reply to all recipients">
-                          <StackPanel><ContentControl Template="{StaticResource OlIconReplyAll}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Reply All" /></StackPanel>
+                          <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconReplyAll}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Reply All" /></StackPanel>
                         </Button>
                         <Button Classes="olLarge" Tag="forward" Click="MailActionClicked" ToolTip.Tip="Forward selected Microsoft mail">
-                          <StackPanel><ContentControl Template="{StaticResource OlIconForward}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Forward" /></StackPanel>
+                          <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconForward}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Forward" /></StackPanel>
                         </Button>
                         <StackPanel VerticalAlignment="Top" Margin="2,0,0,0">
                           <Button Classes="olSmall" Tag="Meeting" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconCalendar}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Meeting" /></StackPanel>
+                            <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconCalendar}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Meeting" /></StackPanel>
                           </Button>
                           <Button Classes="olSmall" Tag="More" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                            <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconNewItems}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="More" /></StackPanel>
+                            <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconNewItems}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="More" /></StackPanel>
                           </Button>
                         </StackPanel>
                       </StackPanel>
@@ -173,10 +173,10 @@
                   <Border Classes="olGroup">
                     <StackPanel VerticalAlignment="Top" MinWidth="120">
                       <Button Classes="olSmall" Tag="Quick step" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconQuickSteps}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Create New" /></StackPanel>
+                        <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconQuickSteps}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Create New" /></StackPanel>
                       </Button>
                       <Button Classes="olSmall" Tag="Quick step settings" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconMore}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Quick Step Settings" /></StackPanel>
+                        <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconMore}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Quick Step Settings" /></StackPanel>
                       </Button>
                       <TextBlock Classes="olGroupLabel" Text="Quick Steps" />
                     </StackPanel>
@@ -186,10 +186,10 @@
                   <Border Classes="olGroup">
                     <StackPanel Orientation="Horizontal">
                       <Button Classes="olLarge" Tag="Move" Click="RibbonMoveClicked" ToolTip.Tip="Move the selected messages to another folder (archives and Gmail)">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconMove}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Move" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconMove}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Move" /></StackPanel>
                       </Button>
                       <Button Classes="olLarge" Tag="Rules" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconRules}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Rules" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconRules}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Rules" /></StackPanel>
                       </Button>
                     </StackPanel>
                   </Border>
@@ -201,17 +201,17 @@
 
                     <StackPanel Orientation="Horizontal">
                       <Button Classes="olLarge" Tag="unread" Click="MailActionClicked" ToolTip.Tip="Mark the selected message unread">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconUnreadRead}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Unread / Read" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconUnreadRead}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Unread / Read" /></StackPanel>
                       </Button>
                       <Button Classes="olLarge" Tag="Categorize" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconCategorize}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Categorize" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconCategorize}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Categorize" /></StackPanel>
                       </Button>
                       <StackPanel VerticalAlignment="Top" Margin="2,0,0,0">
                         <Button Classes="olSmall" Tag="flag" Click="MailActionClicked" ToolTip.Tip="Flag for follow up">
-                          <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconFlag}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Follow Up" /></StackPanel>
+                          <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconFlag}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Follow Up" /></StackPanel>
                         </Button>
                         <Button Classes="olSmall" Tag="unflag" Click="MailActionClicked" ToolTip.Tip="Clear the follow up flag">
-                          <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconFlagClear}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Clear Flag" /></StackPanel>
+                          <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconFlagClear}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Clear Flag" /></StackPanel>
                         </Button>
                       </StackPanel>
                     </StackPanel>
@@ -226,10 +226,10 @@
 
                     <StackPanel Orientation="Horizontal">
                       <Button Name="ExportAttachmentButton" Classes="olLarge" Click="ExportAttachmentClicked" IsEnabled="False" ToolTip.Tip="Save the selected attachment to a new local file">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconSave}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Save Attachment" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconSave}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Save Attachment" /></StackPanel>
                       </Button>
                       <Button Name="ExportMessageButton" Classes="olLarge" Click="ExportMessageClicked" IsEnabled="False" ToolTip.Tip="Export the selected message as MIME EML">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconExport}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Export EML" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconExport}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Export EML" /></StackPanel>
                       </Button>
                     </StackPanel>
                     
@@ -240,10 +240,10 @@
                   <Border Classes="olGroup">
                     <StackPanel VerticalAlignment="Top">
                       <Button Classes="olSmall" Tag="New Group" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconPeople}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="New Group" /></StackPanel>
+                        <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconPeople}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="New Group" /></StackPanel>
                       </Button>
                       <Button Classes="olSmall" Tag="Browse Groups" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconAddressBook}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Browse Groups" /></StackPanel>
+                        <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconAddressBook}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Browse Groups" /></StackPanel>
                       </Button>
                       <TextBlock Classes="olGroupLabel" Text="Groups" />
                     </StackPanel>
@@ -253,10 +253,10 @@
                   <Border Classes="olGroup">
                     <StackPanel VerticalAlignment="Top">
                       <Button Classes="olSmall" Tag="Address Book" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconAddressBook}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Address Book" /></StackPanel>
+                        <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconAddressBook}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Address Book" /></StackPanel>
                       </Button>
                       <Button Classes="olSmall" Tag="Filter Email" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconFilter}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Filter Email" /></StackPanel>
+                        <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconFilter}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Filter Email" /></StackPanel>
                       </Button>
                       <TextBlock Classes="olGroupLabel" Text="Find" />
                     </StackPanel>
@@ -266,13 +266,13 @@
                   <Border Classes="olGroup">
                     <StackPanel Orientation="Horizontal">
                       <Button Classes="olLarge" Tag="Read Aloud" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconReadAloud}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Read Aloud" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconReadAloud}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Read Aloud" /></StackPanel>
                       </Button>
                       <Button Classes="olLarge" Tag="Translate" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconTranslate}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Translate" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconTranslate}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Translate" /></StackPanel>
                       </Button>
                       <Button Classes="olLarge" Tag="All Apps" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconAllApps}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="My Apps" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconAllApps}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="My Apps" /></StackPanel>
                       </Button>
                     </StackPanel>
                   </Border>
@@ -291,10 +291,10 @@
 
                     <StackPanel Orientation="Horizontal">
                       <Button Name="RefreshInboxButton" Classes="olLarge" Click="RefreshInboxClicked" IsEnabled="False">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconRefresh}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Send/Receive All Folders" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconRefresh}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Send/Receive All Folders" /></StackPanel>
                       </Button>
                       <Button Classes="olLarge" Tag="Offline" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconOffline}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Work Offline" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconOffline}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Work Offline" /></StackPanel>
                       </Button>
                     </StackPanel>
                     
@@ -312,10 +312,10 @@
                       <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Folder" />
 
                       <Button Classes="olSmall" Tag="New Folder" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconNewFolder}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Create New Folder" /></StackPanel>
+                        <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconNewFolder}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Create New Folder" /></StackPanel>
                       </Button>
                       <Button Classes="olSmall" Tag="Move Folder" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel Orientation="Horizontal"><ContentControl Template="{StaticResource OlIconMove}" Width="15" Height="15" /><TextBlock Classes="olSmallCaption" Text="Move Other Folder" /></StackPanel>
+                        <StackPanel Orientation="Horizontal"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconMove}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olSmallCaption" Text="Move Other Folder" /></StackPanel>
                       </Button>
                       
                                         </DockPanel>
@@ -326,10 +326,10 @@
 
                     <StackPanel Orientation="Horizontal">
                       <Button Name="ExportFolderButton" Classes="olLarge" Click="ExportFolderClicked" IsEnabled="False" ToolTip.Tip="Export the selected folder and its subfolders as EML files">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconExport}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Export Folder" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconExport}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Export Folder" /></StackPanel>
                       </Button>
                       <Button Name="CancelFolderExportButton" Classes="olLarge" Click="CancelFolderExportClicked" IsEnabled="False">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconDetach}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Cancel Export" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconDetach}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Cancel Export" /></StackPanel>
                       </Button>
                     </StackPanel>
                     
@@ -348,10 +348,10 @@
 
                     <StackPanel Orientation="Horizontal">
                       <Button Classes="olLarge" Click="ShortcutsClicked" ToolTip.Tip="Assign keyboard shortcuts for mail actions">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconKeyboard}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Shortcuts" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconKeyboard}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Shortcuts" /></StackPanel>
                       </Button>
                       <Button Classes="olLarge" Tag="Change View" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconReadingPane}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Change View" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconReadingPane}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Change View" /></StackPanel>
                       </Button>
                     </StackPanel>
                     
@@ -363,10 +363,10 @@
 
                     <StackPanel Orientation="Horizontal">
                       <Button Classes="olLarge" Tag="Reading Pane" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconReadingPane}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Reading Pane" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconReadingPane}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Reading Pane" /></StackPanel>
                       </Button>
                       <Button Classes="olLarge" Tag="Zoom" Click="RibbonPlaceholderClicked" ToolTip.Tip="Use the zoom control at the bottom right">
-                        <StackPanel><ContentControl Template="{StaticResource OlIconSearch}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Zoom" /></StackPanel>
+                        <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconSearch}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Zoom" /></StackPanel>
                       </Button>
                     </StackPanel>
                     
@@ -384,7 +384,7 @@
 
                   <StackPanel Orientation="Horizontal">
                     <Button Classes="olLarge" Tag="Help" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
-                      <StackPanel><ContentControl Template="{StaticResource OlIconHelp}" Width="28" Height="28" HorizontalAlignment="Center" /><TextBlock Classes="olCaption" Text="Help" /></StackPanel>
+                      <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconHelp}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Help" /></StackPanel>
                     </Button>
                   </StackPanel>
                   
@@ -492,13 +492,13 @@
                 <TextBlock Name="SubjectText" Text="Select a folder to begin" FontSize="20" FontWeight="Normal" Foreground="{DynamicResource OlText}" TextWrapping="Wrap" VerticalAlignment="Center" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
                   <Button Name="ReaderReplyButton" Classes="olReaderAction" Tag="reply" Click="MailActionClicked" IsVisible="False">
-                    <StackPanel Orientation="Horizontal" Spacing="6"><ContentControl Template="{StaticResource OlIconReply}" Width="15" Height="15" /><TextBlock Text="Reply" VerticalAlignment="Center" /></StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconReply}" Width="32" Height="32" /></Viewbox><TextBlock Text="Reply" VerticalAlignment="Center" /></StackPanel>
                   </Button>
                   <Button Name="ReaderReplyAllButton" Classes="olReaderAction" Tag="replyAll" Click="MailActionClicked" IsVisible="False">
-                    <StackPanel Orientation="Horizontal" Spacing="6"><ContentControl Template="{StaticResource OlIconReplyAll}" Width="15" Height="15" /><TextBlock Text="Reply All" VerticalAlignment="Center" /></StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconReplyAll}" Width="32" Height="32" /></Viewbox><TextBlock Text="Reply All" VerticalAlignment="Center" /></StackPanel>
                   </Button>
                   <Button Name="ReaderForwardButton" Classes="olReaderAction" Tag="forward" Click="MailActionClicked" IsVisible="False">
-                    <StackPanel Orientation="Horizontal" Spacing="6"><ContentControl Template="{StaticResource OlIconForward}" Width="15" Height="15" /><TextBlock Text="Forward" VerticalAlignment="Center" /></StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconForward}" Width="32" Height="32" /></Viewbox><TextBlock Text="Forward" VerticalAlignment="Center" /></StackPanel>
                   </Button>
                 </StackPanel>
               </Grid>
@@ -517,8 +517,7 @@
               </Grid>
 
               <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6" Margin="20,0,16,6">
-                <ContentControl Template="{StaticResource OlIconInfo}" Width="14" Height="14" VerticalAlignment="Center"
-                        IsVisible="{Binding #HtmlStatusText.IsVisible}" />
+                <Viewbox Width="18" Height="18" VerticalAlignment="Center" IsVisible="{Binding #HtmlStatusText.IsVisible}"><ContentControl Template="{StaticResource OlIconInfo}" Width="32" Height="32" /></Viewbox>
                 <TextBlock Name="HtmlStatusText" IsVisible="False" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" MaxWidth="900" />
               </StackPanel>
 
@@ -571,31 +570,31 @@
         <Border Grid.Column="0" Background="{DynamicResource OlBackstageNav}">
           <DockPanel LastChildFill="True">
             <Button DockPanel.Dock="Top" Name="BackstageBackButton" Classes="olBsBack" Click="CloseBackstageClicked" ToolTip.Tip="Return to mail (Esc)">
-              <ContentControl Template="{StaticResource OlIconBackArrow}" Width="26" Height="26" />
+              <Viewbox Width="26" Height="26"><ContentControl Template="{StaticResource OlIconBackArrow}" Width="32" Height="32" /></Viewbox>
             </Button>
             <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10">
               <Border Height="1" Background="{DynamicResource OlStrongBorder}" Margin="14,6,14,8" />
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavOfficeAccount" Tag="officeaccount" Click="BackstageNavClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconPeopleR}" Width="17" Height="17" Tag="{Binding #NavOfficeAccount.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconPeopleR}" Width="32" Height="32" Tag="{Binding #NavOfficeAccount.Foreground}" /></Viewbox>
                   <TextBlock Text="Account" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavFeedback" Tag="feedback" Click="BackstageNavClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconFeedbackR}" Width="17" Height="17" Tag="{Binding #NavFeedback.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconFeedbackR}" Width="32" Height="32" Tag="{Binding #NavFeedback.Foreground}" /></Viewbox>
                   <TextBlock Text="Feedback" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavOptions" Click="OptionsNavClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconGearR}" Width="17" Height="17" Tag="{Binding #NavOptions.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconGearR}" Width="32" Height="32" Tag="{Binding #NavOptions.Foreground}" /></Viewbox>
                   <TextBlock Text="Options" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
               <Button Classes="olBsItem" Name="BackstageExitButton" Click="BackstageExitClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconExitR}" Width="17" Height="17" Tag="{Binding #BackstageExitButton.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconExitR}" Width="32" Height="32" Tag="{Binding #BackstageExitButton.Foreground}" /></Viewbox>
                   <TextBlock Text="Exit" VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
@@ -603,37 +602,37 @@
             <StackPanel Margin="0,4,0,0">
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavInfo" Tag="info" IsChecked="True" Click="BackstageNavClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconHomeR}" Width="17" Height="17" Tag="{Binding #NavInfo.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconHomeR}" Width="32" Height="32" Tag="{Binding #NavInfo.Foreground}" /></Viewbox>
                   <TextBlock Text="Info" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavOpenExport" Tag="openexport" Click="BackstageNavClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconOpenExportR}" Width="17" Height="17" Tag="{Binding #NavOpenExport.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconOpenExportR}" Width="32" Height="32" Tag="{Binding #NavOpenExport.Foreground}" /></Viewbox>
                   <TextBlock Text="Open &amp; Export" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavSaveAs" Tag="saveas" Click="BackstageNavClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconSaveAsR}" Width="17" Height="17" Tag="{Binding #NavSaveAs.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconSaveAsR}" Width="32" Height="32" Tag="{Binding #NavSaveAs.Foreground}" /></Viewbox>
                   <TextBlock Text="Save As" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavPdf" IsEnabled="False" ToolTip.Tip="PDF export uses the printable-PDF command in the reading pane">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconPdfR}" Width="17" Height="17" Tag="{Binding #NavPdf.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconPdfR}" Width="32" Height="32" Tag="{Binding #NavPdf.Foreground}" /></Viewbox>
                   <TextBlock Text="Save as Adobe PDF" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavAttachments" Tag="attachments" Click="BackstageNavClicked" IsEnabled="{Binding #ExportAttachmentButton.IsEnabled}">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconPaperclipR}" Width="17" Height="17" Tag="{Binding #NavAttachments.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconPaperclipR}" Width="32" Height="32" Tag="{Binding #NavAttachments.Foreground}" /></Viewbox>
                   <TextBlock Text="Save Attachments" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
               <RadioButton Classes="olBsItem" GroupName="BackstageNav" Name="NavPrint" Tag="print" Click="BackstageNavClicked">
                 <StackPanel Orientation="Horizontal" Spacing="13">
-                  <ContentControl Template="{StaticResource OlIconPrintR}" Width="17" Height="17" Tag="{Binding #NavPrint.Foreground}" />
+                  <Viewbox Width="17" Height="17"><ContentControl Template="{StaticResource OlIconPrintR}" Width="32" Height="32" Tag="{Binding #NavPrint.Foreground}" /></Viewbox>
                   <TextBlock Text="Print" VerticalAlignment="Center" />
                 </StackPanel>
               </RadioButton>
@@ -655,7 +654,7 @@
                     <ComboBox.ItemTemplate>
                       <DataTemplate>
                         <Grid ColumnDefinitions="Auto,*" Margin="2,4">
-                          <ContentControl Template="{StaticResource OlIconAppMark}" Width="30" Height="30" VerticalAlignment="Center" />
+                          <Viewbox Width="30" Height="30" VerticalAlignment="Center"><ContentControl Template="{StaticResource OlIconAppMark}" Width="32" Height="32" /></Viewbox>
                           <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
                             <TextBlock Text="{Binding Address}" FontSize="13.5" Foreground="{DynamicResource OlText}" />
                             <TextBlock Text="{Binding Kind}" FontSize="12" Foreground="{DynamicResource OlTextSecondary}" />
@@ -677,7 +676,7 @@
                 <StackPanel Grid.Column="1" Margin="36,34,0,0" Spacing="7">
                   <Border Width="142" Height="142" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1" Padding="9">
                     <Border BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1">
-                      <ContentControl Template="{StaticResource OlIconPersonSilhouette}" Width="104" Height="104" HorizontalAlignment="Center" VerticalAlignment="Bottom" />
+                      <Viewbox Width="104" Height="104" HorizontalAlignment="Center" VerticalAlignment="Bottom"><ContentControl Template="{StaticResource OlIconPersonSilhouette}" Width="32" Height="32" /></Viewbox>
                     </Border>
                   </Border>
                   <Button Classes="olLink" Click="RibbonPlaceholderClicked" Tag="Profile picture" HorizontalAlignment="Center">
@@ -689,7 +688,7 @@
               <Grid ColumnDefinitions="Auto,*" Margin="0,30,0,0">
                 <Button Classes="olBsCard" Click="BsAccountSettingsClicked">
                   <StackPanel Spacing="7">
-                    <ContentControl Template="{StaticResource OlIconAccountGear}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <Viewbox Width="42" Height="42" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconAccountGear}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Text="Account&#10;Settings" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
                   </StackPanel>
                 </Button>
@@ -717,7 +716,7 @@
               <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
                 <Button Classes="olBsCard" Click="RibbonPlaceholderClicked" Tag="Automatic Replies">
                   <StackPanel Spacing="7">
-                    <ContentControl Template="{StaticResource OlIconAutoReplies}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <Viewbox Width="42" Height="42" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconAutoReplies}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Text="Automatic&#10;Replies" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
                   </StackPanel>
                 </Button>
@@ -730,7 +729,7 @@
               <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
                 <Button Classes="olBsCard" Click="BsOpenDataFilesClicked">
                   <StackPanel Spacing="7">
-                    <ContentControl Template="{StaticResource OlIconMailboxTools}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <Viewbox Width="42" Height="42" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconMailboxTools}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Text="Tools" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
                   </StackPanel>
                 </Button>
@@ -755,7 +754,7 @@
               <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
                 <Button Classes="olBsCard" Click="CheckArchiveClicked">
                   <StackPanel Spacing="7">
-                    <ContentControl Template="{StaticResource OlIconMailboxTools}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <Viewbox Width="42" Height="42" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconMailboxTools}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Text="Check &amp;&#10;Repair" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
                   </StackPanel>
                 </Button>
@@ -768,7 +767,7 @@
               <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
                 <Button Classes="olBsCard" Click="RibbonPlaceholderClicked" Tag="Rules and Alerts">
                   <StackPanel Spacing="7">
-                    <ContentControl Template="{StaticResource OlIconRulesBell}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <Viewbox Width="42" Height="42" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconRulesBell}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Text="Manage Rules&#10;&amp; Alerts" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
                   </StackPanel>
                 </Button>
@@ -781,7 +780,7 @@
               <Grid ColumnDefinitions="Auto,*" Margin="0,26,0,0">
                 <Button Classes="olBsCard" Click="RibbonPlaceholderClicked" Tag="Web Add-ins">
                   <StackPanel Spacing="7">
-                    <ContentControl Template="{StaticResource OlIconGlobeGear}" Width="42" Height="42" HorizontalAlignment="Center" />
+                    <Viewbox Width="42" Height="42" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconGlobeGear}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Text="Manage Add-&#10;ins" FontWeight="SemiBold" FontSize="13" TextAlignment="Center" />
                   </StackPanel>
                 </Button>
@@ -797,16 +796,16 @@
               <TextBlock Classes="olBsHeading" Text="Open and Export" />
               <StackPanel Spacing="10" MaxWidth="430" HorizontalAlignment="Left">
                 <Button Classes="olBsAction" Click="BsOpenPstClicked">
-                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconOpenExportR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Open Outlook Data File (.pst)" VerticalAlignment="Center" /></StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconOpenExportR}" Width="32" Height="32" Tag="{DynamicResource OlIcon}" /></Viewbox><TextBlock Text="Open Outlook Data File (.pst)" VerticalAlignment="Center" /></StackPanel>
                 </Button>
                 <Button Classes="olBsAction" Click="BsDetachClicked">
-                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconCloseDataR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Close an Outlook Data File (detach; nothing is deleted)" VerticalAlignment="Center" /></StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconCloseDataR}" Width="32" Height="32" Tag="{DynamicResource OlIcon}" /></Viewbox><TextBlock Text="Close an Outlook Data File (detach; nothing is deleted)" VerticalAlignment="Center" /></StackPanel>
                 </Button>
                 <Button Classes="olBsAction" Click="BsExportFolderClicked">
-                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconExport}" Width="18" Height="18" /><TextBlock Text="Export all messages in the selected folder (.eml each)" VerticalAlignment="Center" /></StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconExport}" Width="32" Height="32" /></Viewbox><TextBlock Text="Export all messages in the selected folder (.eml each)" VerticalAlignment="Center" /></StackPanel>
                 </Button>
                 <Button Classes="olBsAction" Click="ImportClicked" Tag="Import">
-                  <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconImportR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Import e-mail files (.eml) into the open archive folder" VerticalAlignment="Center" /></StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconImportR}" Width="32" Height="32" Tag="{DynamicResource OlIcon}" /></Viewbox><TextBlock Text="Import e-mail files (.eml) into the open archive folder" VerticalAlignment="Center" /></StackPanel>
                 </Button>
               </StackPanel>
               <TextBlock Classes="olBsBody" Margin="0,24,0,0" Foreground="{DynamicResource OlTextSecondary}" Text="Archives are editable at all times. Every first write makes an automatic backup copy next to the file, and every change is verified as it is saved." />
@@ -817,7 +816,7 @@
               <TextBlock Classes="olBsHeading" Text="Save As" />
               <TextBlock Classes="olBsBody" Margin="0,0,0,16" Text="Save the message that is open in the reading pane as an .eml file, readable by other mail programs. The archive itself is never modified." />
               <Button Name="BsSaveAsAction" Classes="olBsAction" Click="BsSaveAsClicked" HorizontalAlignment="Left" IsEnabled="{Binding #ExportMessageButton.IsEnabled}">
-                <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconSaveAsR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Save As (.eml)" VerticalAlignment="Center" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconSaveAsR}" Width="32" Height="32" Tag="{DynamicResource OlIcon}" /></Viewbox><TextBlock Text="Save As (.eml)" VerticalAlignment="Center" /></StackPanel>
               </Button>
               <TextBlock Classes="olBsBody" Margin="0,14,0,0" Foreground="{DynamicResource OlTextSecondary}" IsVisible="{Binding !IsEnabled, ElementName=BsSaveAsAction}" Text="Select a message from an Outlook Data File first." />
             </StackPanel>
@@ -827,7 +826,7 @@
               <TextBlock Classes="olBsHeading" Text="Save Attachments" />
               <TextBlock Classes="olBsBody" Margin="0,0,0,16" Text="Save the files attached to the message that is open in the reading pane. Nothing on the message or archive is changed." />
               <Button Name="BsAttachmentsAction" Classes="olBsAction" Click="BsSaveAttachmentsClicked" HorizontalAlignment="Left" IsEnabled="{Binding #ExportAttachmentButton.IsEnabled}">
-                <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconPaperclipR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Save Attachments" VerticalAlignment="Center" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconPaperclipR}" Width="32" Height="32" Tag="{DynamicResource OlIcon}" /></Viewbox><TextBlock Text="Save Attachments" VerticalAlignment="Center" /></StackPanel>
               </Button>
             </StackPanel>
 
@@ -836,7 +835,7 @@
               <TextBlock Classes="olBsHeading" Text="Print" />
               <TextBlock Classes="olBsBody" Margin="0,0,0,16" Text="Printing goes through a printable PDF of the message that is open: choose a folder, and OpenOutlook writes the file for you to print from your PDF viewer. Direct printing is planned." />
               <Button Name="BsPrintAction" Classes="olBsAction" Click="BsPrintClicked" HorizontalAlignment="Left" IsEnabled="{Binding #PopOutMessageButton.IsVisible}">
-                <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconPrintR}" Width="18" Height="18" Tag="{DynamicResource OlIcon}" /><TextBlock Text="Print (create a printable PDF)" VerticalAlignment="Center" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconPrintR}" Width="32" Height="32" Tag="{DynamicResource OlIcon}" /></Viewbox><TextBlock Text="Print (create a printable PDF)" VerticalAlignment="Center" /></StackPanel>
               </Button>
             </StackPanel>
 
@@ -861,7 +860,7 @@
               <TextBlock Classes="olBsHeading" Text="Feedback" />
               <TextBlock Classes="olBsBody" Margin="0,0,0,14" Text="OpenOutlook is developed in the open. Problems with HTML rendering, PST reading or account sync are the ones that move it forward fastest — every report includes what the app logged at the time." />
               <Button Classes="olBsAction" Click="BsFeedbackClicked" HorizontalAlignment="Left">
-                <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconFeedback}" Width="18" Height="18" /><TextBlock Text="Report an issue on GitHub" VerticalAlignment="Center" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconFeedback}" Width="32" Height="32" /></Viewbox><TextBlock Text="Report an issue on GitHub" VerticalAlignment="Center" /></StackPanel>
               </Button>
             </StackPanel>
 
@@ -916,10 +915,10 @@
                              Text="The classic General page (theme, notifications, message handling) is being rebuilt. The OpenOutlook settings that exist today live here." />
                   <StackPanel Spacing="10">
                     <Button Classes="olBsAction" Click="OptionsClicked">
-                      <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconAppearance}" Width="18" Height="18" /><TextBlock Text="Appearance - theme, accent colour, text size" VerticalAlignment="Center" /></StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconAppearance}" Width="32" Height="32" /></Viewbox><TextBlock Text="Appearance - theme, accent colour, text size" VerticalAlignment="Center" /></StackPanel>
                     </Button>
                     <Button Classes="olBsAction" Click="ShortcutsClicked">
-                      <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconKeyboard}" Width="18" Height="18" /><TextBlock Text="Mail - keyboard shortcuts" VerticalAlignment="Center" /></StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconKeyboard}" Width="32" Height="32" /></Viewbox><TextBlock Text="Mail - keyboard shortcuts" VerticalAlignment="Center" /></StackPanel>
                     </Button>
                   </StackPanel>
                   <TextBlock Classes="olOptSection" Text="Archive files (.pst)" Margin="0,22,0,0" />
@@ -927,21 +926,21 @@
                   <CheckBox Name="OptBackupBeforeEditing" Content="Make a .bak copy of an archive the first time it is opened for editing"
                             ToolTip.Tip="Off by default. Edits are journaled and crash-safe; the copy doubles the disk space used." />
                   <Button Classes="olBsAction" Click="CheckArchiveClicked" HorizontalAlignment="Left" Margin="0,10,0,0">
-                    <StackPanel Orientation="Horizontal" Spacing="9"><ContentControl Template="{StaticResource OlIconMailboxTools}" Width="18" Height="18" /><TextBlock Text="Check and repair the selected archive…" VerticalAlignment="Center" /></StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="9"><Viewbox Width="18" Height="18"><ContentControl Template="{StaticResource OlIconMailboxTools}" Width="32" Height="32" /></Viewbox><TextBlock Text="Check and repair the selected archive…" VerticalAlignment="Center" /></StackPanel>
                   </Button>
                 </StackPanel>
 
                 <!-- Mail: full recreation of the classic page -->
                 <StackPanel Name="PageMail" IsVisible="False" Margin="36,14,48,26">
                   <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,6">
-                    <ContentControl Template="{StaticResource OlIconOptMail}" Width="34" Height="34" />
+                    <Viewbox Width="34" Height="34"><ContentControl Template="{StaticResource OlIconOptMail}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Grid.Column="1" Classes="olOptBody" FontSize="15.5" Text="Change the settings for messages you create and receive." Margin="14,0,0,0" VerticalAlignment="Center" />
                   </Grid>
 
                   <TextBlock Classes="olOptSection" Text="Compose messages" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,16">
-                    <ContentControl Template="{StaticResource OlIconOptCompose}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptCompose}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="7" Margin="6,0,0,0">
                       <TextBlock Classes="olOptBody" Text="Change the editing settings for messages." />
                       <StackPanel Orientation="Horizontal" Spacing="9">
@@ -956,7 +955,7 @@
                     <Button Grid.Column="2" Classes="olOptButton" Content="Editor Options..." Click="OpenEditorOptionsClicked" VerticalAlignment="Top" Margin="16,0,0,0" />
                   </Grid>
                   <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,16">
-                    <ContentControl Template="{StaticResource OlIconOptSpell}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptSpell}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
                       <CheckBox Name="OptCheckSpelling" Content="_Always check spelling before sending" />
                       <CheckBox Name="OptIgnoreOriginal" Content="_Ignore original message text in reply or forward" />
@@ -964,12 +963,12 @@
                     <Button Grid.Column="2" Classes="olOptButton" Content="Spelling and Autocorrect..." Tag="Spelling and Autocorrect" Click="OptionsPlaceholderClicked" VerticalAlignment="Top" Margin="16,0,0,0" />
                   </Grid>
                   <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,16">
-                    <ContentControl Template="{StaticResource OlIconOptSignature}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptSignature}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Grid.Column="1" Classes="olOptBody" Text="Create or modify signatures for messages." Margin="6,4,0,0" VerticalAlignment="Center" />
                     <Button Grid.Column="2" Classes="olOptButton" Content="Signatures..." Tag="Signatures" Click="OptionsPlaceholderClicked" Margin="16,0,0,0" />
                   </Grid>
                   <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptStationery}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptStationery}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Grid.Column="1" Classes="olOptBody" Text="Use stationery to change default fonts and styles, colors, and backgrounds." Margin="6,4,0,0" VerticalAlignment="Center" />
                     <Button Grid.Column="2" Classes="olOptButton" Content="Stationery and Fonts..." Tag="Stationery and Fonts" Click="OptionsPlaceholderClicked" Margin="16,0,0,0" />
                   </Grid>
@@ -977,7 +976,7 @@
                   <TextBlock Classes="olOptSection" Text="Outlook panes" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptPanes}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptPanes}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Grid.Column="1" Classes="olOptBody" Text="Customize how items are marked as read when using the Reading Pane." Margin="6,4,0,0" VerticalAlignment="Center" />
                     <Button Grid.Column="2" Classes="olOptButton" Content="Reading Pane..." Click="OpenReadingPaneClicked" Margin="16,0,0,0" />
                   </Grid>
@@ -985,7 +984,7 @@
                   <TextBlock Classes="olOptSection" Text="Message arrival" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptArrival}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptArrival}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
                       <TextBlock Classes="olOptBody" Text="When new messages arrive:" />
                       <CheckBox Name="OptPlaySound" Content="_Play a sound" Margin="26,0,0,0" />
@@ -999,7 +998,7 @@
                   <TextBlock Classes="olOptSection" Text="Conversation Clean Up" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptCleanup}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptCleanup}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
                       <StackPanel Orientation="Horizontal" Spacing="9">
                         <TextBlock Classes="olOptBody" Text="Cleaned-up items will go to this folder:" VerticalAlignment="Center" />
@@ -1019,7 +1018,7 @@
                   <TextBlock Classes="olOptSection" Text="Replies and forwards" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptReplies}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptReplies}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
                       <StackPanel Orientation="Horizontal" Spacing="7">
                         <CheckBox Name="OptSuggestedReplies" Content="Show suggested replies" />
@@ -1060,7 +1059,7 @@
                   <TextBlock Classes="olOptSection" Text="Save messages" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptSave}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptSave}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
                       <StackPanel Orientation="Horizontal" Spacing="8">
                         <CheckBox Name="OptAutoSave" Content="_Automatically save items that have not been sent after this many minutes:" Checked="OptAutoSaveToggled" Unchecked="OptAutoSaveToggled" />
@@ -1082,7 +1081,7 @@
                   <TextBlock Classes="olOptSection" Text="Send messages" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptSend}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptSend}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
                       <StackPanel Orientation="Horizontal" Spacing="9">
                         <TextBlock Classes="olOptBody" Text="Default Importance level:" VerticalAlignment="Center" />
@@ -1120,7 +1119,7 @@
                   <TextBlock Classes="olOptSection" Text="MailTips" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*,Auto" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptMailTips}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptMailTips}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Grid.Column="1" Classes="olOptBody" Text="Manage MailTips options. For example, you may determine when and how to display the MailTips bar and which MailTips to display." Margin="6,4,0,0" VerticalAlignment="Center" />
                     <Button Grid.Column="2" Classes="olOptButton" Content="MailTips Options..." Tag="MailTips options" Click="OptionsPlaceholderClicked" Margin="16,0,0,0" />
                   </Grid>
@@ -1128,7 +1127,7 @@
                   <TextBlock Classes="olOptSection" Text="Tracking" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptTracking}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptTracking}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
                       <TextBlock Classes="olOptBody" Text="Delivery and read receipts help provide confirmation that messages were successfully received. Not all email servers and applications support sending receipts." />
                       <TextBlock Classes="olOptBody" Text="For all messages sent, request:" Margin="0,4,0,0" />
@@ -1152,7 +1151,7 @@
                   <TextBlock Classes="olOptSection" Text="Message format" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptFormat}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptFormat}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
                       <CheckBox Name="OptCss" Content="_Use Cascading Style Sheets (CSS) for appearance of messages" />
                       <CheckBox Name="OptReduceSize" Content="_Reduce message size by removing format information not necessary to display the message" />
@@ -1176,7 +1175,7 @@
                   <TextBlock Classes="olOptSection" Text="Other" />
                   <Border Classes="olOptRule" />
                   <Grid ColumnDefinitions="46,*" Margin="0,0,0,8">
-                    <ContentControl Template="{StaticResource OlIconOptOther}" Width="30" Height="30" VerticalAlignment="Top" />
+                    <Viewbox Width="30" Height="30" VerticalAlignment="Top"><ContentControl Template="{StaticResource OlIconOptOther}" Width="32" Height="32" /></Viewbox>
                     <StackPanel Grid.Column="1" Spacing="6" Margin="6,0,0,0">
                       <CheckBox Name="OptPasteOptions" Content="Show _Paste Options button when content is pasted into a message" />
                       <CheckBox Name="OptNextPrev" Content="_Show Next and Previous links in the message headers when reading messages" />
@@ -1258,7 +1257,7 @@
 
                 <StackPanel Name="PageCalendar" IsVisible="False" Margin="36,14,48,26">
                   <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,6">
-                    <ContentControl Template="{StaticResource OlIconCalendar}" Width="34" Height="34" />
+                    <Viewbox Width="34" Height="34"><ContentControl Template="{StaticResource OlIconCalendar}" Width="32" Height="32" /></Viewbox>
                     <TextBlock Grid.Column="1" Classes="olOptBody" FontSize="15.5" Text="Change the settings for calendars, meetings, and time zones." Margin="14,0,0,0" VerticalAlignment="Center" />
                   </Grid>
                   <TextBlock Classes="olOptSection" Text="Reminders" />
@@ -1326,7 +1325,7 @@
                 <StackPanel>
                   <StackPanel Name="EdPageProofing" IsVisible="False" Margin="36,14,48,24">
                     <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,6">
-                      <ContentControl Template="{StaticResource OlIconOptSpell}" Width="34" Height="34" />
+                      <Viewbox Width="34" Height="34"><ContentControl Template="{StaticResource OlIconOptSpell}" Width="32" Height="32" /></Viewbox>
                       <TextBlock Grid.Column="1" Classes="olOptBody" FontSize="15.5" Text="Specify how Outlook corrects and formats the contents of your e-mails." Margin="14,0,0,0" VerticalAlignment="Center" />
                     </Grid>
                     <TextBlock Classes="olOptSection" Text="AutoCorrect options" />

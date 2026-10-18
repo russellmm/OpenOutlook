@@ -606,7 +606,7 @@ public sealed class PeoplePage : UserControl
     private static Control Icon(string key, double size)
     {
         if (Application.Current is { } app && app.TryFindResource(key, out var template) && template is IControlTemplate controlTemplate)
-            return new ContentControl { Template = controlTemplate, Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center };
+            return OlIcon.Create(controlTemplate, size);
         return new TextBlock { Text = "▦", FontSize = size, HorizontalAlignment = HorizontalAlignment.Center };
     }
 

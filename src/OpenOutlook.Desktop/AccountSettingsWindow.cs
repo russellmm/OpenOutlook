@@ -52,7 +52,7 @@ internal static class Themed
     public static Control Icon(string key, double size = 16)
     {
         if (Application.Current is { } app && app.TryGetResource(key, app.ActualThemeVariant, out var t) && t is Avalonia.Controls.Templates.IControlTemplate template)
-            return new ContentControl { Template = (Avalonia.Controls.Templates.IControlTemplate)template, Width = size, Height = size, VerticalAlignment = VerticalAlignment.Center };
+            return OlIcon.Create(template, size);
         return new Border { Width = size, Height = size };
     }
 }

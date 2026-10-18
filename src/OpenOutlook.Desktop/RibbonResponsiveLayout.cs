@@ -115,7 +115,7 @@ public sealed class RibbonResponsiveLayout
             var icon = g.Content.GetLogicalDescendants().OfType<ContentControl>().FirstOrDefault(c => c.GetType() == typeof(ContentControl) && c.Template is not null);       // the icon (a plain ContentControl with its own template), not a button
             Control glyph = icon is null
                 ? new TextBlock { Text = "…", FontSize = 22, HorizontalAlignment = HorizontalAlignment.Center }
-                : new ContentControl { Template = icon.Template, Width = 28, Height = 28, HorizontalAlignment = HorizontalAlignment.Center };
+                : OlIcon.Create(icon.Template, 28);
             var caption = new TextBlock { Text = g.Label + " ▾", FontSize = 12, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 70, HorizontalAlignment = HorizontalAlignment.Center };
             g.Button = new Button { Classes = { "olLarge" }, Content = new StackPanel { Children = { glyph, caption } }, Margin = new Thickness(0, 0, 0, 0) };
             ToolTip.SetTip(g.Button, g.Label);

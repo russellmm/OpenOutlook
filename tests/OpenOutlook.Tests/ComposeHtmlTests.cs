@@ -114,7 +114,7 @@ public sealed class ComposeHtmlTests
     [Fact]
     public void DropsOversizedDataUris()
     {
-        var huge = "data:image/png;base64," + new string('A', 5 * 1024 * 1024);
+        var huge = "data:image/png;base64," + new string('A', 11 * 1024 * 1024);
         Assert.DoesNotContain("data:image/png", Sanitize($"<img src=\"{huge}\">"), StringComparison.OrdinalIgnoreCase);
     }
 

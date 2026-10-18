@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Reactive;
 
 namespace OpenOutlook.Desktop;
@@ -413,6 +414,39 @@ public sealed partial class ComposeWindow
             return;
         }
         Exec("table", $"{rows},{columns}");
+    }
+
+    /// <summary>Insert > Pictures: png / jpeg / gif / webp files go into the body where the cursor is; they are sent as inline pictures.</summary>
+    private async Task InsertPicturesAsync()
+    {
+        if (!_isHtml) return;
+        try
+        {
+            var picked = await SafePick.FilesAsync(this, new Avalonia.Platform.Storage.FilePickerOpenOptions
+            {
+                Title = "Insert Picture", AllowMultiple = true,
+                FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Pictures") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"] }]
+            }, failure => _status.Text = failure);
+            foreach (var item in picked)
+                if (item.TryGetLocalPath() is { } path) InsertPictureFile(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _status.Text = "Could not read the picture: " + ex.Message; }
+    }
+
+    internal void InsertPictureFile(string path)
+    {
+        var name = Path.GetFileName(path);
+        if (new FileInfo(path).Length > ComposeInlinePictures.MaxPictureBytes)
+        {
+            _status.Text = $"{name} is larger than {ComposeInlinePictures.MaxPictureBytes / (1024 * 1024)} MB; attach it as a file instead.";
+            return;
+        }
+        if (ComposeInlinePictures.FromFile(File.ReadAllBytes(path)) is not { } picture)
+        {
+            _status.Text = $"{name} is not a PNG, JPEG, GIF or WebP picture.";
+            return;
+        }
+        Exec("image", ComposeInlinePictures.ToDataUri(picture.MimeType, picture.Data));
     }
 
     private async Task FindAsync()

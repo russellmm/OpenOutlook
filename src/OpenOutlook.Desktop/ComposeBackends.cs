@@ -64,15 +64,28 @@ public sealed class GraphComposeBackend(string address, GraphMailWriter writer, 
         var t = await token();
         var draft = await writer.GetDraftAsync(t, draftId, ct);
         var files = new List<ComposeFile>();
+        var html = draft.ContentType.Equals("html", StringComparison.OrdinalIgnoreCase);
+        var body = draft.Body;
         if (draft.HasAttachments)
-            files.AddRange((await writer.ListDraftAttachmentsAsync(t, draftId, ct)).Select(a => new ComposeFile { Name = a.Name, ServerId = a.Id, Size = a.SizeBytes, Saved = true }));
-        return new LoadedDraft(new ComposeDraft(draft.To, draft.Cc, draft.Bcc, draft.Subject, draft.Body, draft.ContentType.Equals("html", StringComparison.OrdinalIgnoreCase)), files);
+        {
+            var all = await writer.ListDraftAttachmentsAsync(t, draftId, ct);
+            files.AddRange(all.Where(a => !a.IsInline).Select(a => new ComposeFile { Name = a.Name, ServerId = a.Id, Size = a.SizeBytes, Saved = true }));
+            // the pictures the body shows (cid:) come back into it as data: pictures, which the editor can show
+            var pictures = new List<InlinePicture>();
+            foreach (var a in all.Where(a => a.IsInline && html))
+                if (await writer.GetInlineAttachmentAsync(t, draftId, a.Id, ct) is { } part)
+                    pictures.Add(new InlinePicture(part.ContentId, part.Name, part.ContentType, part.Data));
+            body = ComposeInlinePictures.Restore(body, pictures);
+        }
+        return new LoadedDraft(new ComposeDraft(draft.To, draft.Cc, draft.Bcc, draft.Subject, body, html), files);
     }
 
     public async Task<SavedDraft> SaveAsync(string? draftId, ComposeDraft d, IReadOnlyList<ComposeFile> files, IProgress<string> progress, CancellationToken ct = default)
     {
         var t = await token();
-        var content = new GraphMailWriter.DraftContent(d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.Html ? "HTML" : "Text");
+        // pictures in the HTML become inline attachments; the body refers to them as cid:
+        var (body, pictures) = d.Html ? ComposeInlinePictures.Extract(d.Body) : (d.Body, []);
+        var content = new GraphMailWriter.DraftContent(d.To, d.Cc, d.Bcc, d.Subject, body, d.Html ? "HTML" : "Text");
         progress.Report("Saving draft…");
         var id = draftId is null ? await writer.CreateDraftAsync(t, content, ct) : draftId;
         if (draftId is not null) await writer.UpdateDraftAsync(t, id, content, ct);
@@ -83,10 +96,30 @@ public sealed class GraphComposeBackend(string address, GraphMailWriter writer, 
             await writer.AddFileAttachmentAsync(t, id, pending.Path!, ct);
             uploaded = true;
         }
+        if (pictures.Count > 0 || (draftId is not null && d.Html)) await SyncPicturesAsync(t, id, pictures, draftId is null, progress, ct);
         IReadOnlyList<ComposeFile>? server = null;
         if (uploaded)
-            server = (await writer.ListDraftAttachmentsAsync(t, id, ct)).Select(a => new ComposeFile { Name = a.Name, ServerId = a.Id, Size = a.SizeBytes, Saved = true }).ToList();
+            server = (await writer.ListDraftAttachmentsAsync(t, id, ct)).Where(a => !a.IsInline)
+                .Select(a => new ComposeFile { Name = a.Name, ServerId = a.Id, Size = a.SizeBytes, Saved = true }).ToList();
         return new SavedDraft(id, server);
+    }
+
+    /// <summary>
+    /// The draft's inline pictures match the body: new ones are uploaded, ones taken out of the body are removed. A picture's name comes from its
+    /// bytes (<see cref="ComposeInlinePictures"/>), so saving again uploads nothing that is already there.
+    /// </summary>
+    private async Task SyncPicturesAsync(string t, string id, IReadOnlyList<InlinePicture> pictures, bool newDraft, IProgress<string> progress, CancellationToken ct)
+    {
+        var existing = newDraft ? [] : await writer.ListDraftAttachmentsAsync(t, id, ct);
+        var present = existing.Where(a => a.IsInline).Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var p in pictures.Where(p => !present.Contains(p.FileName)))
+        {
+            progress.Report("Adding picture " + p.FileName + "…");
+            await writer.AddInlineAttachmentAsync(t, id, p.FileName, p.MimeType, p.ContentId, p.Data, ct);
+        }
+        var wanted = pictures.Select(p => p.FileName).ToHashSet(StringComparer.Ordinal);
+        foreach (var gone in existing.Where(a => a.IsInline && ComposeInlinePictures.IsOwnName(a.Name) && !wanted.Contains(a.Name)))
+            await writer.RemoveAttachmentAsync(t, id, gone.Id, ct);
     }
 
     public async Task SendAsync(string? draftId, ComposeDraft d, IReadOnlyList<ComposeFile> files, IProgress<string> progress, CancellationToken ct = default)
@@ -115,7 +148,14 @@ public sealed class GmailComposeBackend(string address, GmailMailbox box, Compos
     private byte[] Build(ComposeDraft d, IReadOnlyList<ComposeFile> files)
     {
         var m = new GmailOutgoing { From = address, To = d.To, Cc = d.Cc, Bcc = d.Bcc, Subject = d.Subject, InReplyTo = seed?.InReplyTo, References = seed?.References };
-        if (d.Html) { m.Html = d.Body; m.Text = HtmlToText(d.Body); } else m.Text = d.Body;
+        if (d.Html)
+        {
+            var (html, pictures) = ComposeInlinePictures.Extract(d.Body);          // pictures travel as inline parts: Gmail does not show data: pictures
+            m.Html = html;
+            m.Text = HtmlToText(html);
+            foreach (var p in pictures) m.InlineImages.Add(new GmailInlineImage(p.ContentId, p.FileName, p.MimeType, p.Data));
+        }
+        else m.Text = d.Body;
         foreach (var f in files)
         {
             var data = f.Data ?? (f.Path is not null ? File.ReadAllBytes(f.Path) : throw new IOException("An attachment is no longer available: " + f.Name));

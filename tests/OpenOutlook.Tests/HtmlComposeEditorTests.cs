@@ -128,6 +128,20 @@ public sealed class HtmlComposeEditorTests
     }
 
     [Fact]
+    public async Task Pictures_go_in_at_the_cursor_and_only_as_picture_data()
+    {
+        if (await OpenEditorAsync("<div>before after</div>") is not var (browser, page)) return;
+        await using var _ = browser;
+        var png = ComposeInlinePictures.ToDataUri("image/png", [0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2]);
+        await Select(page, "after");
+        var withPicture = await Run(page, "image", png);
+        Assert.True(withPicture.Contains("<img src=\"" + png + "\"") && !withPicture.Contains("after"), withPicture);     // the picture replaces the selected word
+        var count = (await page.EvaluateExpressionAsync<string>("window.oo.get()")).Length;
+        Assert.Equal(count, (await Run(page, "image", "data:text/html;base64,PHNjcmlwdD4=")).Length);       // anything but a picture is refused
+        Assert.Equal(count, (await Run(page, "image", "https://tracker.example/pixel.gif")).Length);
+    }
+
+    [Fact]
     public async Task The_page_reports_the_formatting_at_the_cursor()
     {
         if (await OpenEditorAsync("<div><b>bold</b> <span style=\"font-family:Georgia;font-size:14pt\">big</span></div>") is not var (browser, page)) return;

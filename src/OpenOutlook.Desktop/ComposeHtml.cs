@@ -19,7 +19,7 @@ namespace OpenOutlook.Desktop;
 public static partial class ComposeHtml
 {
     /// <summary>Data URIs are accepted only for images, and only within a sane size.</summary>
-    private const int MaximumDataUriLength = 4 * 1024 * 1024;
+    private const int MaximumDataUriLength = 10 * 1024 * 1024;                  // a 7 MB picture (ComposeInlinePictures.MaxPictureBytes) as base64
 
     private static readonly string[] AllowedTags =
     [

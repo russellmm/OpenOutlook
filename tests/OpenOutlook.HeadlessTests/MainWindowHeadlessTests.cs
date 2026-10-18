@@ -1561,6 +1561,23 @@ public sealed class MainWindowHeadlessTests
             await (Task)window.GetType().GetMethod("InsertLinkAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null)!;
             Assert.Equal(count, editor.Commands.Count);
 
+            // Insert > Pictures: a picture file goes in as picture data; anything else is refused with a reason
+            var picture = Path.Combine(Path.GetTempPath(), "oo-pic-" + Guid.NewGuid().ToString("N") + ".png");
+            var notPicture = Path.ChangeExtension(picture, ".txt");
+            File.WriteAllBytes(picture, [0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A, 7, 7]);
+            File.WriteAllText(notPicture, "not a picture");
+            try
+            {
+                window.InsertPictureFile(picture);
+                Assert.Equal("image", editor.Commands[^1].Command);
+                Assert.StartsWith("data:image/png;base64,", editor.Commands[^1].Value);
+                count = editor.Commands.Count;
+                window.InsertPictureFile(notPicture);
+                Assert.Equal(count, editor.Commands.Count);
+                Assert.Contains("not a PNG, JPEG, GIF or WebP", window.StatusText);
+            }
+            finally { File.Delete(picture); File.Delete(notPicture); }
+
             var send = window.GetVisualDescendants().OfType<Button>().First(b => (b.Content as StackPanel)?.Children.OfType<TextBlock>().Any(t => t.Text == "Send") == true);
             send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitUntil(() => backend.Log.Contains("send"), 5000);

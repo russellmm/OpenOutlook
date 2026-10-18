@@ -18,9 +18,12 @@ public sealed class GmailOutgoing
     public string? InReplyTo { get; set; }
     public string? References { get; set; }
     public List<GmailOutgoingAttachment> Attachments { get; } = [];
+    /// <summary>Pictures the HTML shows with cid: references (sent in a multipart/related part beside the HTML).</summary>
+    public List<GmailInlineImage> InlineImages { get; } = [];
 }
 
 public sealed record GmailOutgoingAttachment(string FileName, string MimeType, byte[] Data);
+public sealed record GmailInlineImage(string ContentId, string FileName, string MimeType, byte[] Data);
 
 /// <summary>
 /// Builds RFC 5322 / MIME messages for the Gmail API. Header values are checked for line breaks (header injection), non-ASCII text is encoded (RFC 2047),
@@ -34,7 +37,7 @@ public static class GmailMimeBuilder
     public static byte[] Build(GmailOutgoing m, DateTimeOffset? now = null)
     {
         ArgumentNullException.ThrowIfNull(m);
-        var total = m.Attachments.Sum(a => (long)a.Data.Length) + Encoding.UTF8.GetByteCount(m.Text) + (m.Html is null ? 0 : Encoding.UTF8.GetByteCount(m.Html));
+        var total = m.Attachments.Sum(a => (long)a.Data.Length) + m.InlineImages.Sum(a => (long)a.Data.Length) + Encoding.UTF8.GetByteCount(m.Text) + (m.Html is null ? 0 : Encoding.UTF8.GetByteCount(m.Html));
         if (total > MaxMessageBytes) throw new ArgumentException("The message and its attachments are larger than Gmail's 25 MB limit.");
         var sb = new StringBuilder();
         Header(sb, "From", Addresses(m.From, required: true));
@@ -48,11 +51,13 @@ public static class GmailMimeBuilder
         if (!string.IsNullOrWhiteSpace(m.References)) Header(sb, "References", Single(m.References!.Trim(), "References"));
         Header(sb, "MIME-Version", "1.0");
 
-        string mixed = "", alt = "";
+        string mixed = "", alt = "", related = "";
         var hasAttachments = m.Attachments.Count > 0;
         var isHtml = m.Html is not null;
+        var hasInline = isHtml && m.InlineImages.Count > 0;
         if (hasAttachments) { mixed = "=_oo_mixed_" + Guid.NewGuid().ToString("N"); }
         if (isHtml) { alt = "=_oo_alt_" + Guid.NewGuid().ToString("N"); }
+        if (hasInline) { related = "=_oo_rel_" + Guid.NewGuid().ToString("N"); }
 
         void TextPart(string type, string content)
         {
@@ -60,13 +65,33 @@ public static class GmailMimeBuilder
             Base64Lines(sb, Encoding.UTF8.GetBytes(Normalize(content)));
         }
 
-        void Body()
+        void Alternative()
         {
-            if (!isHtml) { TextPart("text/plain", m.Text); return; }
             sb.Append("Content-Type: multipart/alternative; boundary=\"").Append(alt).Append("\"\r\n\r\n");
             sb.Append("--").Append(alt).Append("\r\n"); TextPart("text/plain", m.Text);
             sb.Append("--").Append(alt).Append("\r\n"); TextPart("text/html", m.Html!);
             sb.Append("--").Append(alt).Append("--\r\n");
+        }
+
+        void Body()
+        {
+            if (!isHtml) { TextPart("text/plain", m.Text); return; }
+            if (!hasInline) { Alternative(); return; }
+            // the HTML and the pictures it shows travel together, as Outlook sends them
+            sb.Append("Content-Type: multipart/related; type=\"multipart/alternative\"; boundary=\"").Append(related).Append("\"\r\n\r\n");
+            sb.Append("--").Append(related).Append("\r\n");
+            Alternative();
+            foreach (var image in m.InlineImages)
+            {
+                var name = SafeFileName(image.FileName);
+                sb.Append("\r\n--").Append(related).Append("\r\n");
+                sb.Append("Content-Type: ").Append(SafeMime(image.MimeType)).Append("; name=\"").Append(Encode(name)).Append("\"\r\n");
+                sb.Append("Content-Disposition: inline; filename=\"").Append(Encode(name)).Append("\"\r\n");
+                sb.Append("Content-ID: <").Append(ContentId(image.ContentId)).Append(">\r\n");
+                sb.Append("Content-Transfer-Encoding: base64\r\n\r\n");
+                Base64Lines(sb, image.Data);
+            }
+            sb.Append("\r\n--").Append(related).Append("--\r\n");
         }
 
         if (!hasAttachments) { Body(); return Encoding.ASCII.GetBytes(sb.ToString()); }
@@ -168,6 +193,14 @@ public static class GmailMimeBuilder
         var b64 = Convert.ToBase64String(data);
         for (var i = 0; i < b64.Length; i += 76) sb.Append(b64, i, Math.Min(76, b64.Length - i)).Append("\r\n");
         if (b64.Length == 0) sb.Append("\r\n");
+    }
+
+    /// <summary>A Content-ID goes into a header between angle brackets: printable ASCII only, no brackets, quotes, spaces or line breaks.</summary>
+    internal static string ContentId(string id)
+    {
+        if (id.Length is 0 or > 200 || !id.All(c => c is > ' ' and < (char)127 && c is not ('<' or '>' or '"' or '\\')))
+            throw new ArgumentException("A picture in the message has an invalid Content-ID.");
+        return id;
     }
 
     private static string SafeFileName(string name)

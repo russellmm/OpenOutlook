@@ -1180,4 +1180,12 @@
     </Canvas>
   </ControlTemplate>
 
+  <ControlTemplate x:Key="OlIconPicture">
+    <Canvas Width="32" Height="32">
+      <Path Stroke="{DynamicResource OlIcon}" StrokeThickness="1.5" Fill="{DynamicResource OlCard}" Data="M4,6 L28,6 L28,26 L4,26 Z" />
+      <Path Fill="#70AD47" Data="M5,25 L13,15 L18,21 L21,18 L27,25 Z" />
+      <Ellipse Canvas.Left="19" Canvas.Top="9" Width="5" Height="5" Fill="#FFC000" />
+    </Canvas>
+  </ControlTemplate>
+
 </ResourceDictionary>

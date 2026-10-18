@@ -139,7 +139,7 @@ public static partial class HtmlEditorDocument
     /// fontSize (points), grow, shrink, foreColor (#rrggbb or "auto"), hiliteColor (#rrggbb or "none"), justifyLeft / Center / Right / Full,
     /// bullets / numbering (optional list-style-type; "none" ends the list), indent, outdent, clear, changeCase (sentence, lower, upper,
     /// capitalize, toggle), lineSpacing (1, 1.15, 1.5, 2, 2.5, 3), shading (#rrggbb or "none"), style (normal, h1, h2, h3, title, quote, code),
-    /// link (url, with the text to show after a newline), unlink, table ("rows,columns"), line, insertText, delete, selectAll, undo, redo, zoom (factor), marks.
+    /// link (url, with the text to show after a newline), unlink, table ("rows,columns"), line, image (a data: picture), insertText, delete, selectAll, undo, redo, zoom (factor), marks.
     /// The page posts "dirty" at once and "html:" + its body a moment after every change, and "state:" + JSON when the cursor moves.
     /// </summary>
     public const string Shell = """
@@ -226,6 +226,7 @@ public static partial class HtmlEditorDocument
             case 'table':table(v);break;
             case 'line':ex('insertHorizontalRule');break;
             case 'insertText':ex('insertText',String(v||''));break;
+            case 'image':if(/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(String(v)))ex('insertImage',v);break;
             case 'delete':ex('delete');break;
             case 'selectAll':{const r=document.createRange();r.selectNodeContents(ed);const s=getSelection();s.removeAllRanges();s.addRange(r);break;}
             default:if(/^(bold|italic|underline|strikeThrough|subscript|superscript|justifyLeft|justifyCenter|justifyRight|justifyFull|indent|outdent|unlink|undo|redo)$/.test(c))ex(c);else return;

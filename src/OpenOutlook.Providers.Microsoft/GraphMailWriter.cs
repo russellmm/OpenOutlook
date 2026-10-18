@@ -19,7 +19,10 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         string Cc = "", string Bcc = "", bool HasAttachments = false);
     public sealed record DraftContent(string To, string Cc, string Bcc, string Subject,
         string Body, string ContentType);
-    public sealed record DraftAttachment(string Id, string Name, int SizeBytes);
+    public sealed record DraftAttachment(string Id, string Name, int SizeBytes, bool IsInline = false);
+    /// <summary>A picture the draft's HTML shows (cid: reference).</summary>
+    public sealed record InlinePart(string ContentId, string Name, string ContentType, byte[] Data);
+    private const int MaxInlinePartBytes = 12 * 1024 * 1024;
 
     public async Task<DraftDetails> GetDraftAsync(string token, string draftId, CancellationToken ct = default)
     {
@@ -329,10 +332,64 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
             return;
         }
 
+        await UploadInSessionAsync(token, draftId, new { attachmentType = "file", name, size }, file, size, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Adds a picture the draft's HTML shows as cid:<paramref name="contentId"/> (inline attachment). Small pictures go in one request, larger ones
+    /// through an upload session, like files.
+    /// </summary>
+    public async Task AddInlineAttachmentAsync(string token, string draftId, string name, string contentType, string contentId, byte[] data,
+        CancellationToken ct = default)
+    {
+        ValidateId(draftId);
+        if (name.Length is 0 or > 255 || name.Any(char.IsControl) || contentId.Length is 0 or > 200 || contentId.Any(c => c <= ' ' || c is '<' or '>') ||
+            contentType.Length is 0 or > 100 || contentType.Any(char.IsControl))
+            throw new ArgumentException("The picture cannot be attached.");
+        if (data.Length > MaxInlinePartBytes) throw new ArgumentException("The picture is too large.");
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        if (data.Length < SmallAttachmentLimit)
+        {
+            await RequestEmptyAsync(HttpMethod.Post, MessageUri(draftId) + "/attachments", token, new Dictionary<string, object>
+            {
+                ["@odata.type"] = "#microsoft.graph.fileAttachment",
+                ["name"] = name,
+                ["contentType"] = contentType,
+                ["contentId"] = contentId,
+                ["isInline"] = true,
+                ["contentBytes"] = Convert.ToBase64String(data)
+            }, HttpStatusCode.Created, ct).ConfigureAwait(false);
+            return;
+        }
+        using var stream = new MemoryStream(data, writable: false);
+        await UploadInSessionAsync(token, draftId, new { attachmentType = "file", name, size = (long)data.Length, contentType, contentId, isInline = true },
+            stream, data.Length, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>An inline picture of a draft (its Content-ID, type and bytes), or null when the attachment is not an inline file.</summary>
+    public async Task<InlinePart?> GetInlineAttachmentAsync(string token, string draftId, string attachmentId, CancellationToken ct = default)
+    {
+        ValidateId(attachmentId);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        using var response = await SendAsync(HttpMethod.Get, MessageUri(draftId) + "/attachments/" + Uri.EscapeDataString(attachmentId), token, null,
+            HttpStatusCode.OK, ct).ConfigureAwait(false);
+        using var json = await ReadBoundedJsonAsync(response, ct, MaxInlinePartBytes * 2).ConfigureAwait(false);
+        var root = json.RootElement;
+        if (root.TryGetProperty("@odata.type", out var type) && type.GetString() != "#microsoft.graph.fileAttachment") return null;
+        if (!root.TryGetProperty("isInline", out var inline) || inline.ValueKind != JsonValueKind.True) return null;
+        var contentId = String(root, "contentId", 400).Trim('<', '>');
+        var bytes = String(root, "contentBytes", MaxInlinePartBytes * 2);
+        if (contentId.Length == 0 || bytes.Length == 0) return null;
+        try { return new InlinePart(contentId, String(root, "name", 255), String(root, "contentType", 100), Convert.FromBase64String(bytes)); }
+        catch (FormatException) { throw new GraphMailException("Graph returned an invalid picture."); }
+    }
+
+    private async Task UploadInSessionAsync(string token, string draftId, object attachmentItem, Stream file, long size, CancellationToken ct)
+    {
         await VerifyAsync(token, ct).ConfigureAwait(false);
         using var session = await RequestJsonAsync(HttpMethod.Post,
             MessageUri(draftId) + "/attachments/createUploadSession", token,
-            new { AttachmentItem = new { attachmentType = "file", name, size } },
+            new { AttachmentItem = attachmentItem },
             HttpStatusCode.Created, ct).ConfigureAwait(false);
         var uploadUrl = String(session.RootElement, "uploadUrl", 4096);
         if (!Uri.TryCreate(uploadUrl, UriKind.Absolute, out var uploadUri) ||
@@ -393,7 +450,7 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
     {
         await VerifyAsync(token, ct).ConfigureAwait(false);
         var path = MessageUri(draftId) + "/attachments";
-        var next = path + "?$top=50&$select=id,name,size";
+        var next = path + "?$top=50&$select=id,name,size,isInline";
         var pages = new HashSet<string>(StringComparer.Ordinal);
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var attachments = new List<DraftAttachment>();
@@ -417,7 +474,8 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
                     sizeField.ValueKind != JsonValueKind.Number || !sizeField.TryGetInt32(out var size) || size < 0 ||
                     !ids.Add(id) || attachments.Count >= 100)
                     throw new GraphMailException("Graph returned invalid draft attachment metadata.");
-                attachments.Add(new DraftAttachment(id, name, size));
+                var inline = item.TryGetProperty("isInline", out var inlineField) && inlineField.ValueKind == JsonValueKind.True;
+                attachments.Add(new DraftAttachment(id, name, size, inline));
             }
             next = null;
             if (root.TryGetProperty("@odata.nextLink", out var link))
@@ -463,9 +521,9 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
     }
 
     private static async Task<JsonDocument> ReadBoundedJsonAsync(HttpResponseMessage response,
-        CancellationToken ct)
+        CancellationToken ct, int maxBytes = MaxResponseBytes)
     {
-        if (response.Content.Headers.ContentLength > MaxResponseBytes)
+        if (response.Content.Headers.ContentLength > maxBytes)
             throw new GraphMailException("Graph response exceeds the size limit.");
         await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         using var buffer = new MemoryStream();
@@ -473,7 +531,7 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         int count;
         while ((count = await stream.ReadAsync(bytes, ct).ConfigureAwait(false)) > 0)
         {
-            if (buffer.Length + count > MaxResponseBytes)
+            if (buffer.Length + count > maxBytes)
                 throw new GraphMailException("Graph response exceeds the size limit.");
             buffer.Write(bytes, 0, count);
         }

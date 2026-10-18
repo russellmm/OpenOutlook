@@ -226,7 +226,7 @@ public sealed partial class ComposeWindow : Window
         Tab("Insert",
             Group("Include", Big("OlIconPaperclip", "Attach File", async () => await AddAttachmentsAsync()), Big(null, "Attach Item", null), Big(null, "Business Card", null), Big(null, "Calendar", null), Big("OlIconSignature", "Signature", null)),
             Group("Tables", HtmlOnly(Big("OlIconTable", "Table", InsertTableAsync))),
-            Group("Illustrations", Big(null, "Pictures", null), Big(null, "Shapes", null), Big(null, "Icons", null)),
+            Group("Illustrations", HtmlOnly(Big("OlIconPicture", "Pictures", InsertPicturesAsync)), Big(null, "Shapes", null), Big(null, "Icons", null)),
             Group("Links", HtmlOnly(Big("OlIconLink", "Link", InsertLinkAsync)), Big(null, "Bookmark", null)),
             Group("Symbols", Big(null, "Equation", null), Big(null, "Symbol", null), HtmlOnly(Big("OlIconHorizontalLine", "Horizontal Line", () => { _editor?.Run("line"); return Task.CompletedTask; }))));
         var bccToggle = Big(null, "Bcc", () => { _bccRow.IsVisible = !_bccRow.IsVisible; return Task.CompletedTask; });

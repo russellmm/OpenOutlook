@@ -240,6 +240,49 @@ public sealed partial class CalendarPage : UserControl
         catch (Exception ex) { if (version == _loadVersion) _message.Text = "Could not load events: " + ex.Message; }
     }
 
+    /// <summary>Tests open the editor's result here instead of showing the window (null: as if Cancel).</summary>
+    internal Func<CalendarEditorWindow, Task<NewCalendarEvent?>>? EditorOverride { get; set; }
+
+    /// <summary>
+    /// Double-click on an event: it opens in the appointment window with what is saved; Save &amp; Close updates it (an occurrence of a series alone),
+    /// Delete removes it. A meeting organized by someone else opens read-only (Delete still removes it from this calendar).
+    /// </summary>
+    internal async Task OpenEventAsync(GraphCalendarEvent item)
+    {
+        if (SelectedAccount is not { } account) return;
+        var client = new GraphCalendarClient(_http, account.AccountId);
+        GraphEventDetails details;
+        try
+        {
+            _message.Text = "Opening " + item.Subject + "…";
+            details = await client.GetEventAsync(await _token(account), item.Id);
+        }
+        catch (Exception ex) when (ex is GraphMailException or HttpRequestException or ArgumentException or InvalidOperationException)
+        { _message.Text = "The event could not be opened: " + ex.Message; return; }
+        var editor = new CalendarEditorWindow(details);
+        var draft = EditorOverride is not null ? await EditorOverride(editor) : await editor.ShowDialog<NewCalendarEvent?>(_owner);
+        try
+        {
+            if (editor.DeleteRequested)
+            {
+                await client.DeleteEventAsync(await _token(account), details.Id);
+                _events = _events.Where(e => e.Id != details.Id).ToArray();
+                _message.Text = $"\"{details.Subject}\" was deleted.";
+            }
+            else if (draft is not null)
+            {
+                var saved = await client.UpdateEventAsync(await _token(account), details.Id, draft, editor.BodyChanged, editor.AttendeesChanged);
+                _events = _events.Where(e => e.Id != details.Id).Append(saved).OrderBy(e => e.Start).ToArray();
+                _message.Text = details.IsOccurrence ? "This occurrence was updated." : "Appointment updated.";
+            }
+            else { _message.Text = ""; return; }
+            Render();
+            EventSaved?.Invoke();
+        }
+        catch (Exception ex) when (ex is GraphMailException or HttpRequestException or ArgumentException or InvalidOperationException)
+        { _message.Text = (editor.DeleteRequested ? "The event could not be deleted: " : "The change was not saved: ") + ex.Message; }
+    }
+
     private async Task CreateAsync(bool meeting)
     {
         if (_pendingCreate is not null)
@@ -525,12 +568,13 @@ public sealed partial class CalendarPage : UserControl
         return localStart.LocalDateTime < dayEnd && localEnd.LocalDateTime > dayStart;
     }
 
-    private static Control EventLabel(GraphCalendarEvent item)
+    private Control EventLabel(GraphCalendarEvent item)
     {
         var time = item.IsAllDay ? "All day" : item.Start.ToLocalTime().ToString("t");
         var label = new TextBlock { Text = $"{time}  {item.Subject}",
             TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11 };
-        var card = new Border { Classes = { "olCalendarEvent" }, Child = label };
+        var card = new Border { Classes = { "olCalendarEvent" }, Child = label, Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand) };
+        card.DoubleTapped += async (_, e) => { e.Handled = true; await OpenEventAsync(item); };            // as in Outlook: double-click opens the item
         ToolTip.SetTip(card, string.IsNullOrWhiteSpace(item.Location) ? item.Subject :
             item.Subject + " — " + item.Location);
         return card;

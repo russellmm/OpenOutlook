@@ -1,6 +1,7 @@
 using System.Net.Mail;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -21,10 +22,24 @@ public sealed class CalendarEditorWindow : Window
     private readonly TextBox _location = new() { BorderThickness = new Thickness(0, 0, 0, 1) };
     private readonly TextBox _attendees = new() { BorderThickness = new Thickness(0, 0, 0, 1), Watermark = "name@example.com; another@example.com" };
     private readonly TextBox _body = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Watermark = "Add notes for this appointment" };
-    private readonly DatePicker _startDate = new() { MinWidth = 150 };
-    private readonly DatePicker _endDate = new() { MinWidth = 150 };
-    private readonly TimePicker _startTime = new();
-    private readonly TimePicker _endTime = new();
+    private readonly OutlookDateBox _startDate = new();
+    private readonly OutlookDateBox _endDate = new();
+    private readonly OutlookTimeBox _startTime = new();
+    private readonly OutlookTimeBox _endTime = new();
+    private readonly ToggleButton _private = new(), _high = new(), _low = new();
+    private readonly Button _recurring;
+    private TimeSpan _duration = TimeSpan.FromMinutes(30);
+    private bool _linking;
+    private GraphEventDetails? _existing;
+    private bool _readOnly;
+
+    /// <summary>Delete was chosen for an existing event (the window closes with no draft).</summary>
+    public bool DeleteRequested { get; private set; }
+    /// <summary>For an existing event: whether the notes and the attendees were changed (only those are sent).</summary>
+    public bool BodyChanged => _existing is not null && (_body.Text ?? "") != _existing.Body;
+    public bool AttendeesChanged => _existing is not null && _existing.IsOrganizer && _isMeeting &&
+        !Attendees().Order(StringComparer.OrdinalIgnoreCase).SequenceEqual(_existing.Attendees.Order(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+    public GraphEventDetails? Existing => _existing;
     private readonly CheckBox _allDay = new() { Content = "All day" };
     private readonly CheckBox _timeZones = new();
     private readonly Grid _attendeesRow = new();
@@ -43,14 +58,19 @@ public sealed class CalendarEditorWindow : Window
         MinWidth = 780;
         MinHeight = 540;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        _startDate.SelectedDate = day.ToDateTime(TimeOnly.MinValue);
-        _endDate.SelectedDate = day.ToDateTime(TimeOnly.MinValue);
-        _startTime.SelectedTime = new TimeSpan(9, 0, 0);
-        _endTime.SelectedTime = new TimeSpan(10, 0, 0);
+        _startDate.Date = day; _endDate.Date = day;
+        _startTime.Time = new TimeOnly(9, 0); _endTime.Time = new TimeOnly(9, 30);          // Outlook's half-hour default
+        _endTime.DurationFrom = () => _startDate.Date == _endDate.Date ? _startTime.Time : null;
+        // As in Outlook, moving the start moves the end with it (the length stays); changing the end changes the length.
+        _startDate.DateChanged += _ => KeepDuration();
+        _startTime.TimeChanged += _ => KeepDuration();
+        _endDate.DateChanged += _ => NoteDuration();
+        _endTime.TimeChanged += _ => NoteDuration();
         _allDay.IsCheckedChanged += (_, _) =>
         {
-            _startTime.IsEnabled = _endTime.IsEnabled = _allDay.IsChecked != true;
+            _startTime.IsEnabled = _endTime.IsEnabled = _allDay.IsChecked != true && !_readOnly;
         };
+        _recurring = LinkButton("Make Recurring");
         _subject.TextChanged += (_, _) => UpdateTitle();
         ToolTip.SetTip(_timeZones, "Time zone: " + TimeZoneInfo.Local.DisplayName + ". Changing it is a Planned Feature.");
 
@@ -60,6 +80,69 @@ public sealed class CalendarEditorWindow : Window
         Opened += (_, _) => _subject.Focus();
     }
 
+    /// <summary>Opens an existing event (double-click in the calendar): the fields as saved; Save &amp; Close updates it, Delete removes it.</summary>
+    public CalendarEditorWindow(GraphEventDetails existing) : this(existing.StartDate, existing.Attendees.Count > 0, string.Join("; ", existing.Attendees))
+    {
+        _existing = existing;
+        _subject.Text = existing.Subject;
+        _location.Text = existing.Location;
+        _body.Text = existing.Body;
+        _linking = true;
+        _allDay.IsChecked = existing.IsAllDay;
+        if (existing.IsAllDay)
+        {
+            _startDate.Date = existing.StartDate;
+            _endDate.Date = existing.EndDate > existing.StartDate ? existing.EndDate.AddDays(-1) : existing.StartDate;     // Graph's end is the next midnight
+        }
+        else
+        {
+            var start = existing.Start.ToLocalTime(); var end = existing.End.ToLocalTime();
+            _startDate.Date = DateOnly.FromDateTime(start.DateTime); _startTime.Time = TimeOnly.FromDateTime(start.DateTime);
+            _endDate.Date = DateOnly.FromDateTime(end.DateTime); _endTime.Time = TimeOnly.FromDateTime(end.DateTime);
+        }
+        _linking = false;
+        NoteDuration();
+        SelectReminder(existing.IsReminderOn ? existing.ReminderMinutesBeforeStart : null);
+        _showAs.SelectedItem = _showAs.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == existing.ShowAs) ?? _showAs.SelectedItem;
+        _private.IsChecked = existing.Sensitivity == "private";
+        _high.IsChecked = existing.Importance == "high";
+        _low.IsChecked = existing.Importance == "low";
+        _recurring.IsVisible = !existing.IsOccurrence;
+        if (!existing.IsOrganizer)
+        {
+            _readOnly = true;
+            foreach (var c in new Control[] { _subject, _location, _attendees, _body, _allDay, _showAs, _reminder, _private, _high, _low }) c.IsEnabled = false;
+            _startDate.IsEnabled = _endDate.IsEnabled = _startTime.IsEnabled = _endTime.IsEnabled = false;
+            Info($"A meeting organized by {existing.Organizer}: only the organizer can change it. Delete removes it from your calendar.");
+        }
+        else if (existing.IsOccurrence) Info("One occurrence of a recurring series: changes apply to this occurrence only.");
+        UpdateTitle();
+    }
+
+    private void KeepDuration()
+    {
+        if (_linking) return;
+        _linking = true;
+        var end = _startDate.Date.ToDateTime(_startTime.Time) + _duration;
+        _endDate.Date = DateOnly.FromDateTime(end); _endTime.Time = TimeOnly.FromDateTime(end);
+        _linking = false;
+    }
+
+    private void NoteDuration()
+    {
+        if (_linking) return;
+        var length = _endDate.Date.ToDateTime(_endTime.Time) - _startDate.Date.ToDateTime(_startTime.Time);
+        if (length > TimeSpan.Zero) _duration = length;
+    }
+
+    /// <summary>Outlook's Show As choices with their colour squares (Graph's showAs values).</summary>
+    public static readonly (string Label, string Value, Color Color)[] ShowAsChoices =
+    [
+        ("Free", "free", Colors.White), ("Working Elsewhere", "workingElsewhere", Color.FromRgb(0xC8, 0xC8, 0xC8)),
+        ("Tentative", "tentative", Color.FromRgb(0xA6, 0xC8, 0xF0)), ("Busy", "busy", Color.FromRgb(0x2F, 0x6F, 0xC9)),
+        ("Out of Office", "oof", Color.FromRgb(0x80, 0x00, 0x80)),
+    ];
+
     /// <summary>Outlook's Reminder choices (minutes before the start; null = None). 15 minutes is the default, as in Outlook.</summary>
     public static readonly (string Label, int? Minutes)[] ReminderChoices =
     [
@@ -68,23 +151,46 @@ public sealed class CalendarEditorWindow : Window
         ("0.5 days", 720), ("1 day", 1440), ("2 days", 2880), ("1 week", 10080),
     ];
 
-    /// <summary>Show As exists as an Outlook-style control but does not change anything yet: picking another value reverts and says so.</summary>
+    private readonly List<(string Label, int? Minutes)> _reminderChoices = [.. ReminderChoices];
+
     private void InitOptions()
     {
-        foreach (var option in new[] { "Free", "Tentative", "Busy", "Out of Office" }) _showAs.Items.Add(option);
-        _showAs.SelectedIndex = 2;
-        _showAs.SelectionChanged += (_, _) =>
-        {
-            if (_showAs.SelectedIndex != 2)
+        foreach (var (label, value, color) in ShowAsChoices)
+            _showAs.Items.Add(new ComboBoxItem
             {
-                _showAs.SelectedIndex = 2;
-                Info("Show As: planned feature.");
-            }
-        };
-        ToolTip.SetTip(_showAs, "Show As: Planned Feature");
-        foreach (var (label, _) in ReminderChoices) _reminder.Items.Add(label);
-        _reminder.SelectedIndex = Array.FindIndex(ReminderChoices, c => c.Minutes == 15);
+                Tag = value,
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 6,
+                    Children =
+                    {
+                        new Border { Width = 14, Height = 14, Background = new SolidColorBrush(color), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1), VerticalAlignment = VerticalAlignment.Center },
+                        new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center },
+                    }
+                }
+            });
+        _showAs.SelectedIndex = Array.FindIndex(ShowAsChoices, c => c.Value == "busy");
+        ToolTip.SetTip(_showAs, "How this time shows to others who look at your calendar");
+        foreach (var (label, _) in _reminderChoices) _reminder.Items.Add(label);
+        _reminder.SelectedIndex = _reminderChoices.FindIndex(c => c.Minutes == 15);
         ToolTip.SetTip(_reminder, "When OpenOutlook (and Outlook, and your phone) reminds you of this item");
+        _high.IsCheckedChanged += (_, _) => { if (_high.IsChecked == true) _low.IsChecked = false; };
+        _low.IsCheckedChanged += (_, _) => { if (_low.IsChecked == true) _high.IsChecked = false; };
+    }
+
+    /// <summary>Selects the reminder of an existing event; a time Outlook set that is not in the list (18 hours for an all-day event) is added to it.</summary>
+    private void SelectReminder(int? minutes)
+    {
+        var i = _reminderChoices.FindIndex(c => c.Minutes == minutes);
+        if (i < 0 && minutes is { } m)
+        {
+            var label = m % 1440 == 0 ? $"{m / 1440} days" : m % 60 == 0 ? $"{m / 60} hours" : $"{m} minutes";
+            i = _reminderChoices.FindIndex(c => c.Minutes > m);
+            if (i < 0) i = _reminderChoices.Count;
+            _reminderChoices.Insert(i, (label, m));
+            _reminder.Items.Insert(i, label);
+        }
+        _reminder.SelectedIndex = Math.Max(0, i);
     }
 
     // ---------------------------------------------------------------- layout
@@ -171,15 +277,15 @@ public sealed class CalendarEditorWindow : Window
         }
         Tab("File", Group("Actions", Big("OlIconSaveClose", "Save & Close", () => { Save(); return Task.CompletedTask; }), Big(null, "Discard", () => { Close(null); return Task.CompletedTask; }), Big("OlIconPrint", "Print", null)));
         Tab("Appointment",
-            Group("Actions", Big("OlIconDelete", "Delete", () => { Close(null); return Task.CompletedTask; }), Big("OlIconForward", "Forward", null)),
+            Group("Actions", Big("OlIconDelete", "Delete", () => { DeleteRequested = _existing is not null; Close(null); return Task.CompletedTask; }),
+                Stack(Labelled(Mini("OlIconCalendar", "Calendar", null), "Calendar"), Labelled(Mini("OlIconForward", "Forward", null), "Forward \u02c5"))),
             Group("Attendees", Big("OlIconInvite", "Invite Attendees", () => { ToggleAttendees(); return Task.CompletedTask; })),
             Group("Options", Stack(
                 Row(new TextBlock { Text = "Show As:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) }, Real(_showAs)),
                 Row(Icon("OlIconRulesBell", 16), new TextBlock { Text = "Reminder:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 6, 0) }, Real(_reminder))),
                 Big("OlIconRecurrence", "Recurrence", null)),
-            Group("Tags", Stack(
-                Row(Mini("OlIconCategorize", "Categorize", null), Mini("OlIconImportanceHigh", "High Importance", null)),
-                Row(Mini("OlIconLock", "Private", null), Mini("OlIconImportanceLow", "Low Importance", null)))),
+            Group("Tags", Big("OlIconCategorize", "Categorize \u02c5", null),
+                Stack(Toggle(_private, "OlIconLock", "Private"), Toggle(_high, "OlIconImportanceHigh", "High Importance"), Toggle(_low, "OlIconImportanceLow", "Low Importance"))),
             Group("Immersive", Big("OlIconReadAloud", "Immersive Reader", null)),
             Group("OneNote", Big("OlIconOneNote", "Meeting Notes", null)),
             Group("My Templates", Big("OlIconTemplate", "View Templates", null)));
@@ -211,6 +317,7 @@ public sealed class CalendarEditorWindow : Window
         };
         Wire(save, "Save & Close", () => { Save(); return Task.CompletedTask; });
         save.Margin = new Thickness(0, 0, 16, 0);
+        Outlined(save);
         grid.Children.Add(save);
 
         var form = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto,Auto,*") };
@@ -244,7 +351,7 @@ public sealed class CalendarEditorWindow : Window
         startRow.Children.Add(_timeZones);
         Place(form, startRow, 0, 2);
 
-        var recurring = LinkButton("Make Recurring");
+        var recurring = _recurring;
         var endRow = new Grid { ColumnDefinitions = new ColumnDefinitions("92,Auto,Auto,*") };
         endRow.Children.Add(RowLabel("End time"));
         Grid.SetColumn(_endDate, 1);
@@ -294,6 +401,7 @@ public sealed class CalendarEditorWindow : Window
     private void UpdateTitle()
     {
         var subject = string.IsNullOrWhiteSpace(_subject.Text) ? "Untitled" : _subject.Text!.Trim();
+        if (_readOnly) { Title = $"{subject} - Meeting (read only)"; return; }
         Title = $"{subject} - {(_isMeeting ? "Meeting" : "Appointment")}";
     }
 
@@ -301,11 +409,30 @@ public sealed class CalendarEditorWindow : Window
 
     private void Save()
     {
+        if (_readOnly) { Info("Only the organizer can change this meeting."); return; }
         if (Build() is { } item) Close(item);
     }
 
+    internal void SetTimes(DateOnly startDay, TimeOnly start, DateOnly endDay, TimeOnly end)
+    { _startDate.Date = startDay; _startTime.Time = start; _endDate.Date = endDay; _endTime.Time = end; }
+    internal OutlookDateBox StartDateBox => _startDate;
+    internal OutlookTimeBox StartTimeBox => _startTime;
+    internal OutlookTimeBox EndTimeBox => _endTime;
+    internal OutlookDateBox EndDateBox => _endDate;
+    internal void ChooseShowAs(string value) => _showAs.SelectedItem = _showAs.Items.OfType<ComboBoxItem>().First(i => (string?)i.Tag == value);
+    internal void SetPrivate(bool on) => _private.IsChecked = on;
+    internal void SetImportance(string value) { _high.IsChecked = value == "high"; _low.IsChecked = value == "low"; }
+    internal void SetBody(string text) => _body.Text = text;
+    internal void RequestDelete() { DeleteRequested = _existing is not null; Close(null); }
+    internal bool IsReadOnly => _readOnly;
+    internal string StatusText => _status.Text ?? "";
+
+    private string[] Attendees() => _isMeeting
+        ? (_attendees.Text ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        : [];
+
     /// <summary>Selects a Reminder choice by its label ("1 hour").</summary>
-    internal void ChooseReminder(string label) => _reminder.SelectedIndex = Array.FindIndex(ReminderChoices, c => c.Label == label);
+    internal void ChooseReminder(string label) => _reminder.SelectedIndex = _reminderChoices.FindIndex(c => c.Label == label);
     internal void SetSubject(string subject) => _subject.Text = subject;
 
     /// <summary>The item as entered, or null after telling the user what is missing.</summary>
@@ -313,20 +440,12 @@ public sealed class CalendarEditorWindow : Window
     {
         var subject = _subject.Text?.Trim() ?? "";
         if (subject.Length is < 1 or > 4096) { Fail("Enter a subject."); return null; }
-        if (_startDate.SelectedDate is null || _endDate.SelectedDate is null)
-        { Fail("Choose a start and an end date."); return null; }
-        var first = DateOnly.FromDateTime(_startDate.SelectedDate.Value.DateTime);
-        var last = DateOnly.FromDateTime(_endDate.SelectedDate.Value.DateTime);
+        var first = _startDate.Date;
+        var last = _endDate.Date;
         var allDay = _allDay.IsChecked == true;
         var startTime = TimeOnly.MinValue;
         var endTime = TimeOnly.MinValue;
-        if (!allDay)
-        {
-            if (_startTime.SelectedTime is not { } startSpan || _endTime.SelectedTime is not { } endSpan)
-            { Fail("Choose a start and an end time."); return null; }
-            startTime = TimeOnly.FromTimeSpan(startSpan);
-            endTime = TimeOnly.FromTimeSpan(endSpan);
-        }
+        if (!allDay) { startTime = _startTime.Time; endTime = _endTime.Time; }
         if (allDay) last = last.AddDays(1); // Graph uses an exclusive midnight end for all-day events.
         var localStart = first.ToDateTime(startTime, DateTimeKind.Unspecified);
         var localEnd = last.ToDateTime(endTime, DateTimeKind.Unspecified);
@@ -340,17 +459,17 @@ public sealed class CalendarEditorWindow : Window
         { Fail("The end must be after the start."); return null; }
         var zone = TimeZoneInfo.Local.Id;
         if (TimeZoneInfo.TryConvertIanaIdToWindowsId(zone, out var windowsZone)) zone = windowsZone;
-        var attendees = _isMeeting
-            ? (_attendees.Text ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            : [];
+        var attendees = Attendees();
         if (_isMeeting && attendees.Length == 0)
         { Fail("Add at least one attendee for a meeting."); return null; }
         if (attendees.Length > 100 || attendees.Any(address =>
                 !MailAddress.TryCreate(address, out var parsed) || parsed.Address != address))
         { Fail("Enter valid attendee email addresses separated by semicolons."); return null; }
-        var reminder = ReminderChoices[Math.Clamp(_reminder.SelectedIndex, 0, ReminderChoices.Length - 1)].Minutes;
+        var reminder = _reminderChoices[Math.Clamp(_reminder.SelectedIndex, 0, _reminderChoices.Count - 1)].Minutes;
+        var showAs = (_showAs.SelectedItem as ComboBoxItem)?.Tag as string ?? "busy";
         return new NewCalendarEvent(subject, start, end, allDay, _location.Text ?? "", _body.Text ?? "",
-            attendees, Guid.NewGuid(), zone, reminder);
+            attendees, Guid.NewGuid(), zone, reminder, showAs, _private.IsChecked == true ? "private" : "normal",
+            _high.IsChecked == true ? "high" : _low.IsChecked == true ? "low" : "normal");
     }
 
     private void Fail(string message)
@@ -424,6 +543,28 @@ public sealed class CalendarEditorWindow : Window
 
     private static Control Real(Control c) => c;
 
+    /// <summary>A small ribbon command with its caption beside the icon (Outlook's Calendar / Forward / Private rows).</summary>
+    private static Button Labelled(Button b, string caption)
+    {
+        var icon = b.Content as Control;
+        b.Content = null;                                                                              // the icon moves into the new row
+        b.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { icon ?? new Border(), new TextBlock { Text = caption, FontSize = 12, VerticalAlignment = VerticalAlignment.Center } } };
+        return b;
+    }
+
+    /// <summary>Private / High Importance / Low Importance: Outlook's toggles, shaded while on.</summary>
+    private static ToggleButton Toggle(ToggleButton t, string icon, string caption)
+    {
+        t.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { Icon(icon, 16), new TextBlock { Text = caption, FontSize = 12, VerticalAlignment = VerticalAlignment.Center } } };
+        t.Background = Brushes.Transparent; t.BorderThickness = new Thickness(1); t.BorderBrush = Brushes.Transparent; t.Padding = new Thickness(4, 1);
+        t.HorizontalAlignment = HorizontalAlignment.Stretch; t.HorizontalContentAlignment = HorizontalAlignment.Left;
+        void Shade() { t.Background = t.IsChecked == true ? new SolidColorBrush(Color.FromRgb(0xC5, 0xDE, 0xF5)) : Brushes.Transparent; t.BorderBrush = t.IsChecked == true ? new SolidColorBrush(Color.FromRgb(0x8E, 0xB8, 0xE5)) : Brushes.Transparent; }
+        t.IsCheckedChanged += (_, _) => Shade();
+        t.Classes.Add("olApptToggle");
+        ToolTip.SetTip(t, caption);
+        return t;
+    }
+
     private static StackPanel Stack(params Control[] rows) => new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center }.With(rows);
     private static StackPanel Row(params Control[] items) => new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 }.With(items);
 
@@ -443,6 +584,15 @@ public sealed class CalendarEditorWindow : Window
     {
         var b = new Button { Content = text, MinWidth = 62, HorizontalContentAlignment = HorizontalAlignment.Center, CornerRadius = new CornerRadius(4) };
         ToolTip.SetTip(b, tip);
+        return Outlined(b);
+    }
+
+    /// <summary>Outlook's white button with a thin grey border (Save &amp; Close, Location, To...).</summary>
+    private static Button Outlined(Button b)
+    {
+        b.Background = Themed.Brush("OlCard", Brushes.White);
+        b.BorderBrush = new SolidColorBrush(Color.FromRgb(0x8A, 0x88, 0x86));
+        b.BorderThickness = new Thickness(1);
         return b;
     }
 

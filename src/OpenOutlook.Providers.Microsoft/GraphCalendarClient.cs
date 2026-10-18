@@ -13,7 +13,17 @@ public sealed record GraphCalendarEvent(string Id, string Subject, DateTimeOffse
 
 public sealed record NewCalendarEvent(string Subject, DateTimeOffset Start, DateTimeOffset End,
     bool IsAllDay, string Location, string Body, IReadOnlyList<string> Attendees, Guid TransactionId,
-    string TimeZoneId = "UTC", int? ReminderMinutesBeforeStart = 15);      // null: no reminder (Outlook's "None")
+    string TimeZoneId = "UTC", int? ReminderMinutesBeforeStart = 15,      // null: no reminder (Outlook's "None")
+    string ShowAs = "busy", string Sensitivity = "normal", string Importance = "normal");
+
+/// <summary>Everything the appointment window shows of an existing event (one occurrence for a recurring series).</summary>
+public sealed record GraphEventDetails(string Id, string Subject, DateTimeOffset Start, DateTimeOffset End, bool IsAllDay,
+    DateOnly StartDate, DateOnly EndDate, string Location, string Body, IReadOnlyList<string> Attendees, bool IsReminderOn,
+    int ReminderMinutesBeforeStart, string ShowAs, string Sensitivity, string Importance, bool IsOrganizer, string Type, string Organizer)
+{
+    /// <summary>An occurrence (or changed occurrence) of a recurring series: changes apply to it alone.</summary>
+    public bool IsOccurrence => Type is "occurrence" or "exception";
+}
 
 /// <summary>Personal Microsoft calendar access through a no-redirect Graph transport.</summary>
 public sealed class GraphCalendarClient(HttpClient http, string expectedAccountId)
@@ -79,6 +89,67 @@ public sealed class GraphCalendarClient(HttpClient http, string expectedAccountI
         NewCalendarEvent item, CancellationToken ct = default)
     {
         ValidateId(calendarId);
+        Validate(item);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        var payload = Payload(item, includeBody: true, includeAttendees: true);
+        payload["transactionId"] = item.TransactionId.ToString("D");
+        var url = Origin + "/me/calendars/" + Uri.EscapeDataString(calendarId) + "/events";
+        using var json = await RequestAsync(HttpMethod.Post, url, token, payload, ct, HttpStatusCode.Created).ConfigureAwait(false);
+        return Summary(json.RootElement, item);
+    }
+
+    /// <summary>One event with everything the appointment window edits; the body as plain text.</summary>
+    public async Task<GraphEventDetails> GetEventAsync(string token, string eventId, CancellationToken ct = default)
+    {
+        ValidateId(eventId);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        var url = Origin + "/me/events/" + Uri.EscapeDataString(eventId) +
+            "?$select=id,subject,start,end,isAllDay,location,body,attendees,isReminderOn,reminderMinutesBeforeStart,showAs,sensitivity,importance,isOrganizer,type,organizer";
+        using var json = await RequestAsync(HttpMethod.Get, url, token, null, ct, prefer: "outlook.body-content-type=\"text\"").ConfigureAwait(false);
+        var root = json.RootElement;
+        var location = root.TryGetProperty("location", out var loc) && loc.ValueKind == JsonValueKind.Object ? Optional(loc, "displayName", 1024) ?? "" : "";
+        var body = root.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.Object ? Text(b, "content", 65_536) : "";
+        var attendees = root.TryGetProperty("attendees", out var list) && list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Take(500).Select(a => a.ValueKind == JsonValueKind.Object && a.TryGetProperty("emailAddress", out var e) && e.ValueKind == JsonValueKind.Object
+                ? Optional(e, "address", 320) : null).OfType<string>().ToList()
+            : [];
+        var organizer = root.TryGetProperty("organizer", out var o) && o.ValueKind == JsonValueKind.Object && o.TryGetProperty("emailAddress", out var oe) &&
+            oe.ValueKind == JsonValueKind.Object ? Optional(oe, "address", 320) ?? Optional(oe, "name", 320) ?? "" : "";
+        var reminder = root.TryGetProperty("reminderMinutesBeforeStart", out var r) && r.ValueKind == JsonValueKind.Number && r.TryGetInt32(out var minutes) ? minutes : 15;
+        return new GraphEventDetails(Required(root, "id", 2048), Optional(root, "subject", 4096) ?? "", ReadTime(root, "start"), ReadTime(root, "end"),
+            Boolean(root, "isAllDay"), ReadDate(root, "start"), ReadDate(root, "end"), location, body, attendees,
+            !root.TryGetProperty("isReminderOn", out var on) || on.ValueKind != JsonValueKind.False, reminder,
+            Optional(root, "showAs", 32) ?? "busy", Optional(root, "sensitivity", 32) ?? "normal", Optional(root, "importance", 32) ?? "normal",
+            !root.TryGetProperty("isOrganizer", out var org) || org.ValueKind != JsonValueKind.False, Optional(root, "type", 32) ?? "singleInstance", organizer);
+    }
+
+    /// <summary>
+    /// Saves the appointment window's fields to an existing event (PATCH; for an occurrence of a series only that occurrence changes). The body is sent
+    /// only when it was changed (Graph would store the plain text over a formatted body), the attendees only for a meeting the account organizes.
+    /// </summary>
+    public async Task<GraphCalendarEvent> UpdateEventAsync(string token, string eventId, NewCalendarEvent item, bool bodyChanged, bool attendeesChanged,
+        CancellationToken ct = default)
+    {
+        ValidateId(eventId);
+        Validate(item);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        var payload = Payload(item, includeBody: bodyChanged, includeAttendees: attendeesChanged);
+        using var json = await RequestAsync(HttpMethod.Patch, Origin + "/me/events/" + Uri.EscapeDataString(eventId), token, payload, ct, HttpStatusCode.OK).ConfigureAwait(false);
+        return Summary(json.RootElement, item);
+    }
+
+    /// <summary>Removes the event from the calendar (Graph answers 204). A meeting the account organizes is cancelled for its attendees by Outlook.com.</summary>
+    public async Task DeleteEventAsync(string token, string eventId, CancellationToken ct = default)
+    {
+        ValidateId(eventId);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        using var _ = await RequestAsync(HttpMethod.Delete, Origin + "/me/events/" + Uri.EscapeDataString(eventId), token, null, ct, HttpStatusCode.NoContent).ConfigureAwait(false);
+    }
+
+    private static readonly string[] ShowAsValues = ["free", "tentative", "busy", "oof", "workingElsewhere"];
+
+    private static void Validate(NewCalendarEvent item)
+    {
         ArgumentNullException.ThrowIfNull(item);
         if (string.IsNullOrWhiteSpace(item.Subject) || item.Subject.Length > 4096 || item.Subject.Any(char.IsControl) ||
             item.End <= item.Start || item.End - item.Start > TimeSpan.FromDays(366) ||
@@ -93,7 +164,13 @@ public sealed class GraphCalendarClient(HttpClient http, string expectedAccountI
             throw new ArgumentException("All-day event boundaries must be midnight in one time zone.", nameof(item));
         if (item.ReminderMinutesBeforeStart is < 0 or > 4 * 7 * 24 * 60)
             throw new ArgumentException("A reminder can be up to four weeks before the start.", nameof(item));
-        await VerifyAsync(token, ct).ConfigureAwait(false);
+        if (!ShowAsValues.Contains(item.ShowAs) || item.Sensitivity is not ("normal" or "personal" or "private" or "confidential") ||
+            item.Importance is not ("low" or "normal" or "high"))
+            throw new ArgumentException("Invalid Show As, sensitivity or importance.", nameof(item));
+    }
+
+    private static Dictionary<string, object> Payload(NewCalendarEvent item, bool includeBody, bool includeAttendees)
+    {
         object Time(DateTimeOffset value) => new
         {
             dateTime = item.IsAllDay
@@ -101,28 +178,46 @@ public sealed class GraphCalendarClient(HttpClient http, string expectedAccountI
                 : value.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture),
             timeZone = item.IsAllDay ? item.TimeZoneId : "UTC"
         };
-        var payload = new
+        var payload = new Dictionary<string, object>
         {
-            subject = item.Subject.Trim(),
-            start = Time(item.Start),
-            end = Time(item.End),
-            isAllDay = item.IsAllDay,
-            location = new { displayName = item.Location.Trim() },
-            body = new { contentType = "text", content = item.Body },
-            attendees = item.Attendees.Select(address => new
-            {
-                emailAddress = new { address }, type = "required"
-            }).ToArray(),
-            transactionId = item.TransactionId.ToString("D"),
-            isReminderOn = item.ReminderMinutesBeforeStart is not null,
-            reminderMinutesBeforeStart = item.ReminderMinutesBeforeStart ?? 0
+            ["subject"] = item.Subject.Trim(),
+            ["start"] = Time(item.Start),
+            ["end"] = Time(item.End),
+            ["isAllDay"] = item.IsAllDay,
+            ["location"] = new { displayName = item.Location.Trim() },
+            ["isReminderOn"] = item.ReminderMinutesBeforeStart is not null,
+            ["reminderMinutesBeforeStart"] = item.ReminderMinutesBeforeStart ?? 0,
+            ["showAs"] = item.ShowAs,
+            ["sensitivity"] = item.Sensitivity,
+            ["importance"] = item.Importance,
         };
-        var url = Origin + "/me/calendars/" + Uri.EscapeDataString(calendarId) + "/events";
-        using var json = await RequestAsync(HttpMethod.Post, url, token, payload, ct).ConfigureAwait(false);
-        var root = json.RootElement;
-        return new GraphCalendarEvent(Required(root, "id", 2048),
-            Optional(root, "subject", 4096) ?? item.Subject, ReadTime(root, "start"), ReadTime(root, "end"),
+        if (includeBody) payload["body"] = new { contentType = "text", content = item.Body };
+        if (includeAttendees)
+            payload["attendees"] = item.Attendees.Select(address => new { emailAddress = new { address }, type = "required" }).ToArray();
+        return payload;
+    }
+
+    private static GraphCalendarEvent Summary(JsonElement root, NewCalendarEvent item) =>
+        new(Required(root, "id", 2048), Optional(root, "subject", 4096) ?? item.Subject, ReadTime(root, "start"), ReadTime(root, "end"),
             Boolean(root, "isAllDay"), item.Location, item.Attendees.Count > 0);
+
+    /// <summary>The calendar date of a dateTimeTimeZone as Graph wrote it (all-day events: the date itself, not a converted instant).</summary>
+    private static DateOnly ReadDate(JsonElement root, string name)
+    {
+        if (root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Object && Optional(value, "dateTime", 64) is { Length: >= 10 } text &&
+            DateOnly.TryParseExact(text[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            return date;
+        throw new GraphMailException("Graph omitted an event date.");
+    }
+
+    /// <summary>Text that may hold line breaks and tabs (an event body); other control characters are dropped.</summary>
+    private static string Text(JsonElement root, string name, int limit)
+    {
+        if (!root.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null) return "";
+        if (value.ValueKind != JsonValueKind.String) throw new GraphMailException("Graph returned invalid calendar data.");
+        var text = value.GetString() ?? "";
+        if (text.Length > limit) text = text[..limit];
+        return new string(text.Where(c => !char.IsControl(c) || c is '\r' or '\n' or '\t').ToArray());
     }
 
     private async Task VerifyAsync(string token, CancellationToken ct)
@@ -136,7 +231,7 @@ public sealed class GraphCalendarClient(HttpClient http, string expectedAccountI
     }
 
     private async Task<JsonDocument> RequestAsync(HttpMethod method, string url, string token,
-        object? payload, CancellationToken ct)
+        object? payload, CancellationToken ct, HttpStatusCode? expected = null, string? prefer = null)
     {
         if (string.IsNullOrWhiteSpace(token) || token.Any(char.IsControl))
             throw new GraphMailException("A valid access token is required.");
@@ -147,6 +242,7 @@ public sealed class GraphCalendarClient(HttpClient http, string expectedAccountI
         using var request = new HttpRequestMessage(method, uri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.TryAddWithoutValidation("Prefer", "outlook.timezone=\"UTC\"");
+        if (prefer is not null) request.Headers.TryAddWithoutValidation("Prefer", prefer);
         if (payload is not null)
             request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
@@ -156,8 +252,9 @@ public sealed class GraphCalendarClient(HttpClient http, string expectedAccountI
         if (!response.IsSuccessStatusCode)
             throw new GraphMailException($"Graph calendar request failed with HTTP {(int)response.StatusCode}.",
                 response.StatusCode);
-        if (payload is not null && response.StatusCode != HttpStatusCode.Created)
-            throw new GraphMailException("Graph did not confirm event creation.");
+        if (expected is { } want && response.StatusCode != want)
+            throw new GraphMailException(method == HttpMethod.Post ? "Graph did not confirm event creation." : "Graph did not confirm the calendar change.");
+        if (response.StatusCode == HttpStatusCode.NoContent) return JsonDocument.Parse("{}");
         if (response.Content.Headers.ContentLength > MaxJsonBytes)
             throw new GraphMailException("Graph calendar response exceeds the size limit.");
         await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);

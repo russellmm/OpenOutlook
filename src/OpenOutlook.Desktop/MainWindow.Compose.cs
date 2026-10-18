@@ -56,6 +56,8 @@ public partial class MainWindow
         }
         var initial = accounts.FirstOrDefault(a => preferred is not null && a.Address == preferred.DisplayAddress && a.CanSend)
                       ?? accounts.FirstOrDefault(a => a.CanSend) ?? accounts[0];
+        // a new message (nothing quoted, not a draft) is written in the format chosen in Options > Mail > Compose messages
+        if (draftId is null && (seed ?? new ComposeSeed()) is { Body: "" } blank) seed = blank with { Html = _options.ComposeFormat != "Plain Text" };
         var compose = new ComposeWindow(accounts, initial, seed, draftId) { RecipientLookup = LookupRecipientsAsync, RecentRecipients = RecentRecipients };
         compose.Sent += AddSentRecipientsToSafeSenders;
         compose.Show(this);

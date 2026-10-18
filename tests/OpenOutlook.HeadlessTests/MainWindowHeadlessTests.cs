@@ -1490,6 +1490,87 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Html_message_is_formatted_from_the_ribbon_and_can_change_to_plain_text_and_back()
+    {
+        var backend = new RecordingBackend("me@hotmail.test", "Microsoft");
+        var accounts = new List<ComposeAccount> { new("me@hotmail.test", "Microsoft", null, () => backend) };
+        var window = new ComposeWindow(accounts, accounts[0], new ComposeSeed(To: "friend@example.org", Html: true)) { Width = 1700, Height = 760 };
+        window.ConfirmOverride = _ => true;
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            Assert.True(window.IsHtml);
+            Assert.Contains("Message (HTML)", window.Title);
+            var editor = Assert.IsType<PreviewHtmlEditor>(window.Editor);            // the headless host cannot start a web view: the preview stands in and records commands
+            var tabs = window.GetVisualDescendants().OfType<TabControl>().First();
+            tabs.SelectedIndex = tabs.Items.OfType<TabItem>().ToList().FindIndex(t => t.Header?.ToString() == "Format Text");
+            Dispatcher.UIThread.RunJobs();
+            Shot(window, "18-compose-format-text");
+            Button Tip(string tip) => window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && ToolTip.GetTip(b)?.ToString() == tip);
+            void Click(Button b) { Assert.True(b.IsEffectivelyEnabled, ToolTip.GetTip(b)?.ToString()); b.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Dispatcher.UIThread.RunJobs(); }
+
+            foreach (var (tip, command) in new[] { ("Bold", "bold"), ("Strikethrough", "strikeThrough"), ("Superscript", "superscript"), ("Justify", "justifyFull"),
+                         ("Grow Font", "grow"), ("Numbering", "numbering"), ("Clear All Formatting", "clear"), ("Show/Hide ¶", "marks") })
+            {
+                Click(Tip(tip));
+                Assert.Equal((command, (string?)null), editor.Commands[^1]);
+            }
+            var size = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.IsEffectivelyVisible && ToolTip.GetTip(c)?.ToString() == "Font Size");
+            size.SelectedItem = "14";
+            Assert.Equal(("fontSize", (string?)"14"), editor.Commands[^1]);
+            var font = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.IsEffectivelyVisible && ToolTip.GetTip(c)?.ToString() == "Font");
+            font.SelectedItem = "Georgia";
+            Assert.Equal(("fontName", (string?)"Georgia"), editor.Commands[^1]);
+            Click(Tip("Text Highlight Color"));                                     // the left part repeats the last colour (yellow at first)
+            Assert.Equal(("hiliteColor", (string?)"#FFFF00"), editor.Commands[^1]);
+
+            // the editor reports the cursor: Bold shows pressed, the boxes show its font and size
+            window.GetType().GetMethod("ApplyEditorState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .Invoke(window, [new HtmlEditorState(Bold: true, Font: "Georgia", Size: 18)]);
+            Assert.NotEqual(Avalonia.Media.Brushes.Transparent, Tip("Bold").Background);
+            Assert.Equal("18", size.SelectedItem);
+            Assert.Equal(("hiliteColor", (string?)"#FFFF00"), editor.Commands[^1]);  // showing the state did not send a command back
+
+            // typing in the body: the draft is the editor's HTML inside the default-font wrapper
+            editor.SimulateEdit("<div>Hello <b>there</b></div>");
+            Assert.True(window.Draft.Html);
+            Assert.Equal(HtmlEditorDocument.Wrap("<div>Hello <b>there</b></div>"), window.Draft.Body);
+
+            // Plain Text (after the warning): the text stays, the formatting buttons grey out
+            Click(window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && ToolTip.GetTip(b)?.ToString()?.StartsWith("Plain Text:") == true));
+            await WaitUntil(() => !window.IsHtml, 3000);
+            Assert.False(window.Draft.Html);
+            Assert.Equal("Hello there", window.Draft.Body.Trim());
+            Assert.Contains("Message (Plain Text)", window.Title);
+            Assert.False(Tip("Bold").IsEffectivelyEnabled);
+            Assert.False(size.IsEffectivelyEnabled);
+
+            // back to HTML: each line becomes a paragraph
+            Click(window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && ToolTip.GetTip(b)?.ToString()?.StartsWith("HTML:") == true));
+            Assert.True(window.IsHtml);
+            Assert.Contains("<div>Hello there</div>", window.Draft.Body);
+            Assert.True(Tip("Bold").IsEffectivelyEnabled);
+
+            // Insert > Link with an address only links the selection; a script address is refused
+            window.PromptOverride = (_, _) => ["", "example.org/page"];
+            await (Task)window.GetType().GetMethod("InsertLinkAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null)!;
+            Assert.Equal(("link", (string?)"https://example.org/page\n"), editor.Commands[^1]);
+            window.PromptOverride = (_, _) => ["x", "javascript:alert(1)"];
+            var count = editor.Commands.Count;
+            await (Task)window.GetType().GetMethod("InsertLinkAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null)!;
+            Assert.Equal(count, editor.Commands.Count);
+
+            var send = window.GetVisualDescendants().OfType<Button>().First(b => (b.Content as StackPanel)?.Children.OfType<TextBlock>().Any(t => t.Text == "Send") == true);
+            send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntil(() => backend.Log.Contains("send"), 5000);
+            Assert.True(backend.LastDraft!.Html);
+            Assert.StartsWith("<div class=\"oo-compose\"", backend.LastDraft.Body);
+        }
+        finally { if (window.IsVisible) window.Close(); }
+    }
+
+    [AvaloniaFact]
     public async Task Compose_ribbon_has_outlooks_basic_text_icons_and_squeezes_its_groups_as_the_window_narrows()
     {
         var backend = new RecordingBackend("me@hotmail.test", "Microsoft");
@@ -1509,20 +1590,15 @@ public sealed class MainWindowHeadlessTests
             var buttons = window.GetVisualDescendants().OfType<Button>().ToList();
             foreach (var name in new[] { "Grow Font", "Shrink Font", "Bullets", "Numbering", "Clear All Formatting", "Text Highlight Color", "Font Color", "Align Left", "Center", "Align Right", "Decrease Indent", "Increase Indent" })
             {
-                var b = buttons.First(x => ToolTip.GetTip(x)?.ToString()?.StartsWith(name + " -", StringComparison.Ordinal) == true);
+                var b = buttons.First(x => ToolTip.GetTip(x)?.ToString() == name);
                 Assert.DoesNotContain(b.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == name);
                 Assert.Contains(b.GetVisualDescendants().OfType<Viewbox>(), v => v.Child is ContentControl { Template: not null });
             }
             Assert.DoesNotContain(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text is "Grow Font" or "Align Left" or "Format Painter");
 
-            // the Font and Size boxes are placeholders: opening one closes it again and says so (it overflowed the stack and crashed in 0.1.63)
-            foreach (var tip in new[] { "Font - ", "Font Size - " })
-            {
-                var box = window.GetVisualDescendants().OfType<ComboBox>().First(c => ToolTip.GetTip(c)?.ToString()?.StartsWith(tip, StringComparison.Ordinal) == true);
-                box.IsDropDownOpen = true;
-                await Settle();
-                Assert.False(box.IsDropDownOpen);
-            }
+            // a new message without a format is plain text: the Font and Size boxes are greyed, as in Outlook
+            foreach (var tip in new[] { "Font", "Font Size" })
+                Assert.False(window.GetVisualDescendants().OfType<ComboBox>().First(c => ToolTip.GetTip(c)?.ToString() == tip).IsEffectivelyEnabled);
 
             window.Width = 900;
             await Settle();

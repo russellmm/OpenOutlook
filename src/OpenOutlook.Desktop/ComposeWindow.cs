@@ -16,7 +16,7 @@ namespace OpenOutlook.Desktop;
 /// button with the From account, To / Cc / Bcc and Subject rows, and the message body. It works with any <see cref="IComposeBackend"/> (Microsoft or Gmail);
 /// the From list chooses the account to send from. Buttons whose feature is not built yet say "To be implemented".
 /// </summary>
-public sealed class ComposeWindow : Window
+public sealed partial class ComposeWindow : Window
 {
     private const string NotYet = "To be implemented";
 
@@ -29,9 +29,16 @@ public sealed class ComposeWindow : Window
     private readonly TextBox _bcc = new() { BorderThickness = new Thickness(0, 0, 0, 1) };
     private readonly TextBox _subject = new() { BorderThickness = new Thickness(0, 0, 0, 1) };
     private readonly TextBox _body = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Watermark = "Write your message" };
-    private readonly CheckBox _html = new() { Content = "HTML" };
-    private readonly Button _visual = new() { Content = "Visual editor" };
-    private readonly Button _source = new() { Content = "HTML source", IsVisible = false };
+    private readonly Grid _bodyHost = new();
+    private IHtmlEditorHost? _editor;
+    private bool _isHtml;
+    private readonly List<Control> _htmlOnly = [];                               // formatting controls: greyed in a plain-text message, as in Outlook
+    private readonly Dictionary<string, List<Button>> _toggles = [];             // buttons that show the state at the cursor (Bold pressed, ...)
+    private readonly List<ComboBox> _fontBoxes = [], _sizeBoxes = [];
+    private readonly List<(Button Button, bool Html)> _formatButtons = [];
+    private bool _syncingState;
+    private string _lastHighlight = "#FFFF00", _lastFontColor = "#FF0000", _lastShading = "#D9D9D9";
+    private double _zoom = 1;
     private readonly Grid _bccRow = new();
     private readonly ListBox _attachments = new() { MaxHeight = 90 };
     private readonly Border _attachmentBar = new() { IsVisible = false, Padding = new Thickness(0, 4) };
@@ -41,7 +48,7 @@ public sealed class ComposeWindow : Window
     private readonly List<ComposeFile> _files = [];
     private readonly List<Control> _busyControls = [];
     private string? _draftId;
-    private bool _busy, _loadFailed, _loadingMode, _loadingDraft, _dirty, _closingAfterSave, _sent, _closingPromptOpen, _sourceMode;
+    private bool _busy, _loadFailed, _loadingDraft, _dirty, _closingAfterSave, _sent, _closingPromptOpen;
     private string _htmlBody = "";
     private ComposeDraft? _savedContent;
     private readonly ComposeSeed? _seed;
@@ -71,9 +78,6 @@ public sealed class ComposeWindow : Window
 
         foreach (var box in new[] { _to, _cc, _bcc, _subject, _body })
             box.TextChanged += (_, _) => { if (!_loadingDraft) _dirty = true; UpdateTitle(); };
-        _html.IsCheckedChanged += HtmlToggled;
-        _visual.Click += (_, _) => OpenVisualEditor();
-        _source.Click += (_, _) => ToggleSource();
 
         Content = BuildLayout();
         if (seed is not null) ApplySeed(seed);
@@ -81,7 +85,11 @@ public sealed class ComposeWindow : Window
         UpdateTitle();
         RefreshAttachments();
         if (_draftId is not null) Opened += async (_, _) => await LoadDraftAsync();
-        Opened += (_, _) => (string.IsNullOrWhiteSpace(_to.Text) ? _to : _body).Focus();
+        Opened += (_, _) =>
+        {
+            if (!string.IsNullOrWhiteSpace(_to.Text)) { if (_isHtml) _editor?.FocusBody(); else _body.Focus(); }
+            else _to.Focus();
+        };
         Opened += async (_, _) => await LoadRecipientsAsync();
         AddHandler(KeyDownEvent, (_, e) =>                                           // Ctrl+K: Check Names, as in Outlook
         {
@@ -177,8 +185,8 @@ public sealed class ComposeWindow : Window
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(8, 4, 8, 0) };
         bar.Children.Add(Icon("OlIconAppMark", 22));
         bar.Children.Add(Small("OlIconSave", "Save draft", async () => await SaveAsync(false)));
-        bar.Children.Add(Small("OlIconUndo", "Undo", () => { if (!_body.IsReadOnly) _body.Undo(); return Task.CompletedTask; }));
-        bar.Children.Add(Small("OlIconRedo", "Redo", () => { if (!_body.IsReadOnly) _body.Redo(); return Task.CompletedTask; }));
+        bar.Children.Add(Small("OlIconUndo", "Undo", () => { if (_isHtml) _editor?.Run("undo"); else _body.Undo(); return Task.CompletedTask; }));
+        bar.Children.Add(Small("OlIconRedo", "Redo", () => { if (_isHtml) _editor?.Run("redo"); else _body.Redo(); return Task.CompletedTask; }));
         bar.Children.Add(Small("OlIconBackArrow", null, null));
         bar.Children.Add(Small("OlIconChevronDown", null, null));
         bar.Children.Add(_titleText);
@@ -200,16 +208,15 @@ public sealed class ComposeWindow : Window
         }
         Tab("File", Group("File", Big(null, "Save", async () => await SaveAsync(false)), Big(null, "Discard", () => { _closingAfterSave = true; Close(); return Task.CompletedTask; }), Big(null, "Print", null)));
         Tab("Message",
-            Group("Clipboard", BigDrop("OlIconPaste", "Paste", () => { Focused()?.Paste(); return Task.CompletedTask; }),
-                Stack(Mini("OlIconCut", "Cut", () => { Focused()?.Cut(); return Task.CompletedTask; }), Mini("OlIconCopy", "Copy", () => { Focused()?.Copy(); return Task.CompletedTask; }), Mini("OlIconFormatPainter", "Format Painter", null))),
+            ClipboardGroup(),
             // Outlook's two rows: font, size, grow / shrink, lists, clear formatting; then bold / italic / underline, highlight and colour, alignment, indents
             Group("Basic Text", Stack(
-                Row(Combo("Font", 128), Combo("Font Size", 52), Mini("OlIconGrowFont", "Grow Font", null), Mini("OlIconShrinkFont", "Shrink Font", null), Sep(),
-                    Mini("OlIconBullets", "Bullets", null, dropDown: true), Mini("OlIconNumbering", "Numbering", null, dropDown: true), Sep(), Mini("OlIconClearFormatting", "Clear All Formatting", null)),
-                Row(Mini(null, "Bold", null, "B", FontWeight.Bold), Mini(null, "Italic", null, "I", FontWeight.Normal, FontStyle.Italic), Mini(null, "Underline", null, "U"), Sep(),
-                    Mini("OlIconHighlight", "Text Highlight Color", null, dropDown: true), Mini("OlIconFontColor", "Font Color", null, dropDown: true), Sep(),
-                    Mini("OlIconAlignLeft", "Align Left", null), Mini("OlIconAlignCenter", "Center", null), Mini("OlIconAlignRight", "Align Right", null), Sep(),
-                    Mini("OlIconDecreaseIndent", "Decrease Indent", null), Mini("OlIconIncreaseIndent", "Increase Indent", null)))),
+                Row(FontBox(), SizeBox(), Cmd("OlIconGrowFont", "Grow Font", "grow"), Cmd("OlIconShrinkFont", "Shrink Font", "shrink"), Sep(),
+                    ListSplit("bullets"), ListSplit("numbering"), Sep(), Cmd("OlIconClearFormatting", "Clear All Formatting", "clear")),
+                Row(Toggle(null, "Bold", "bold", "B"), Toggle(null, "Italic", "italic", "I"), Toggle(null, "Underline", "underline", "U"), Sep(),
+                    HighlightSplit(), FontColorSplit(), Sep(),
+                    Toggle("OlIconAlignLeft", "Align Left", "justifyLeft"), Toggle("OlIconAlignCenter", "Center", "justifyCenter"), Toggle("OlIconAlignRight", "Align Right", "justifyRight"), Sep(),
+                    Cmd("OlIconDecreaseIndent", "Decrease Indent", "outdent"), Cmd("OlIconIncreaseIndent", "Increase Indent", "indent")))),
             Group("Names", Big("OlIconAddressBook", "Address Book", () => OpenSelectNamesAsync("To")), Big("OlIconCheckNames", "Check Names", () => { CheckNames(); return Task.CompletedTask; })),
             Group("Include", Stack(Labeled("OlIconPaperclip", "Attach File", async () => await AddAttachmentsAsync()), Labeled("OlIconSignature", "Signature", null))),
             Group("Tags", Stack(Mini("OlIconFlag", "Follow Up", null, dropDown: true), Mini("OlIconImportanceHigh", "High Importance", null), Mini("OlIconImportanceLow", "Low Importance", null))),
@@ -217,18 +224,35 @@ public sealed class ComposeWindow : Window
             Group("Immersive", Big("OlIconReadAloud", "Immersive Reader", null)),
             Group("My Templates", Big("OlIconTemplate", "View Templates", null)));
         Tab("Insert",
-            Group("Include", Big("OlIconPaperclip", "Attach File", async () => await AddAttachmentsAsync()), Big(null, "Attach Item", null), Big(null, "Business Card", null), Big(null, "Calendar", null), Big(null, "Signature", null)),
-            Group("Tables", Big(null, "Table", null)), Group("Illustrations", Big(null, "Pictures", null), Big(null, "Shapes", null), Big(null, "Icons", null)),
-            Group("Links", Big(null, "Link", null), Big(null, "Bookmark", null)), Group("Symbols", Big(null, "Equation", null), Big(null, "Symbol", null)));
+            Group("Include", Big("OlIconPaperclip", "Attach File", async () => await AddAttachmentsAsync()), Big(null, "Attach Item", null), Big(null, "Business Card", null), Big(null, "Calendar", null), Big("OlIconSignature", "Signature", null)),
+            Group("Tables", HtmlOnly(Big("OlIconTable", "Table", InsertTableAsync))),
+            Group("Illustrations", Big(null, "Pictures", null), Big(null, "Shapes", null), Big(null, "Icons", null)),
+            Group("Links", HtmlOnly(Big("OlIconLink", "Link", InsertLinkAsync)), Big(null, "Bookmark", null)),
+            Group("Symbols", Big(null, "Equation", null), Big(null, "Symbol", null), HtmlOnly(Big("OlIconHorizontalLine", "Horizontal Line", () => { _editor?.Run("line"); return Task.CompletedTask; }))));
         var bccToggle = Big(null, "Bcc", () => { _bccRow.IsVisible = !_bccRow.IsVisible; return Task.CompletedTask; });
         Tab("Options",
             Group("Show Fields", bccToggle, Big(null, "From", null)),
-            Group("Format", Big(null, "Plain Text / HTML", () => { _html.IsChecked = _html.IsChecked != true; return Task.CompletedTask; }), Big(null, "Themes", null), Big(null, "Colors", null), Big(null, "Fonts", null)),
+            Group("Format", Stack(FormatChoice(true), FormatChoice(false)), Big(null, "Themes", null), Big(null, "Colors", null), Big(null, "Fonts", null)),
             Group("Tracking", Stack(Mini(null, "Request a Delivery Receipt", null), Mini(null, "Request a Read Receipt", null))),
             Group("More Options", Big(null, "Delay Delivery", null), Big(null, "Direct Replies To", null)));
+        // Format Text as Outlook lays it out (no Rich Text: OpenOutlook writes HTML or plain text)
         Tab("Format Text",
-            Group("Format", Stack(Real(_html), Real(_visual), Real(_source))),
-            Group("Font", Big(null, "Font", null), Big(null, "Styles", null)));
+            ClipboardGroup(),
+            Group("Format", Stack(FormatChoice(true), FormatChoice(false))),
+            Group("Font", Stack(
+                Row(FontBox(), SizeBox()),
+                Row(Toggle(null, "Bold", "bold", "B"), Toggle(null, "Italic", "italic", "I"), Toggle(null, "Underline", "underline", "U"), Toggle("OlIconStrikethrough", "Strikethrough", "strikeThrough"),
+                    Toggle("OlIconSubscript", "Subscript", "subscript"), Toggle("OlIconSuperscript", "Superscript", "superscript"), Sep(), Cmd("OlIconClearFormatting", "Clear All Formatting", "clear")),
+                Row(HighlightSplit(), FontColorSplit(), Sep(), Cmd("OlIconGrowFont", "Grow Font", "grow"), Cmd("OlIconShrinkFont", "Shrink Font", "shrink"), Sep(), ChangeCaseDrop()))),
+            Group("Paragraph", Stack(
+                Row(ListSplit("bullets"), ListSplit("numbering"), Mini("OlIconMultilevelList", "Multilevel List", null, dropDown: true), Sep(),
+                    Cmd("OlIconDecreaseIndent", "Decrease Indent", "outdent"), Cmd("OlIconIncreaseIndent", "Increase Indent", "indent")),
+                Row(Toggle("OlIconAlignLeft", "Align Left", "justifyLeft"), Toggle("OlIconAlignCenter", "Center", "justifyCenter"), Toggle("OlIconAlignRight", "Align Right", "justifyRight"),
+                    Toggle("OlIconAlignJustify", "Justify", "justifyFull"), Sep(), LineSpacingDrop()),
+                Row(ShadingSplit(), Mini("OlIconBorders", "Borders", null, dropDown: true), Sep(), Mini("OlIconSort", "Sort", null), Toggle("OlIconShowMarks", "Show/Hide ¶", "marks")))),
+            Group("Styles", StylesDrop(), Big("OlIconChangeStyles", "Change Styles", null)),
+            Group("Editing", EditingDrop()),
+            Group("Zoom", ZoomDrop()));
         Tab("Review", Group("Proofing", Big(null, "Spelling & Grammar", null), Big(null, "Thesaurus", null), Big(null, "Word Count", null)),
             Group("Speech", Big("OlIconReadAloud", "Read Aloud", null)), Group("Accessibility", Big(null, "Check Accessibility", null)),
             Group("Language", Big("OlIconTranslate", "Translate", null), Big(null, "Language", null)));
@@ -279,7 +303,8 @@ public sealed class ComposeWindow : Window
         Grid.SetColumnSpan(_attachmentBar, 2);
         Place(grid, _attachmentBar, 0, 5);
 
-        var bodyBorder = new Border { BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(0, 1, 0, 0), Child = _body, Margin = new Thickness(0, 2, 0, 0) };
+        _bodyHost.Children.Add(_body);                                              // plain text; the HTML editor joins it the first time the message is HTML
+        var bodyBorder = new Border { BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(0, 1, 0, 0), Child = _bodyHost, Margin = new Thickness(0, 2, 0, 0) };
         Grid.SetColumnSpan(bodyBorder, 2);
         Place(grid, bodyBorder, 0, 6);
         return grid;
@@ -385,6 +410,7 @@ public sealed class ComposeWindow : Window
 
     private Button Wire(Button b, string caption, Func<Task>? action, bool forceNotYet = false)
     {
+        b.Focusable = false;                                                         // as in Outlook, the ribbon leaves the keyboard where it was (the body keeps its selection)
         if (action is null || forceNotYet)
         {
             ToolTip.SetTip(b, NotYet);
@@ -400,19 +426,6 @@ public sealed class ComposeWindow : Window
     }
 
     private Control Real(Control c) { _busyControls.Add(c); return c; }
-
-    private Control Combo(string name, double width)
-    {
-        var c = new ComboBox { Width = width, MinHeight = 24, Height = 24, Padding = new Thickness(6, 0), FontSize = 12, Margin = new Thickness(0, 0, 3, 0), VerticalAlignment = VerticalAlignment.Center };
-        ToolTip.SetTip(c, name + " - " + NotYet);
-        // closing the list inside DropDownOpened re-enters the popup and overflowed the stack (crash, 0.1.63): close it once the opening has finished
-        c.DropDownOpened += (_, _) =>
-        {
-            _status.Text = $"{name}: {NotYet.ToLowerInvariant()}.";
-            Dispatcher.UIThread.Post(() => c.IsDropDownOpen = false);
-        };
-        return c;
-    }
 
     private static StackPanel Stack(params Control[] rows) => new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center }.With(rows);
     private static StackPanel Row(params Control[] items) => new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 }.With(items);
@@ -454,39 +467,10 @@ public sealed class ComposeWindow : Window
 
     // ---------------------------------------------------------------- body mode
 
-    private void HtmlToggled(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (!_loadingMode && _html.IsChecked == true)
-        {
-            _htmlBody = "<p>" + System.Net.WebUtility.HtmlEncode(_body.Text ?? "").Replace("\r\n", "\n").Replace("\n", "<br>") + "</p>";
-            _body.Text = PreviewText(_htmlBody);
-        }
-        else if (!_loadingMode && _html.IsChecked != true)
-        {
-            if (_sourceMode) _htmlBody = _body.Text ?? "";
-            _sourceMode = false;
-            _body.Text = PreviewText(_htmlBody);
-        }
-        UpdateBodyMode();
-        UpdateTitle();
-        if (!_loadingDraft) _dirty = true;
-    }
-
-    private void UpdateBodyMode()
-    {
-        var html = _html.IsChecked == true;
-        _body.Watermark = html ? (_sourceMode ? "HTML source" : "Formatted message preview; use Format Text > Visual editor to change it") : "Write your message";
-        _body.IsReadOnly = html && !_sourceMode;
-        _visual.IsEnabled = !_busy && html;
-        _source.IsVisible = html;
-        _source.IsEnabled = !_busy && html;
-        _source.Content = _sourceMode ? "Close source" : "HTML source";
-    }
-
     private void UpdateTitle()
     {
         var subject = string.IsNullOrWhiteSpace(_subject.Text) ? "Untitled" : _subject.Text!.Trim();
-        Title = $"{subject}  -  Message ({(_html.IsChecked == true ? "HTML" : "Plain Text")})";
+        Title = $"{subject}  -  Message ({(_isHtml ? "HTML" : "Plain Text")})";
         _titleText.Text = Title;
     }
 
@@ -497,14 +481,7 @@ public sealed class ComposeWindow : Window
         {
             _to.Text = seed.To; _cc.Text = seed.Cc; _subject.Text = seed.Subject;
             _bccRow.IsVisible = false;
-            if (seed.Html)
-            {
-                _loadingMode = true;
-                _html.IsChecked = true;
-                _loadingMode = false;
-                _htmlBody = seed.Body;
-                _body.Text = PreviewText(seed.Body);
-            }
+            if (seed.Html) ShowHtmlBody(seed.Body);
             else _body.Text = seed.Body;
             if (seed.Files is not null) _files.AddRange(seed.Files);
         }
@@ -525,11 +502,8 @@ public sealed class ComposeWindow : Window
             var loaded = await _backend.LoadAsync(_draftId!);
             _to.Text = loaded.Draft.To; _cc.Text = loaded.Draft.Cc; _bcc.Text = loaded.Draft.Bcc; _subject.Text = loaded.Draft.Subject;
             _bccRow.IsVisible = !string.IsNullOrWhiteSpace(loaded.Draft.Bcc);
-            _loadingMode = true;
-            _html.IsChecked = loaded.Draft.Html;
-            _loadingMode = false;
-            _htmlBody = loaded.Draft.Html ? loaded.Draft.Body : "";
-            _body.Text = loaded.Draft.Html ? PreviewText(_htmlBody) : loaded.Draft.Body;
+            if (loaded.Draft.Html) ShowHtmlBody(HtmlEditorDocument.Unwrap(ComposeHtml.Sanitize(loaded.Draft.Body)));
+            else { _isHtml = false; _body.Text = loaded.Draft.Body; }
             _files.AddRange(loaded.Files);
             UpdateBodyMode();
             RefreshAttachments();
@@ -618,6 +592,7 @@ public sealed class ComposeWindow : Window
         }
         if (send && !CheckNames()) return false;                                   // as Outlook: typed names become addresses first
         SetBusy(true);
+        await FlushEditorAsync();
         var progress = new Progress<string>(text => _status.Text = text);
         try
         {
@@ -706,54 +681,26 @@ public sealed class ComposeWindow : Window
         _attachmentBar.IsVisible = _files.Count > 0;
     }
 
+    /// <summary>The message as it is saved and sent; an HTML body carries the default font in its wrapper (<see cref="HtmlEditorDocument.Wrap"/>).</summary>
     private ComposeDraft CurrentContent() =>
         new(_to.Text ?? "", _cc.Text ?? "", _bcc.Text ?? "", _subject.Text ?? "",
-            _html.IsChecked == true ? (_sourceMode ? _body.Text ?? "" : _htmlBody) : _body.Text ?? "", _html.IsChecked == true);
+            _isHtml ? HtmlEditorDocument.Wrap(_htmlBody) : _body.Text ?? "", _isHtml);
 
     private bool HasUnsavedChanges()
     {
         if (_dirty || _files.Any(f => !f.Saved)) return true;
         var current = CurrentContent();
         if (_savedContent is not null) return current != _savedContent;
+        var body = _isHtml ? _htmlBody : _body.Text ?? "";                          // an untouched reply keeps its seed body exactly
+        var blank = _isHtml ? HtmlEditorDocument.IsBlank(body) : string.IsNullOrWhiteSpace(body);
         return !string.IsNullOrWhiteSpace(current.To) || !string.IsNullOrWhiteSpace(current.Cc) || !string.IsNullOrWhiteSpace(current.Bcc) ||
-               !string.IsNullOrWhiteSpace(current.Subject) || !string.IsNullOrWhiteSpace(current.Body) && current.Body != (_seed?.Body ?? "");
-    }
-
-    private void OpenVisualEditor()
-    {
-        if (_html.IsChecked != true) return;
-        if (_sourceMode) _htmlBody = _body.Text ?? "";
-        RichComposeEditor.Open(this, _htmlBody, edited =>
-            {
-                _htmlBody = edited;
-                _body.Text = _sourceMode ? edited : PreviewText(edited);
-                _dirty = true;
-            },
-            error => _status.Text = error);
-    }
-
-    private void ToggleSource()
-    {
-        if (_html.IsChecked != true) return;
-        if (_sourceMode)
-        {
-            _htmlBody = _body.Text ?? "";
-            _sourceMode = false;
-            _body.Text = PreviewText(_htmlBody);
-        }
-        else
-        {
-            _sourceMode = true;
-            _body.Text = _htmlBody;
-        }
-        _dirty = true;
-        UpdateBodyMode();
+               !string.IsNullOrWhiteSpace(current.Subject) || !blank && body != (_seed?.Body ?? "");
     }
 
     private static string PreviewText(string html)
     {
         try { return string.Concat(SafeHtmlPreview.Parse(html).Select(run => run.Text)); }
-        catch (Exception) { return "(Formatted message; use Visual editor or HTML source to inspect it.)"; }
+        catch (Exception) { return "(Formatted message)"; }
     }
 
     private void SetBusy(bool busy)

@@ -946,7 +946,6 @@
                       <StackPanel Orientation="Horizontal" Spacing="9">
                         <TextBlock Classes="olOptBody" Text="Compose messages in this format:" VerticalAlignment="Center" />
                         <ComboBox Name="OptComposeFormat" Width="130">
-                          <ComboBoxItem>Rich Text</ComboBoxItem>
                           <ComboBoxItem>HTML</ComboBoxItem>
                           <ComboBoxItem>Plain Text</ComboBoxItem>
                         </ComboBox>

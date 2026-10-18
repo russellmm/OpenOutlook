@@ -16,7 +16,7 @@ public sealed record OptionsSettings
     public bool PstBackupBeforeEditing { get; init; }
 
     // Compose messages
-    public string ComposeFormat { get; init; } = "Rich Text";
+    public string ComposeFormat { get; init; } = "HTML";                       // HTML or Plain Text (no Rich Text: an older "Rich Text" reads as HTML)
     public bool CheckSpellingBeforeSending { get; init; } = true;
     public bool IgnoreOriginalInReply { get; init; } = true;
 
@@ -190,7 +190,7 @@ public sealed class OptionsSettingsStore
     // Numeric fields are clamped to the ranges the dialog offers; strings are length-capped.
     private static OptionsSettings Sanitized(OptionsSettings s) => s with
     {
-        ComposeFormat = Cap(s.ComposeFormat, "Rich Text"),
+        ComposeFormat = s.ComposeFormat == "Plain Text" ? "Plain Text" : "HTML",
         AutoSaveMinutes = Math.Clamp(s.AutoSaveMinutes, 1, 99),
         UnsentSaveFolder = Cap(s.UnsentSaveFolder, "Drafts"),
         DefaultImportance = Cap(s.DefaultImportance, "Normal"),

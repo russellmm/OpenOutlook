@@ -45,5 +45,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="OpenOutlook.HeadlessTests" />
     <InternalsVisibleTo Include="OpenOutlook.Tests" />
+    <InternalsVisibleTo Include="MailSmoke" />
   </ItemGroup>
 </Project>

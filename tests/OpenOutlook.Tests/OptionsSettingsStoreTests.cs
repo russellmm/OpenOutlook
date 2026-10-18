@@ -90,8 +90,19 @@ public sealed class OptionsSettingsStoreTests : IDisposable
         File.WriteAllText(store.Path,
             "{\"ComposeFormat\":\"\",\"RichTextToInternet\":\"" + new string('q', 400) + "\"}");
         var loaded = store.Load();
-        Assert.Equal("Rich Text", loaded.ComposeFormat);
+        Assert.Equal("HTML", loaded.ComposeFormat);                                  // new messages are HTML unless Plain Text was chosen
         Assert.Equal("Convert to HTML format", loaded.RichTextToInternet);
+    }
+
+    [Fact]
+    public void An_old_rich_text_compose_format_reads_as_html_and_plain_text_is_kept()
+    {
+        var store = Store();
+        Directory.CreateDirectory(Path.GetDirectoryName(store.Path)!);
+        File.WriteAllText(store.Path, "{\"ComposeFormat\":\"Rich Text\"}");
+        Assert.Equal("HTML", store.Load().ComposeFormat);                           // OpenOutlook writes HTML or plain text only (owner 2026-10-18)
+        File.WriteAllText(store.Path, "{\"ComposeFormat\":\"Plain Text\"}");
+        Assert.Equal("Plain Text", store.Load().ComposeFormat);
     }
 
     [Fact]

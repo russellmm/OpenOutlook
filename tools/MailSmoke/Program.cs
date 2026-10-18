@@ -248,6 +248,87 @@ if (step == "wvprobe")
     return 0;
 }
 
+if (step == "editorprobe")
+{
+    // The compose window's HTML editor in a real embedded web view (opens a window for a few seconds, offline): loads a body, selects words,
+    // runs ribbon commands and reads the HTML back. MailSmoke editorprobe
+    var log = new List<string>();
+    var ok = true;
+    var ui = new Thread(() =>
+    {
+    Avalonia.AppBuilderDesktopExtensions.UsePlatformDetect(Avalonia.AppBuilder.Configure<Avalonia.Application>()).SetupWithoutStarting();
+    var done = new CancellationTokenSource();
+    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+    {
+        try
+        {
+            var editor = new OpenOutlook.Desktop.WebHtmlEditor();
+            int edited = 0, changed = 0, states = 0;
+            OpenOutlook.Desktop.HtmlEditorState? last = null;
+            string? lastHtml = null;
+            editor.Edited += () => edited++;
+            editor.HtmlChanged += h => { changed++; lastHtml = h; };
+            editor.StateChanged += st => { states++; last = st; };
+            var window = new Avalonia.Controls.Window { Width = 800, Height = 500, Title = "OpenOutlook editor probe", Content = editor.View };
+            editor.Load("<div>one two three four</div><div>second line <a href=\"https://example.org/\">a link</a></div>");
+            editor.Run("bold");                                                      // queued before the page is ready: runs after the body is in
+            window.Show();
+            var view = (Avalonia.Controls.NativeWebView)editor.View;
+            async Task Select(string text)
+            {
+                await view.InvokeScript("(function(t){const ed=document.getElementById('editor');ed.focus();const w=document.createTreeWalker(ed,NodeFilter.SHOW_TEXT);" +
+                    "while(w.nextNode()){const n=w.currentNode,i=n.data.indexOf(t);if(i>=0){const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+t.length);" +
+                    "const s=getSelection();s.removeAllRanges();s.addRange(r);return true;}}return false;})(" + System.Text.Json.JsonSerializer.Serialize(text) + ")");
+                await Task.Delay(150);
+            }
+            void Check(string label, bool pass, string detail) { ok &= pass; log.Add($"{(pass ? "ok  " : "FAIL")} {label}: {detail}"); }
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            string? html = null;
+            while (sw.ElapsedMilliseconds < 8000 && !(editor.IsReady && (html = await editor.ReadHtmlAsync())?.Contains("four") == true)) await Task.Delay(100);
+            Check("page ready with the body", html?.Contains("one two three four") == true, $"{sw.ElapsedMilliseconds} ms, {html?.Length} chars");
+            await Select("two");
+            editor.Run("bold");
+            await Task.Delay(400);
+            html = await editor.ReadHtmlAsync();
+            Check("bold on a selection", html?.Contains(">two<") == true && (html.Contains("<b>two</b>") || html.Contains("font-weight: bold")), html ?? "null");
+            await Select("three");
+            editor.Run("fontSize", "18");
+            await Task.Delay(400);
+            html = await editor.ReadHtmlAsync();
+            Check("font size in points", html?.Contains("font-size: 18pt") == true, html ?? "null");
+            await Select("four");
+            editor.Run("foreColor", "#C00000");
+            await Task.Delay(500);
+            Check("change reported (dirty + html)", edited > 0 && changed > 0 && lastHtml?.Contains("four") == true, $"edited={edited} changed={changed}");
+            await Select("three");
+            await Task.Delay(300);
+            Check("cursor state reported", states > 0 && last is { Size: 18 }, last?.ToString() ?? "none");
+            // clicking a link inside the editor must not navigate the editor away
+            await view.InvokeScript("document.querySelector('#editor a').click(); 'x'");
+            await Task.Delay(500);
+            html = await editor.ReadHtmlAsync();
+            Check("link click stays in the editor", html?.Contains("second line") == true, "body still there");
+            await view.InvokeScript("location.href='data:text/html,<p>sneaky</p>'; 'x'");
+            await Task.Delay(800);
+            html = await editor.ReadHtmlAsync();
+            Check("script navigation refused", html?.Contains("second line") == true, html is null ? "page gone" : "body still there");
+            var found = await editor.FindAsync("second");
+            Check("find", found, found.ToString());
+            await Task.Delay(1200);
+            window.Close();
+        }
+        catch (Exception ex) { ok = false; log.Add("FAIL probe threw: " + ex); }
+        done.Cancel();
+    });
+    Avalonia.Threading.Dispatcher.UIThread.MainLoop(done.Token);
+    });
+    if (OperatingSystem.IsWindows()) ui.SetApartmentState(ApartmentState.STA);
+    ui.Start();
+    ui.Join();
+    foreach (var line in log) Console.WriteLine(line);
+    return ok ? 0 : 1;
+}
+
 if (step == "compare")
 {
     // renders one message the way the reader does (sanitized + loaded pictures) and as the original HTML, side by side PNGs: MailSmoke compare <copy of a pst> <subject part> <out dir> [width]
@@ -403,7 +484,7 @@ var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rende
 if (!liveSteps.Contains(step))
 {
     Console.Error.WriteLine(step.Length == 0 ? "MailSmoke: name a step." : $"MailSmoke: unknown step '{step}'.");
-    Console.Error.WriteLine("Offline steps: mkbigrecips, mkmulti, mkmany, touchall, wvprobe, compare, imgsurvey, imgprobe, openeditable, selprobe, colorprobe.");
+    Console.Error.WriteLine("Offline steps: mkbigrecips, mkmulti, mkmany, touchall, wvprobe, editorprobe, compare, imgsurvey, imgprobe, openeditable, selprobe, colorprobe.");
     Console.Error.WriteLine("Live steps (use the real accounts): " + string.Join(", ", liveSteps.Order()) + ". 'sendtest' sends real mail.");
     return 2;
 }

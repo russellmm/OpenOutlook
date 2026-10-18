@@ -184,6 +184,9 @@ public sealed class ComposeWindow : Window
         return bar;
     }
 
+    /// <summary>One per ribbon tab: collapses groups that do not fit (for tests).</summary>
+    internal IReadOnlyList<RibbonResponsiveLayout> RibbonLayouts { get; private set; } = [];
+
     private TabControl Ribbon()
     {
         var tabs = new TabControl { Padding = new Thickness(0), Margin = new Thickness(4, 0), Background = Brushes.Transparent };
@@ -196,17 +199,22 @@ public sealed class ComposeWindow : Window
         }
         Tab("File", Group("File", Big(null, "Save", async () => await SaveAsync(false)), Big(null, "Discard", () => { _closingAfterSave = true; Close(); return Task.CompletedTask; }), Big(null, "Print", null)));
         Tab("Message",
-            Group("Clipboard", Big("OlIconSave", "Paste", () => { Focused()?.Paste(); return Task.CompletedTask; }),
-                Stack(Mini(null, "Cut", () => { Focused()?.Cut(); return Task.CompletedTask; }), Mini(null, "Copy", () => { Focused()?.Copy(); return Task.CompletedTask; }), Mini(null, "Format Painter", null))),
-            Group("Basic Text", Stack(Row(Combo("Font", 110), Combo("Size", 56), Mini(null, "Grow Font", null), Mini(null, "Shrink Font", null), Mini(null, "Bullets", null), Mini(null, "Numbering", null), Mini(null, "Clear Formatting", null)),
-                Row(Mini(null, "Bold", null, "B", FontWeight.Bold), Mini(null, "Italic", null, "I", FontWeight.Normal, FontStyle.Italic), Mini(null, "Underline", null, "U"), Mini(null, "Highlight", null), Mini(null, "Font Color", null),
-                    Mini(null, "Align Left", null), Mini(null, "Center", null), Mini(null, "Align Right", null), Mini(null, "Decrease Indent", null), Mini(null, "Increase Indent", null)))),
-            Group("Names", Big("OlIconAddressBook", "Address Book", () => OpenSelectNamesAsync("To")), Big("OlIconPeople", "Check Names", () => { CheckNames(); return Task.CompletedTask; })),
-            Group("Include", Big("OlIconPaperclip", "Attach File", async () => await AddAttachmentsAsync()), Big(null, "Signature", null)),
-            Group("Tags", Stack(Mini("OlIconFlag", "Follow Up", null), Mini(null, "High Importance", null), Mini(null, "Low Importance", null))),
+            Group("Clipboard", BigDrop("OlIconPaste", "Paste", () => { Focused()?.Paste(); return Task.CompletedTask; }),
+                Stack(Mini("OlIconCut", "Cut", () => { Focused()?.Cut(); return Task.CompletedTask; }), Mini("OlIconCopy", "Copy", () => { Focused()?.Copy(); return Task.CompletedTask; }), Mini("OlIconFormatPainter", "Format Painter", null))),
+            // Outlook's two rows: font, size, grow / shrink, lists, clear formatting; then bold / italic / underline, highlight and colour, alignment, indents
+            Group("Basic Text", Stack(
+                Row(Combo("Font", 128), Combo("Font Size", 52), Mini("OlIconGrowFont", "Grow Font", null), Mini("OlIconShrinkFont", "Shrink Font", null), Sep(),
+                    Mini("OlIconBullets", "Bullets", null, dropDown: true), Mini("OlIconNumbering", "Numbering", null, dropDown: true), Sep(), Mini("OlIconClearFormatting", "Clear All Formatting", null)),
+                Row(Mini(null, "Bold", null, "B", FontWeight.Bold), Mini(null, "Italic", null, "I", FontWeight.Normal, FontStyle.Italic), Mini(null, "Underline", null, "U"), Sep(),
+                    Mini("OlIconHighlight", "Text Highlight Color", null, dropDown: true), Mini("OlIconFontColor", "Font Color", null, dropDown: true), Sep(),
+                    Mini("OlIconAlignLeft", "Align Left", null), Mini("OlIconAlignCenter", "Center", null), Mini("OlIconAlignRight", "Align Right", null), Sep(),
+                    Mini("OlIconDecreaseIndent", "Decrease Indent", null), Mini("OlIconIncreaseIndent", "Increase Indent", null)))),
+            Group("Names", Big("OlIconAddressBook", "Address Book", () => OpenSelectNamesAsync("To")), Big("OlIconCheckNames", "Check Names", () => { CheckNames(); return Task.CompletedTask; })),
+            Group("Include", Stack(Labeled("OlIconPaperclip", "Attach File", async () => await AddAttachmentsAsync()), Labeled("OlIconSignature", "Signature", null))),
+            Group("Tags", Stack(Mini("OlIconFlag", "Follow Up", null, dropDown: true), Mini("OlIconImportanceHigh", "High Importance", null), Mini("OlIconImportanceLow", "Low Importance", null))),
             Group("Apps", Big("OlIconAllApps", "All Apps", null)),
             Group("Immersive", Big("OlIconReadAloud", "Immersive Reader", null)),
-            Group("My Templates", Big(null, "View Templates", null)));
+            Group("My Templates", Big("OlIconTemplate", "View Templates", null)));
         Tab("Insert",
             Group("Include", Big("OlIconPaperclip", "Attach File", async () => await AddAttachmentsAsync()), Big(null, "Attach Item", null), Big(null, "Business Card", null), Big(null, "Calendar", null), Big(null, "Signature", null)),
             Group("Tables", Big(null, "Table", null)), Group("Illustrations", Big(null, "Pictures", null), Big(null, "Shapes", null), Big(null, "Icons", null)),
@@ -225,6 +233,7 @@ public sealed class ComposeWindow : Window
             Group("Language", Big("OlIconTranslate", "Translate", null), Big(null, "Language", null)));
         Tab("Help", Group("Help", Big("OlIconHelp", "Help", null), Big(null, "Contact Support", null), Big(null, "Feedback", null)));
         tabs.SelectedIndex = 1;
+        RibbonLayouts = RibbonResponsiveLayout.AttachAll(tabs);           // groups collapse into drop-down buttons from the right as the window narrows, as in the main window
         return tabs;
     }
 
@@ -316,14 +325,14 @@ public sealed class ComposeWindow : Window
 
     private Control Group(string caption, params Control[] content)
     {
-        var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
         foreach (var c in content) strip.Children.Add(c);
-        var dock = new DockPanel { Margin = new Thickness(6, 2) };
-        var label = new TextBlock { Text = caption, FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
+        var dock = new DockPanel();
+        var label = new TextBlock { Text = caption, Classes = { "olGroupLabel" }, FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
         DockPanel.SetDock(label, Dock.Bottom);
         dock.Children.Add(label);
         dock.Children.Add(strip);
-        return new Border { BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(0, 0, 1, 0), Padding = new Thickness(0, 0, 4, 0), Child = dock };
+        return new Border { Classes = { "olGroup" }, BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(0, 0, 1, 0), Padding = new Thickness(4, 2, 6, 0), Margin = new Thickness(0, 0, 4, 0), Child = dock };
     }
 
     private Button Big(string? icon, string caption, Func<Task>? action)
@@ -334,14 +343,38 @@ public sealed class ComposeWindow : Window
         return Wire(new Button { Content = content, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(2) }, caption, action);
     }
 
-    private Button Mini(string? icon, string caption, Func<Task>? action, string? glyph = null, FontWeight? weight = null, FontStyle style = FontStyle.Normal)
+    private Button BigDrop(string icon, string caption, Func<Task>? action)
     {
-        var text = glyph ?? (caption.Length > 0 ? caption[..1] : "·");
-        object content = icon is not null ? Icon(icon, 16)
-            : glyph is not null ? new TextBlock { Text = glyph, FontWeight = weight ?? FontWeight.Normal, FontStyle = style, Width = 18, TextAlignment = TextAlignment.Center, TextDecorations = glyph == "U" ? TextDecorations.Underline : null }
-            : new TextBlock { Text = caption, FontSize = 11 };
-        return Wire(new Button { Content = content, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(4, 2), MinHeight = 22 }, caption, action);
+        var b = Big(icon, caption, action);
+        ((StackPanel)b.Content!).Children.Add(Chevron(8));
+        return b;
     }
+
+    /// <summary>A small ribbon button: an icon (with a drop-down arrow for Outlook's split buttons) or a letter such as B / I / U; the name is in its tooltip.</summary>
+    private Button Mini(string? icon, string caption, Func<Task>? action, string? glyph = null, FontWeight? weight = null, FontStyle style = FontStyle.Normal, bool dropDown = false)
+    {
+        Control face = icon is not null ? Icon(icon, 16)
+            : glyph is not null ? new TextBlock { Text = glyph, FontSize = 14, FontWeight = weight ?? FontWeight.Normal, FontStyle = style, Width = 16, TextAlignment = TextAlignment.Center, TextDecorations = glyph == "U" ? TextDecorations.Underline : null }
+            : new TextBlock { Text = caption, FontSize = 11 };
+        object content = dropDown ? new StackPanel { Orientation = Orientation.Horizontal, Spacing = 1, Children = { face, Chevron(7) } } : face;
+        var b = Wire(new Button { Content = content, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(3), MinHeight = 24, MinWidth = 24, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center }, caption, action);
+        if (action is not null) ToolTip.SetTip(b, caption);
+        else ToolTip.SetTip(b, caption + " - " + NotYet);
+        return b;
+    }
+
+    /// <summary>A small button with its name beside the icon (Attach File, Signature).</summary>
+    private Button Labeled(string icon, string caption, Func<Task>? action) =>
+        Wire(new Button
+        {
+            Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Children = { Icon(icon, 16), new TextBlock { Text = caption, FontSize = 12, VerticalAlignment = VerticalAlignment.Center }, Chevron(7) } },
+            Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(4, 3), HorizontalAlignment = HorizontalAlignment.Left
+        }, caption, action);
+
+    private static Control Chevron(double size) => Icon("OlIconChevronDown", size);
+
+    /// <summary>The thin divider between button clusters inside Basic Text.</summary>
+    private static Control Sep() => new Border { Width = 1, Height = 18, Background = Brushes.Gainsboro, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center };
 
     private Button Small(string icon, string? caption, Func<Task>? action)
     {
@@ -369,8 +402,8 @@ public sealed class ComposeWindow : Window
 
     private Control Combo(string name, double width)
     {
-        var c = new ComboBox { Width = width, PlaceholderText = name, IsEnabled = true };
-        ToolTip.SetTip(c, NotYet);
+        var c = new ComboBox { Width = width, MinHeight = 24, Height = 24, Padding = new Thickness(6, 0), FontSize = 12, Margin = new Thickness(0, 0, 3, 0), VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(c, name + " - " + NotYet);
         c.DropDownOpened += (_, _) => { c.IsDropDownOpen = false; _status.Text = $"{name}: {NotYet.ToLowerInvariant()}."; };
         return c;
     }

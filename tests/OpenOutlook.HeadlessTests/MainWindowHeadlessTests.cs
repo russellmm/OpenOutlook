@@ -1490,6 +1490,45 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Compose_ribbon_has_outlooks_basic_text_icons_and_squeezes_its_groups_as_the_window_narrows()
+    {
+        var backend = new RecordingBackend("me@hotmail.test", "Microsoft");
+        var accounts = new List<ComposeAccount> { new("me@hotmail.test", "Microsoft", null, () => backend) };
+        var window = new ComposeWindow(accounts, accounts[0]) { Width = 1700, Height = 760 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            async Task Settle() { for (var i = 0; i < 6; i++) { await Task.Delay(30); Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); } }
+            await Settle();
+            var layout = window.RibbonLayouts[1];                                               // the Message tab
+            Assert.True(layout.GroupCount >= 8 && layout.CollapsedGroups.Count == 0, layout.Describe());
+            Shot(window, "16-compose-ribbon-wide");
+
+            // Basic Text: icon buttons named by their tooltips, not words in the ribbon
+            var buttons = window.GetVisualDescendants().OfType<Button>().ToList();
+            foreach (var name in new[] { "Grow Font", "Shrink Font", "Bullets", "Numbering", "Clear All Formatting", "Text Highlight Color", "Font Color", "Align Left", "Center", "Align Right", "Decrease Indent", "Increase Indent" })
+            {
+                var b = buttons.First(x => ToolTip.GetTip(x)?.ToString()?.StartsWith(name + " -", StringComparison.Ordinal) == true);
+                Assert.DoesNotContain(b.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == name);
+                Assert.Contains(b.GetVisualDescendants().OfType<Viewbox>(), v => v.Child is ContentControl { Template: not null });
+            }
+            Assert.DoesNotContain(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text is "Grow Font" or "Align Left" or "Format Painter");
+
+            window.Width = 900;
+            await Settle();
+            Assert.Contains("My Templates", layout.CollapsedGroups);                            // groups fold from the right into drop-down buttons
+            Assert.DoesNotContain("Clipboard", layout.CollapsedGroups);
+            Shot(window, "17-compose-ribbon-narrow");
+
+            window.Width = 1700;
+            await Settle();
+            Assert.Empty(layout.CollapsedGroups);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public void Account_settings_dialog_has_email_and_data_files_tabs_like_outlook()
     {
         var host = new FakeHost();

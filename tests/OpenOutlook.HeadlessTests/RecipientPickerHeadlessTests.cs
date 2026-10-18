@@ -37,6 +37,30 @@ public sealed class RecipientPickerHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task A_new_message_opens_without_the_suggestion_list()
+    {
+        // what File > New Email does: an HTML template with empty To (its text arrives a moment after the window has focused To)
+        var accounts = new List<ComposeAccount> { new("me@hotmail.test", "Microsoft", null, () => new Backend()) };
+        var window = new ComposeWindow(accounts, accounts[0], new ComposeSeed(Html: true))
+        {
+            Width = 1000, Height = 760, RecentRecipients = new RecentRecipientsStore(Path.Combine(Path.GetTempPath(), "oo-picker-" + Guid.NewGuid().ToString("N"))),
+            RecipientLookup = _ => Task.FromResult<(IReadOnlyList<RecipientEntry>, IReadOnlyList<RecipientEntry>)>((Contacts, Recent)),
+        };
+        try
+        {
+            window.Show();
+            await window.LoadRecipientsAsync();
+            window.FieldBox("To").Focus();
+            for (var i = 0; i < 5; i++) { await Task.Delay(30); Dispatcher.UIThread.RunJobs(); }
+            Assert.False(window.SuggestionsFor("To").IsOpen);
+            window.FieldBox("To").Text = "je";                                                       // typing still opens it
+            for (var i = 0; i < 3; i++) { await Task.Delay(30); Dispatcher.UIThread.RunJobs(); }
+            Assert.True(window.SuggestionsFor("To").IsOpen);
+        }
+        finally { window.SaveChoiceOverride = () => "no"; window.Close(); }
+    }
+
+    [AvaloniaFact]
     public async Task Clicking_into_to_lists_recent_addresses_typing_narrows_and_a_pick_fills_the_box()
     {
         var dir = Path.Combine(Path.GetTempPath(), "oo-picker-" + Guid.NewGuid().ToString("N"));

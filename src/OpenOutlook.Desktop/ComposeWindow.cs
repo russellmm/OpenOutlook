@@ -51,6 +51,13 @@ public sealed partial class ComposeWindow : Window
     private bool _busy, _loadFailed, _loadingDraft, _dirty, _closingAfterSave, _sent, _closingPromptOpen;
     private string _htmlBody = "";
     private ComposeDraft? _savedContent;
+    private readonly Dictionary<TextBox, string> _knownText = [];
+
+    /// <summary>The address, subject and body texts as loaded (seed or draft): text-changed events that report them are not edits.</summary>
+    private void RememberTexts()
+    {
+        foreach (var box in new[] { _to, _cc, _bcc, _subject, _body }) _knownText[box] = box.Text ?? "";
+    }
     private readonly ComposeSeed? _seed;
     private IReadOnlyList<RecipientEntry> _contacts = [], _recent = [], _directory = [];
     private readonly List<RecipientSuggestions> _suggestions = [];
@@ -77,10 +84,20 @@ public sealed partial class ComposeWindow : Window
         Closing += ComposeClosing;
 
         foreach (var box in new[] { _to, _cc, _bcc, _subject, _body })
-            box.TextChanged += (_, _) => { if (!_loadingDraft) _dirty = true; UpdateTitle(); };
+            box.TextChanged += (_, _) =>
+            {
+                // raised a moment after the text changes: only a change since the text was loaded counts, else a new message's empty To / Subject
+                // from its template made an untouched message "changed" (it asked to save on close)
+                var text = box.Text ?? "";
+                if (_knownText.TryGetValue(box, out var known) && known == text) return;
+                _knownText[box] = text;
+                if (!_loadingDraft) _dirty = true;
+                UpdateTitle();
+            };
 
         Content = BuildLayout();
         if (seed is not null) ApplySeed(seed);
+        RememberTexts();
         UpdateBodyMode();
         UpdateTitle();
         RefreshAttachments();
@@ -518,6 +535,7 @@ public sealed partial class ComposeWindow : Window
         {
             _loadingDraft = false;
             if (!_loadFailed) _savedContent = CurrentContent();
+            RememberTexts();
             _dirty = false;
             SetBusy(false);
         }
@@ -629,7 +647,7 @@ public sealed partial class ComposeWindow : Window
 
     private async void ComposeClosing(object? sender, WindowClosingEventArgs e)
     {
-        if (_sent || _closingAfterSave) return;
+        if (_sent || _closingAfterSave) { DetachEditor(); return; }
         if (_closingPromptOpen) { e.Cancel = true; return; }
         if (_busy)
         {
@@ -637,7 +655,7 @@ public sealed partial class ComposeWindow : Window
             _status.Text = "Wait for the current draft operation to finish before closing.";
             return;
         }
-        if (!HasUnsavedChanges()) return;
+        if (!HasUnsavedChanges()) { DetachEditor(); return; }
         e.Cancel = true;
         // as Outlook: Yes saves the message in Drafts, No closes without saving (an earlier saved draft stays as it was), Cancel keeps editing
         _closingPromptOpen = true;
@@ -648,17 +666,40 @@ public sealed partial class ComposeWindow : Window
         if (choice == "no")
         {
             _closingAfterSave = true;
-            Close();
+            CloseAfterDialog();
             return;
         }
         if (_account.CanSend && await SaveAsync(false))
         {
             _closingAfterSave = true;
-            Close();
+            CloseAfterDialog();
         }
         else
             await OfferDiscardAfterFailedSaveAsync();
     }
+
+    /// <summary>
+    /// Takes the HTML editor's web view out of the window before it closes. Closing right after a dialog let Windows reactivate this window and
+    /// Avalonia hand the keyboard back to the web view while WebView2 was being torn down ("Class not registered" inside the window procedure,
+    /// which ends the program; owner, 0.1.68 "No").
+    /// </summary>
+    private void DetachEditor()
+    {
+        if (_editor?.View is { Parent: Panel host } view)
+        {
+            if (view.IsFocused || view.IsKeyboardFocusWithin) _subject.Focus();
+            host.Children.Remove(view);
+        }
+    }
+
+    /// <summary>Closes once the dialog that decided it has finished closing (and this window has been activated again).</summary>
+    private void CloseAfterDialog()
+    {
+        DetachEditor();
+        Dispatcher.UIThread.Post(Close, DispatcherPriority.Background);
+    }
+
+    internal bool EditorAttached => _editor?.View.Parent is not null;
 
     /// <summary>Test seam: answers "Want to save your changes?" with "yes", "no" or "cancel" without showing it.</summary>
     internal Func<string>? SaveChoiceOverride { get; set; }
@@ -715,7 +756,7 @@ public sealed partial class ComposeWindow : Window
             if (await dialog.ShowDialog<bool>(this))
             {
                 _closingAfterSave = true;
-                Close();
+                CloseAfterDialog();
             }
         }
         finally { _closingPromptOpen = false; }

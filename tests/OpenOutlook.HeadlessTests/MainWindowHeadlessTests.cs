@@ -1619,7 +1619,7 @@ public sealed class MainWindowHeadlessTests
         var accounts = new List<ComposeAccount> { new("me@hotmail.test", "Microsoft", null, () => backend) };
         ComposeWindow Open()
         {
-            var w = new ComposeWindow(accounts, accounts[0]) { Width = 1000, Height = 760 };
+            var w = new ComposeWindow(accounts, accounts[0], new ComposeSeed(Html: true)) { Width = 1000, Height = 760 };
             w.Show();
             Dispatcher.UIThread.RunJobs();
             return w;
@@ -1646,6 +1646,8 @@ public sealed class MainWindowHeadlessTests
 
             window.SaveChoiceOverride = () => "no";                                  // No: closed, nothing saved
             window.Close();
+            Assert.True(window.IsVisible);                                           // closed one step after the dialog, never inside its answer
+            Assert.False(window.EditorAttached);                                     // the editor's web view leaves first (WebView2 crash on "No", 0.1.68)
             await WaitUntil(() => !window.IsVisible, 3000);
             Assert.Empty(backend.Log);
         }

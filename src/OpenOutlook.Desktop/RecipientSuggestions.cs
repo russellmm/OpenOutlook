@@ -33,6 +33,7 @@ public sealed class RecipientSuggestions
     private ListBox _list = null!;
     private bool _accepting, _clickPending;
     private string? _acceptedText;
+    private string _lastText = "";
 
     public RecipientSuggestions(TextBox box, Func<IReadOnlyList<RecipientEntry>> directory)
     {
@@ -41,9 +42,15 @@ public sealed class RecipientSuggestions
         // a click into the box (after the click has put the cursor there); the TextBox handles the press itself, hence handledEventsToo
         box.AddHandler(InputElement.PointerPressedEvent, (_, _) => Dispatcher.UIThread.Post(() => { if (box.IsFocused && !_accepting) Update(); }),
             RoutingStrategies.Tunnel, handledEventsToo: true);
+        // TextChanged is raised a moment after the text changes. Only a real change since the last one counts: the empty To text a new message
+        // starts with arrived after the window had focused To and opened the list (owner, 0.1.68); a pick's own change keeps the list closed too.
+        _lastText = box.Text ?? "";
         box.TextChanged += (_, _) =>
         {
-            if (_acceptedText is { } picked && box.Text == picked) { _acceptedText = null; return; }   // the pick's own change (raised a moment later): the list stays closed
+            var text = box.Text ?? "";
+            if (text == _lastText) return;
+            _lastText = text;
+            if (_acceptedText is { } picked && text == picked) { _acceptedText = null; return; }
             _acceptedText = null;
             if (!_accepting && box.IsFocused) Update();
         };

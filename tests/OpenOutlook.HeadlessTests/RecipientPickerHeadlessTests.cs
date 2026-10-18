@@ -68,6 +68,33 @@ public sealed class RecipientPickerHeadlessTests
             suggest.Update();                                                                         // the next part: already added ones are not offered again
             Assert.DoesNotContain(suggest.Shown, e => e.Address == "Bryan.Petri@pse.com");
 
+            // a click on a suggestion is taken after the click has been handled: closing the pop-up inside its own pointer handler
+            // broke its list and the next refill ended the program (0.1.66)
+            to.Text = "Bryan.Petri@pse.com; mich";
+            suggest.Update();
+            var list = suggest.ListForTest;
+            list.SelectedIndex = 0;
+            var pointer = new Avalonia.Input.Pointer(Avalonia.Input.Pointer.GetNextFreeId(), Avalonia.Input.PointerType.Mouse, true);
+            list.RaiseEvent(new Avalonia.Input.PointerReleasedEventArgs(list, pointer, window, default, 0,
+                new Avalonia.Input.PointerPointProperties(Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PointerUpdateKind.LeftButtonReleased),
+                Avalonia.Input.KeyModifiers.None, Avalonia.Input.MouseButton.Left));
+            Assert.True(suggest.IsOpen);                                                              // still open while the click is being handled
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Bryan.Petri@pse.com; michael.bryan@intel.com; ", to.Text);
+            Assert.False(suggest.IsOpen, string.Join(",", suggest.Shown.Select(e => e.Address)) + " focused=" + to.IsFocused);
+
+            // if the pop-up fails anyway, the failure is logged, the list is built again and keeps working
+            suggest.FailNextChangeForTest();
+            to.Text = "Bryan.Petri@pse.com; michael.bryan@intel.com; ";
+            suggest.Update();                                                                         // does not throw
+            Assert.NotSame(list, suggest.ListForTest);
+            to.Text = "Bryan.Petri@pse.com; michael.bryan@intel.com; ri";
+            suggest.Update();
+            Assert.True(suggest.IsOpen);
+            Assert.Equal(["rick marrash"], suggest.Shown.Select(e => e.Name));
+            suggest.Close();
+            to.Text = "Bryan.Petri@pse.com; ";
+
             window.ApplySelectedNames("", "rmarrash@beaconpm.com", "jessica.marrash@gmail.com");      // what Select Names hands back
             Assert.Equal("rmarrash@beaconpm.com; ", window.FieldBox("Cc").Text);
             Assert.Equal("jessica.marrash@gmail.com; ", window.FieldBox("Bcc").Text);

@@ -14,6 +14,9 @@ namespace OpenOutlook.Desktop;
 /// Outlook's address suggestions under a To / Cc / Bcc box (owner's screenshot 2026-10-17): clicking into the box lists the most recently used
 /// addresses, typing narrows them (contacts too); each row is an avatar with initials, the name and the address. Up / Down move, Enter or Tab
 /// takes the highlighted one, Escape closes, a click takes the clicked one.
+/// A click is taken after the click has finished: closing the pop-up from inside its own pointer handler tore its list half down (Avalonia:
+/// "Visual is attached to visual tree but root could not be found"), and the next refill, run from window activation, ended the program
+/// (owner, 0.1.66, 2026-10-18). If the pop-up ever fails, it is built again rather than reused.
 /// </summary>
 public sealed class RecipientSuggestions
 {
@@ -25,30 +28,66 @@ public sealed class RecipientSuggestions
 
     private readonly TextBox _box;
     private readonly Func<IReadOnlyList<RecipientEntry>> _directory;
-    private readonly Popup _popup;
-    private readonly ListBox _list = new() { MaxHeight = 380, MinWidth = 420 };
-    private bool _accepting;
+    private Popup _popup = null!;
+    private ListBox _list = null!;
+    private bool _accepting, _clickPending;
+    private string? _acceptedText;
 
     public RecipientSuggestions(TextBox box, Func<IReadOnlyList<RecipientEntry>> directory)
     {
         _box = box; _directory = directory;
+        Build();
+        box.GotFocus += (_, _) => { if (!_accepting) Update(); };
+        box.TextChanged += (_, _) =>
+        {
+            if (_acceptedText is { } picked && box.Text == picked) { _acceptedText = null; return; }   // the pick's own change (raised a moment later): the list stays closed
+            _acceptedText = null;
+            if (!_accepting && box.IsFocused) Update();
+        };
+        box.LostFocus += (_, _) => Dispatcher.UIThread.Post(() => { if (!box.IsFocused && !_list.IsPointerOver) Close(); }, DispatcherPriority.Background);
+        box.AddHandler(InputElement.KeyDownEvent, KeyDown, RoutingStrategies.Tunnel);
+    }
+
+    /// <summary>A fresh pop-up and list (at the start, and after one failed).</summary>
+    private void Build()
+    {
+        if (_popup is not null) ((ISetLogicalParent)_popup).SetParent(null);
+        _list = new ListBox { MaxHeight = 380, MinWidth = 420 };
         _list.ItemTemplate = new FuncDataTemplate<RecipientEntry>((e, _) => e is null ? new TextBlock() : Row(e));
-        _list.AddHandler(InputElement.PointerReleasedEvent, (_, _) => { if (_list.SelectedItem is RecipientEntry e) Accept(e); }, RoutingStrategies.Bubble, handledEventsToo: true);
+        var list = _list;
+        list.AddHandler(InputElement.PointerReleasedEvent, (_, _) =>
+        {
+            if (list.SelectedItem is not RecipientEntry e || _clickPending) return;
+            _clickPending = true;                                                    // taken once the click has been handled, never inside it
+            Dispatcher.UIThread.Post(() => { _clickPending = false; if (ReferenceEquals(list, _list)) Accept(e); });
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
         _popup = new Popup
         {
-            PlacementTarget = box, Placement = PlacementMode.BottomEdgeAlignedLeft, IsLightDismissEnabled = false,
+            PlacementTarget = _box, Placement = PlacementMode.BottomEdgeAlignedLeft, IsLightDismissEnabled = false,
             Child = new Border
             {
                 Background = Themed.Brush("OlCard", Brushes.White), BorderBrush = Themed.Brush("OlHairline", Brushes.LightGray), BorderThickness = new Thickness(1),
                 BoxShadow = new BoxShadows(new BoxShadow { Blur = 8, OffsetY = 2, Color = Color.FromArgb(0x40, 0, 0, 0) }), Child = _list,
             },
         };
-        ((ISetLogicalParent)_popup).SetParent(box);
-        box.GotFocus += (_, _) => Update();
-        box.TextChanged += (_, _) => { if (!_accepting && box.IsFocused) Update(); };
-        box.LostFocus += (_, _) => Dispatcher.UIThread.Post(() => { if (!box.IsFocused && !_list.IsPointerOver) Close(); }, DispatcherPriority.Background);
-        box.AddHandler(InputElement.KeyDownEvent, KeyDown, RoutingStrategies.Tunnel);
+        ((ISetLogicalParent)_popup).SetParent(_box);
     }
+
+    /// <summary>Runs a change to the pop-up; if Avalonia fails, the pop-up is rebuilt and the change is not repeated (never ends the program).</summary>
+    private void Safely(string what, Action change)
+    {
+        try { change(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            AppLog.Error("compose", ex, "address suggestions failed (" + what + "); the list is rebuilt");
+            try { _popup.IsOpen = false; } catch (Exception) { /* the broken pop-up is dropped below */ }
+            Build();
+        }
+    }
+
+    internal void FailNextChangeForTest() => _failNext = true;
+    internal ListBox ListForTest => _list;
+    private bool _failNext;
 
     public bool IsOpen => _popup.IsOpen;
     internal IReadOnlyList<RecipientEntry> Shown => _list.ItemsSource?.OfType<RecipientEntry>().ToList() ?? [];
@@ -60,25 +99,29 @@ public sealed class RecipientSuggestions
         var already = RecipientDirectory.Addresses(_box.Text).ToList();
         var token = RecipientDirectory.CurrentToken(_box.Text);
         var shown = RecipientDirectory.Suggest(all, token, token.Length == 0 ? already : already.Take(Math.Max(0, already.Count - 1)));
-        _list.ItemsSource = shown;
-        if (shown.Count == 0) { Close(); return; }
-        _list.SelectedIndex = token.Length > 0 ? 0 : -1;
-        _popup.IsOpen = true;
+        Safely("refill", () =>
+        {
+            if (_failNext) { _failNext = false; throw new InvalidOperationException("test: the pop-up failed"); }
+            _list.ItemsSource = shown;
+            if (shown.Count == 0) { _popup.IsOpen = false; return; }
+            _list.SelectedIndex = token.Length > 0 ? 0 : -1;
+            _popup.IsOpen = true;
+        });
     }
 
-    public void Close() => _popup.IsOpen = false;
+    public void Close() => Safely("close", () => _popup.IsOpen = false);
 
     internal void Accept(RecipientEntry entry)
     {
         _accepting = true;
         try
         {
-            _box.Text = RecipientDirectory.Accept(_box.Text, entry.Address);
+            _box.Text = _acceptedText = RecipientDirectory.Accept(_box.Text, entry.Address);
             _box.CaretIndex = _box.Text.Length;
+            Close();
+            _box.Focus();                                                             // back to the box without opening the list again (as Outlook)
         }
         finally { _accepting = false; }
-        Close();
-        _box.Focus();
     }
 
     private void KeyDown(object? sender, KeyEventArgs e)

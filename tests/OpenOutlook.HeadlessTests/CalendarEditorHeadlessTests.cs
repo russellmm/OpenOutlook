@@ -35,8 +35,8 @@ public sealed class CalendarEditorHeadlessTests
             editor.StartTimeBox.Type("10:00");                                                          // ... keeps its length
             Assert.Equal(new TimeOnly(12, 0), editor.EndTimeBox.Time);
             editor.EndTimeBox.OpenList();
-            Assert.Contains("12:00 PM (2 hours)", editor.EndTimeBox.ListLabels);
-            Assert.StartsWith("10:00 AM (0 minutes)", editor.EndTimeBox.ListLabels[0]);
+            Assert.Contains(OutlookTimeBox.Format(new TimeOnly(12, 0)) + " (2 hours)", editor.EndTimeBox.ListLabels);      // in the computer's time format
+            Assert.Equal(OutlookTimeBox.Format(new TimeOnly(10, 0)) + " (0 minutes)", editor.EndTimeBox.ListLabels[0]);
             editor.StartDateBox.Type("10/24/2026");
             Assert.Equal(new DateOnly(2026, 10, 24), editor.EndDateBox.Date);
             editor.StartDateBox.Type("not a date");                                                     // ignored: back to the last date

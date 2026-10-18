@@ -164,6 +164,18 @@ public sealed partial class MainWindow
             _remindersWindow.Show();
             AppLog.Note("reminders", $"Reminders window shown with {DueReminders.Count} reminder(s)");
         }
+        if (newlyDue) Alert(_remindersWindow);
+    }
+
+    /// <summary>Tests count alerts here instead of hearing them.</summary>
+    internal Action<RemindersWindow>? ReminderAlertOverride { get; set; }
+
+    /// <summary>A newly due reminder: the sound (Options > Calendar > Play reminder sound) and the taskbar flash.</summary>
+    private void Alert(RemindersWindow window)
+    {
+        if (ReminderAlertOverride is not null) { ReminderAlertOverride(window); return; }
+        if (_options.ReminderSound) ReminderAlert.PlaySound();
+        ReminderAlert.Flash(window);
     }
 
     /// <summary>Open Item: the calendar of the reminder's account on the event's day.</summary>

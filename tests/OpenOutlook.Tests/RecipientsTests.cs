@@ -60,6 +60,19 @@ public sealed class RecipientsTests
     }
 
     [Fact]
+    public void Check_names_turns_typed_names_into_addresses_and_reports_what_it_cannot_resolve()
+    {
+        var all = RecipientDirectory.Merge(Contacts, Recent);
+        var (text, unresolved) = RecipientDirectory.Resolve("bryan petri; Jessica Marrash; x@y.com; Shop <deals@shop.example>", all);
+        Assert.Equal("Bryan.Petri@pse.com; jessica.marrash@gmail.com; x@y.com; deals@shop.example; ", text);
+        Assert.Empty(unresolved);
+        (text, unresolved) = RecipientDirectory.Resolve("bryan; nobody here", all);                     // two Bryans; no match
+        Assert.Equal("bryan; nobody here; ", text);
+        Assert.Equal(["\"bryan\" (2 matches)", "\"nobody here\" (no contact or recent recipient)"], unresolved);
+        Assert.Equal(["Petri, Bryan"], RecipientDirectory.Suggest(all, "bryan p").Select(e => e.Name));    // several words, any order
+    }
+
+    [Fact]
     public void Recent_recipients_are_remembered_per_account_bounded_and_damage_reads_as_empty()
     {
         var dir = Path.Combine(Path.GetTempPath(), "oo-recip-" + Guid.NewGuid().ToString("N"));

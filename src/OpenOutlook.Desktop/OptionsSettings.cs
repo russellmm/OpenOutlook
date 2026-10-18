@@ -116,6 +116,8 @@ public sealed record OptionsSettings
     public int ReminderLookBackDays { get; init; } = 30;
     /// <summary>How often Graph is asked for new or changed reminders, in minutes (1 to 60). A reminder already known fires on time regardless.</summary>
     public int ReminderCheckMinutes { get; init; } = 1;
+    /// <summary>Outlook's "Play reminder sound" (Advanced > Reminders): a sound when a reminder comes due. On by default, as in Outlook.</summary>
+    public bool ReminderSound { get; init; } = true;
 
     // Reading Pane dialog
     public bool ReadPaneMarkOnView { get; init; } = true;

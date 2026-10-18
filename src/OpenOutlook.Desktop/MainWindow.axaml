@@ -1263,6 +1263,8 @@
                   <TextBlock Classes="olOptSection" Text="Reminders" />
                   <Border Classes="olOptRule" />
                   <StackPanel Spacing="8" Margin="52,0,0,16">
+                    <CheckBox Name="OptReminderSound" Content="_Play reminder sound"
+                              ToolTip.Tip="Windows plays its Calendar Reminder sound (Control Panel &gt; Sound); Linux the desktop's alarm sound when canberra-gtk-play is installed. The taskbar button also flashes on Windows." />
                     <CheckBox Name="OptShowReminders" Content="Show _reminders"
                               ToolTip.Tip="The Reminders window opens when a reminder of a Microsoft account's calendar comes due. Dismissing or snoozing it there also does so in Outlook and on your phone." />
                     <StackPanel Orientation="Horizontal" Spacing="8">

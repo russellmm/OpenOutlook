@@ -81,6 +81,23 @@ public sealed partial class MainWindow
         return updated;
     }
 
+    /// <summary>Junk Email Options > Safe Senders > "Automatically add people I email": after a send from a Microsoft account, its recipients become safe senders.</summary>
+    internal void AddSentRecipientsToSafeSenders(string fromAddress, IReadOnlyList<string> recipients)
+    {
+        var account = JunkListAccounts().FirstOrDefault(a => string.Equals(a.DisplayAddress, fromAddress, StringComparison.OrdinalIgnoreCase));
+        if (account is null || recipients.Count == 0 || !JunkListsStore.Load(account.AccountId).AddRecipientsToSafeSenders) return;
+        var stored = JunkListsStore.Load(account.AccountId);
+        var addresses = recipients.Select(JunkLists.Address).OfType<string>().Where(a => !string.Equals(a, account.DisplayAddress, StringComparison.OrdinalIgnoreCase)).Distinct().ToArray();
+        var added = addresses.Where(a => JunkLists.MatchingEntry(stored.Effective.SafeSenders, a) is null).ToArray();
+        if (added.Length == 0) return;
+        try
+        {
+            JunkListsStore.Save(stored.WithAdded(JunkListKind.SafeSenders, added));
+            AppLog.Note("junk-lists", $"sent from {account.DisplayAddress}: {string.Join(", ", added)} added to Safe Senders (Automatically add people I email)");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Error("junk-lists", e, "could not save junk-lists.json"); }
+    }
+
     private void SaveJunkLists(JunkListsAccount account)
     {
         try { JunkListsStore.Save(account); StatusText.Text = "Junk email lists saved."; }

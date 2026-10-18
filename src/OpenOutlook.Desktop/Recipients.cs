@@ -68,6 +68,8 @@ public static class RecipientDirectory
         static IEnumerable<string> Words(string s) => s.Split([' ', ',', '.', '@', '_', '-', '\'', '"', '(', ')'], StringSplitOptions.RemoveEmptyEntries);
         if (Words(e.Name ?? "").Any(w => w.StartsWith(q, StringComparison.CurrentCultureIgnoreCase)) || (e.Name ?? "").StartsWith(q, StringComparison.CurrentCultureIgnoreCase))
             return true;
+        var parts = q.Split(' ', StringSplitOptions.RemoveEmptyEntries);                     // "bryan petri" finds "Petri, Bryan": every word starts a word of the name
+        if (parts.Length > 1 && parts.All(p => Words(e.Name ?? "").Any(w => w.StartsWith(p, StringComparison.CurrentCultureIgnoreCase)))) return true;
         if (nameOnly) return false;
         return e.Address.StartsWith(q, StringComparison.OrdinalIgnoreCase) || Words(e.Address).Any(w => w.StartsWith(q, StringComparison.OrdinalIgnoreCase));
     }
@@ -99,6 +101,36 @@ public static class RecipientDirectory
             t += (t.Length > 0 ? " " : "") + a + ";";
         return t.Length > 0 ? t + " " : "";
     }
+
+    /// <summary>
+    /// Check Names (Outlook's Ctrl+K): every part of a To / Cc / Bcc box that is not an email address is looked up - "Name &lt;a@b&gt;" keeps the
+    /// address; otherwise a contact or recent recipient whose name is exactly the text, or else the only one that matches it, gives its address.
+    /// Returns the box rewritten and what could not be resolved (with why).
+    /// </summary>
+    public static (string Text, IReadOnlyList<string> Unresolved) Resolve(string? text, IReadOnlyList<RecipientEntry> all)
+    {
+        var parts = new List<string>();
+        var unresolved = new List<string>();
+        foreach (var part in Addresses(text))
+        {
+            if (IsAddress(part)) { parts.Add(part); continue; }
+            var lt = part.LastIndexOf('<');
+            if (lt >= 0 && part.EndsWith('>') && IsAddress(part[(lt + 1)..^1].Trim())) { parts.Add(part[(lt + 1)..^1].Trim()); continue; }
+            var q = part.Trim('"', '\'', ' ');
+            var exact = all.Where(e => string.Equals((e.Name ?? "").Trim('"', '\'', ' '), q, StringComparison.CurrentCultureIgnoreCase)).DistinctBy(e => e.Address.ToLowerInvariant()).ToList();
+            var matches = exact.Count > 0 ? exact : all.Where(e => Matches(e, q)).DistinctBy(e => e.Address.ToLowerInvariant()).ToList();
+            if (matches.Count == 1) parts.Add(matches[0].Address);
+            else
+            {
+                parts.Add(part);
+                unresolved.Add(matches.Count == 0 ? $"\"{part}\" (no contact or recent recipient)" : $"\"{part}\" ({matches.Count} matches)");
+            }
+        }
+        return (parts.Count == 0 ? "" : string.Join("; ", parts) + "; ", unresolved);
+    }
+
+    public static bool IsAddress(string text) =>
+        text.Length <= 320 && !text.Any(char.IsWhiteSpace) && System.Net.Mail.MailAddress.TryCreate(text, out var a) && a.Address == text;
 
     public static IEnumerable<string> Addresses(string? text) =>
         (text ?? "").Split(Separators, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);

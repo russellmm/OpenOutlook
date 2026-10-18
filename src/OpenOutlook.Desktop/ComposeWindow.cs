@@ -52,6 +52,8 @@ public sealed class ComposeWindow : Window
     /// null in tests that do not need them). Asked again when the From account changes.
     /// </summary>
     public Func<string, Task<(IReadOnlyList<RecipientEntry> Contacts, IReadOnlyList<RecipientEntry> Recent)>>? RecipientLookup { get; set; }
+    /// <summary>After a send: the From address and every To / Cc / Bcc address (the main window adds them to Safe Senders when that is turned on).</summary>
+    public event Action<string, IReadOnlyList<string>>? Sent;
     /// <summary>Where sent recipients are remembered (recent-recipients.json); tests point it elsewhere.</summary>
     public RecentRecipientsStore RecentRecipients { get; set; } = new();
 
@@ -80,6 +82,10 @@ public sealed class ComposeWindow : Window
         if (_draftId is not null) Opened += async (_, _) => await LoadDraftAsync();
         Opened += (_, _) => (string.IsNullOrWhiteSpace(_to.Text) ? _to : _body).Focus();
         Opened += async (_, _) => await LoadRecipientsAsync();
+        AddHandler(KeyDownEvent, (_, e) =>                                           // Ctrl+K: Check Names, as in Outlook
+        {
+            if (e.Key == Avalonia.Input.Key.K && e.KeyModifiers == Avalonia.Input.KeyModifiers.Control) { CheckNames(); e.Handled = true; }
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         foreach (var box in new[] { _to, _cc, _bcc }) _suggestions.Add(new RecipientSuggestions(box, () => _directory));
     }
 
@@ -114,6 +120,21 @@ public sealed class ComposeWindow : Window
         if (!string.IsNullOrWhiteSpace(bcc)) { _bcc.Text = RecipientDirectory.Append(_bcc.Text, RecipientDirectory.Addresses(bcc)); _bccRow.IsVisible = true; }
     }
 
+    /// <summary>Check Names (ribbon, Ctrl+K, and before Send): names typed in To / Cc / Bcc become addresses. False when some could not be resolved.</summary>
+    internal bool CheckNames()
+    {
+        var problems = new List<string>();
+        foreach (var box in new[] { _to, _cc, _bcc })
+        {
+            if (string.IsNullOrWhiteSpace(box.Text)) continue;
+            var (text, unresolved) = RecipientDirectory.Resolve(box.Text, _directory);
+            if (!(box.Text ?? "").Trim().TrimEnd(';').Equals(text.Trim().TrimEnd(';'), StringComparison.Ordinal)) box.Text = text;
+            problems.AddRange(unresolved);
+        }
+        _status.Text = problems.Count == 0 ? "All names are resolved." : "Check Names could not resolve " + string.Join(", ", problems) + ". Type the full address or use To / Cc to pick it.";
+        return problems.Count == 0;
+    }
+
     internal IReadOnlyList<RecipientEntry> Directory => _directory;
     internal RecipientSuggestions SuggestionsFor(string field) => _suggestions[field switch { "Cc" => 1, "Bcc" => 2, _ => 0 }];
     internal TextBox FieldBox(string field) => field switch { "Cc" => _cc, "Bcc" => _bcc, _ => _to };
@@ -128,6 +149,7 @@ public sealed class ComposeWindow : Window
             RecentRecipients.Record(_account.Address, used, DateTimeOffset.UtcNow);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Note("compose", "recent recipients not saved: " + e.Message); }
+        Sent?.Invoke(_account.Address, new[] { content.To, content.Cc, content.Bcc }.SelectMany(RecipientDirectory.Addresses).ToList());
     }
 
     // ---------------------------------------------------------------- layout
@@ -179,7 +201,7 @@ public sealed class ComposeWindow : Window
             Group("Basic Text", Stack(Row(Combo("Font", 110), Combo("Size", 56), Mini(null, "Grow Font", null), Mini(null, "Shrink Font", null), Mini(null, "Bullets", null), Mini(null, "Numbering", null), Mini(null, "Clear Formatting", null)),
                 Row(Mini(null, "Bold", null, "B", FontWeight.Bold), Mini(null, "Italic", null, "I", FontWeight.Normal, FontStyle.Italic), Mini(null, "Underline", null, "U"), Mini(null, "Highlight", null), Mini(null, "Font Color", null),
                     Mini(null, "Align Left", null), Mini(null, "Center", null), Mini(null, "Align Right", null), Mini(null, "Decrease Indent", null), Mini(null, "Increase Indent", null)))),
-            Group("Names", Big("OlIconAddressBook", "Address Book", () => OpenSelectNamesAsync("To")), Big("OlIconPeople", "Check Names", null)),
+            Group("Names", Big("OlIconAddressBook", "Address Book", () => OpenSelectNamesAsync("To")), Big("OlIconPeople", "Check Names", () => { CheckNames(); return Task.CompletedTask; })),
             Group("Include", Big("OlIconPaperclip", "Attach File", async () => await AddAttachmentsAsync()), Big(null, "Signature", null)),
             Group("Tags", Stack(Mini("OlIconFlag", "Follow Up", null), Mini(null, "High Importance", null), Mini(null, "Low Importance", null))),
             Group("Apps", Big("OlIconAllApps", "All Apps", null)),
@@ -555,6 +577,7 @@ public sealed class ComposeWindow : Window
             _status.Text = "Enter at least one recipient before sending.";
             return false;
         }
+        if (send && !CheckNames()) return false;                                   // as Outlook: typed names become addresses first
         SetBusy(true);
         var progress = new Progress<string>(text => _status.Text = text);
         try

@@ -1658,8 +1658,13 @@ public sealed class MainWindowHeadlessTests
             var server = (Dictionary<string, IReadOnlyList<ReminderItem>>)typeof(MainWindow)
                 .GetField("_reminderServer", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
             server["hotmail"] = [item];
+            var alerts = 0;
+            window.ReminderAlertOverride = _ => alerts++;
             CallVoid(window, "EvaluateReminders");
             Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, alerts);                                                                    // sound and taskbar flash once
+            CallVoid(window, "EvaluateReminders");
+            Assert.Equal(1, alerts);                                                                    // not again for the same reminder
             var reminders = (RemindersWindow)typeof(MainWindow).GetField("_remindersWindow", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
             Assert.True(reminders.IsVisible);
             Assert.Equal("1 Reminder", reminders.Title);
@@ -1699,6 +1704,9 @@ public sealed class MainWindowHeadlessTests
             Assert.Equal(30, days.Value);
             show.IsChecked = false;
             days.Value = 7;
+            var sound = window.FindControl<CheckBox>("OptReminderSound")!;
+            Assert.True(sound.IsChecked);                                                               // on by default, as in Outlook
+            sound.IsChecked = false;
             var check = window.FindControl<NumericUpDown>("OptReminderCheckMinutes")!;
             Assert.Equal(1, check.Value);
             check.Value = 3;
@@ -1708,6 +1716,7 @@ public sealed class MainWindowHeadlessTests
             Assert.False(saved.ShowReminders);
             Assert.Equal(7, saved.ReminderLookBackDays);
             Assert.Equal(3, saved.ReminderCheckMinutes);
+            Assert.False(saved.ReminderSound);
 
             var start = DateTimeOffset.UtcNow.AddHours(-1);                                   // due, but reminders are off
             var server = (Dictionary<string, IReadOnlyList<ReminderItem>>)typeof(MainWindow)
@@ -1837,6 +1846,9 @@ public sealed class MainWindowHeadlessTests
             Assert.Equal("Junk Email Options - person@hotmail.test", window.Title);
             var atStart = window.GetLogicalDescendants().OfType<CheckBox>().Distinct().First(c => (c.Content as string)?.StartsWith("Read Outlook's lists _when") == true);
             Assert.False(atStart.IsChecked);                                                           // reading at start is off unless ticked
+            var addSent = window.GetLogicalDescendants().OfType<CheckBox>().Distinct().First(c => (c.Content as string)?.StartsWith("Automatically add people I _email") == true);
+            Assert.True(addSent.IsEnabled);
+            Assert.False(addSent.IsChecked);
             var safe = OpenOutlook.JunkCleaner.JunkListKind.SafeSenders;
             Assert.Equal(["@amazon.com", "old@x.com"], window.Shown(safe));
             window.SelectTab(1);
@@ -1859,9 +1871,11 @@ public sealed class MainWindowHeadlessTests
             window.Search(safe, "");
             Assert.Equal(3, window.Visible(safe).Count);
             atStart.IsChecked = true;
+            addSent.IsChecked = true;
             window.ApplyChanges();
             var result = Assert.Single(saved);
             Assert.True(result.ReadOutlookAtStart);
+            Assert.True(result.AddRecipientsToSafeSenders);
             Assert.Equal(["old@x.com"], result.RemovedFromOutlook.SafeSenders);
             Assert.Equal(["@shop.example", "new@y.com"], result.Own.SafeSenders);
             Assert.Equal(["1ppmgfh@peterlink.ru", "menu@added.example"], result.Effective.BlockedSenders);     // not overwritten by the window
@@ -1971,6 +1985,28 @@ public sealed class MainWindowHeadlessTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             { Content = new StringContent(body(request), System.Text.Encoding.UTF8, "application/json"), RequestMessage = request });
+    }
+
+    [AvaloniaFact]
+    public void Sent_recipients_become_safe_senders_only_when_that_option_is_on()
+    {
+        var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "addsent-" + Guid.NewGuid().ToString("N")[..8],
+            "person@hotmail.test", "client", DateTimeOffset.UtcNow, OpenOutlook.Auth.MicrosoftAccountPermissions.PlannedPersonalScopes);
+        ResetRegistry().Upsert(account);
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        try
+        {
+            ShowWithSnapshotReader(window);
+            window.AddSentRecipientsToSafeSenders("person@hotmail.test", ["friend@example.org"]);
+            Assert.DoesNotContain("friend@example.org", window.JunkListsStore.Load(account.AccountId).Effective.SafeSenders);   // off by default
+            window.JunkListsStore.Save(window.JunkListsStore.Load(account.AccountId) with { AddRecipientsToSafeSenders = true });
+            window.AddSentRecipientsToSafeSenders("Person@Hotmail.test", ["Friend@Example.org", "person@hotmail.test", "list@groups.example"]);
+            var safe = window.JunkListsStore.Load(account.AccountId).Effective.SafeSenders;
+            Assert.Contains("friend@example.org", safe);
+            Assert.Contains("list@groups.example", safe);
+            Assert.DoesNotContain("person@hotmail.test", safe);                                         // not the account itself
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]

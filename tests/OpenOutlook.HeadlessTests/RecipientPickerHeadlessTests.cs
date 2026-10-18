@@ -46,6 +46,8 @@ public sealed class RecipientPickerHeadlessTests
             Width = 1000, Height = 760, RecentRecipients = new RecentRecipientsStore(dir),
             RecipientLookup = _ => Task.FromResult<(IReadOnlyList<RecipientEntry>, IReadOnlyList<RecipientEntry>)>((Contacts, Recent)),
         };
+        string? sentFrom = null; IReadOnlyList<string> sentTo = [];
+        window.Sent += (from, to) => { sentFrom = from; sentTo = to; };
         try
         {
             window.Show();
@@ -71,11 +73,20 @@ public sealed class RecipientPickerHeadlessTests
             Assert.Equal("jessica.marrash@gmail.com; ", window.FieldBox("Bcc").Text);
             Assert.True(window.FieldBox("Bcc").IsEffectivelyVisible);                                 // the Bcc row opens
 
+            to.Text = "Bryan.Petri@pse.com; rick marrash";                                          // Check Names (Ctrl+K)
+            Assert.True(window.CheckNames());
+            Assert.Equal("Bryan.Petri@pse.com; rmarrash@beaconpm.com; ", to.Text);
+            window.FieldBox("Cc").Text = "bryan";
+            Assert.False(window.CheckNames());                                                       // two Bryans: left for the user, and Send would stop
+            window.FieldBox("Cc").Text = "rmarrash@beaconpm.com; ";
+            to.Text = "Bryan.Petri@pse.com; ";
+
             // a send remembers the addresses for next time
             var content = typeof(ComposeWindow).GetMethod("CurrentContent", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(window, null);
             typeof(ComposeWindow).GetMethod("RememberRecipients", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(window, [content]);
             var remembered = new RecentRecipientsStore(dir).Load("me@hotmail.test");
             Assert.Equal(["bryan.petri@pse.com", "jessica.marrash@gmail.com", "rmarrash@beaconpm.com"], remembered.Select(e => e.Address.ToLowerInvariant()).Order());
+            Assert.Equal(("me@hotmail.test", 3), (sentFrom, sentTo.Count));                         // and tells the main window (Safe Senders)
             Assert.Equal("Petri, Bryan", remembered.Single(e => e.Address == "Bryan.Petri@pse.com").Name);
         }
         finally

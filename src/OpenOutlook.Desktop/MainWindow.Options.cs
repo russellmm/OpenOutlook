@@ -109,6 +109,7 @@ public partial class MainWindow
     private void ApplyCalendarOptions(OptionsSettings s)
     {
         OptShowReminders.IsChecked = s.ShowReminders;
+        OptReminderSound.IsChecked = s.ReminderSound;
         OptReminderLookBack.Value = Math.Clamp(s.ReminderLookBackDays, 1, 90);
         OptReminderCheckMinutes.Value = Math.Clamp(s.ReminderCheckMinutes, 1, 60);
     }
@@ -116,6 +117,7 @@ public partial class MainWindow
     private OptionsSettings CollectCalendarOptions(OptionsSettings s) => s with
     {
         ShowReminders = OptShowReminders.IsChecked == true,
+        ReminderSound = OptReminderSound.IsChecked == true,
         ReminderLookBackDays = (int)Math.Clamp(OptReminderLookBack.Value ?? 30, 1, 90),
         ReminderCheckMinutes = (int)Math.Clamp(OptReminderCheckMinutes.Value ?? 1, 1, 60)
     };

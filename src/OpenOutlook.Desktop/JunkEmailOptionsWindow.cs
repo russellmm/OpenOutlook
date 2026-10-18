@@ -26,6 +26,8 @@ public sealed class JunkEmailOptionsWindow : Window
     private readonly Dictionary<JunkListKind, ListBox> _boxes = [];
     private readonly Dictionary<JunkListKind, List<TextBlock>> _counts = [];
     private readonly CheckBox _trustContacts = new() { Content = "Also trust email from my _Contacts" };
+    private readonly CheckBox _addRecipients = new() { Content = "Automatically add people I _email to the Safe Senders List",
+        [ToolTip.TipProperty] = "Every address you send a message to from OpenOutlook (To, Cc and Bcc) is added to Safe Senders." };
     private readonly CheckBox _readAtStart = new() { Content = "Read Outlook's lists _when OpenOutlook starts (only while Outlook is closed and its lists have changed)" };
     private readonly CheckBox _applyLists = new() { Content = "_Apply these lists in OpenOutlook: move mail from safe senders out of Junk Email, and mail from blocked senders into it" };
     private readonly TextBlock _outlookStatus = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12 };
@@ -53,7 +55,7 @@ public sealed class JunkEmailOptionsWindow : Window
         _tabs.Items.Add(new TabItem { Header = Tab("Options"), Content = OptionsTab() });
         _tabs.Items.Add(new TabItem { Header = Tab("Safe Senders"), Content = ListTab(JunkListKind.SafeSenders,
             "Email from addresses or domain names on your Safe Senders List will never be treated as junk email.", _trustContacts,
-            new CheckBox { Content = "Automatically add people I email to the Safe Senders List", IsEnabled = false, [ToolTip.TipProperty] = "Planned Feature" }) });
+            _addRecipients) });
         _tabs.Items.Add(new TabItem { Header = Tab("Safe Recipients"), Content = ListTab(JunkListKind.SafeRecipients,
             "Email sent to addresses or domain names on your Safe Recipients List will never be treated as junk email.") });
         _tabs.Items.Add(new TabItem { Header = Tab("Blocked Senders"), Content = ListTab(JunkListKind.BlockedSenders,
@@ -72,6 +74,7 @@ public sealed class JunkEmailOptionsWindow : Window
         dock.Children.Add(new Border { Margin = new Thickness(12, 12, 12, 0), Child = _tabs });
         Content = dock;
         _trustContacts.IsCheckedChanged += (_, _) => Changed();
+        _addRecipients.IsCheckedChanged += (_, _) => Changed();
         _applyLists.IsCheckedChanged += (_, _) => Changed();
         _readAtStart.IsCheckedChanged += (_, _) => Changed();
         Load(account);
@@ -94,6 +97,7 @@ public sealed class JunkEmailOptionsWindow : Window
         var effective = account.Effective;
         foreach (var kind in Kinds) { _lists[kind] = effective.Get(kind).ToList(); _loaded[kind] = _lists[kind].ToList(); }
         _trustContacts.IsChecked = account.TrustContacts;
+        _addRecipients.IsChecked = account.AddRecipientsToSafeSenders;
         _applyLists.IsChecked = account.ApplyLists;
         _readAtStart.IsChecked = account.ReadOutlookAtStart;
         foreach (var kind in Kinds) Refresh(kind);
@@ -120,12 +124,13 @@ public sealed class JunkEmailOptionsWindow : Window
         var added = Kinds.ToDictionary(k => k, k => _lists[k].Except(_loaded[k]).ToList());
         var removed = Kinds.ToDictionary(k => k, k => _loaded[k].Except(_lists[k]).ToHashSet());
         var trust = _trustContacts.IsChecked == true; var apply = _applyLists.IsChecked == true; var atStart = _readAtStart.IsChecked == true;
+        var addSent = _addRecipients.IsChecked == true;
         var saved = _save(stored =>
         {
             var account = stored;
             foreach (var kind in Kinds)
                 account = account.WithEdited(kind, stored.Effective.Get(kind).Where(e => !removed[kind].Contains(e)).Concat(added[kind]));
-            return account with { TrustContacts = trust, ApplyLists = apply, ReadOutlookAtStart = atStart };
+            return account with { TrustContacts = trust, ApplyLists = apply, ReadOutlookAtStart = atStart, AddRecipientsToSafeSenders = addSent };
         });
         _account = saved;
         Load(saved);

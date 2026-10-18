@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
@@ -404,7 +405,12 @@ public sealed class ComposeWindow : Window
     {
         var c = new ComboBox { Width = width, MinHeight = 24, Height = 24, Padding = new Thickness(6, 0), FontSize = 12, Margin = new Thickness(0, 0, 3, 0), VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(c, name + " - " + NotYet);
-        c.DropDownOpened += (_, _) => { c.IsDropDownOpen = false; _status.Text = $"{name}: {NotYet.ToLowerInvariant()}."; };
+        // closing the list inside DropDownOpened re-enters the popup and overflowed the stack (crash, 0.1.63): close it once the opening has finished
+        c.DropDownOpened += (_, _) =>
+        {
+            _status.Text = $"{name}: {NotYet.ToLowerInvariant()}.";
+            Dispatcher.UIThread.Post(() => c.IsDropDownOpen = false);
+        };
         return c;
     }
 

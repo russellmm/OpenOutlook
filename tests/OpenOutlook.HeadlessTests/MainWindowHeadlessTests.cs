@@ -1515,6 +1515,15 @@ public sealed class MainWindowHeadlessTests
             }
             Assert.DoesNotContain(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text is "Grow Font" or "Align Left" or "Format Painter");
 
+            // the Font and Size boxes are placeholders: opening one closes it again and says so (it overflowed the stack and crashed in 0.1.63)
+            foreach (var tip in new[] { "Font - ", "Font Size - " })
+            {
+                var box = window.GetVisualDescendants().OfType<ComboBox>().First(c => ToolTip.GetTip(c)?.ToString()?.StartsWith(tip, StringComparison.Ordinal) == true);
+                box.IsDropDownOpen = true;
+                await Settle();
+                Assert.False(box.IsDropDownOpen);
+            }
+
             window.Width = 900;
             await Settle();
             Assert.Contains("My Templates", layout.CollapsedGroups);                            // groups fold from the right into drop-down buttons

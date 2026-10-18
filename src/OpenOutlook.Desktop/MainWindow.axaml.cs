@@ -221,6 +221,7 @@ public sealed partial class MainWindow : Window
             if (IsElevated()) WarnAboutElevation();
             if (WslDriveBookmarks.IsWsl()) _ = Task.Run(() => WslDriveBookmarks.Ensure());          // the Windows drives in the file dialog's sidebar
             StartMirrorScheduler();                                  // the local copies of connected mailboxes
+            StartNewMailScheduler();                                 // the light new-mail check (Options > Advanced > Send and receive)
             _ = WarmUpMicrosoftAsync();                             // token and connection ready before the first click
             StartJunkScheduler();                                   // silent Junk Cleaner runs
             StartReminderScheduler();                               // calendar reminders (docs/reminders-plan.md)
@@ -648,7 +649,6 @@ public sealed partial class MainWindow : Window
         _activeGmailFolder = null;
         _currentGraphMessages = null;
         _graphRows = null;
-        RefreshInboxButton.IsEnabled = false;
         ExportFolderButton.IsEnabled = false;
         if (FolderTree.SelectedItem is TreeViewItem { Tag: GmailFolderSelection gmail })
         {
@@ -658,7 +658,6 @@ public sealed partial class MainWindow : Window
             MessageList.ItemsSource = null; RefreshItemCount();
             ClearReader();
             _activeGmailFolder = gmail;
-            RefreshInboxButton.IsEnabled = true;
             _onlineCancellation = new CancellationTokenSource();
             await LoadGmailFolderAsync(gmail, version, _onlineCancellation.Token);
             return;
@@ -672,7 +671,6 @@ public sealed partial class MainWindow : Window
             ClearReader();
             _activeMicrosoftAccount = online.Account;
             _activeMicrosoftFolder = online;
-            RefreshInboxButton.IsEnabled = true;
             _onlineCancellation = new CancellationTokenSource();
             await LoadMicrosoftFolderAsync(online, version, _onlineCancellation.Token);
             return;

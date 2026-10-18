@@ -290,7 +290,7 @@
                       <TextBlock DockPanel.Dock="Bottom" Classes="olGroupLabel" Text="Send &amp; Receive" />
 
                     <StackPanel Orientation="Horizontal">
-                      <Button Name="RefreshInboxButton" Classes="olLarge" Click="RefreshInboxClicked" IsEnabled="False">
+                      <Button Name="RefreshInboxButton" Classes="olLarge" Click="SendReceiveAllClicked" ToolTip.Tip="Send/Receive All Folders (F9): checks every account for new mail now and brings each mailbox copy up to date">
                         <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconRefresh}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Send/Receive All Folders" /></StackPanel>
                       </Button>
                       <Button Classes="olLarge" Tag="Offline" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
@@ -1277,6 +1277,26 @@
                     </StackPanel>
                     <TextBlock Classes="olOptBody" Foreground="{DynamicResource OlTextSecondary}" TextWrapping="Wrap" MaxWidth="640" HorizontalAlignment="Left"
                                Text="A reminder you dismiss is never shown again, here or in Outlook. Older reminders that were never dismissed are not shown." />
+                  </StackPanel>
+                </StackPanel>
+
+                <StackPanel Name="PageAdvanced" IsVisible="False" Margin="36,14,48,26">
+                  <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,6">
+                    <Viewbox Width="34" Height="34"><ContentControl Template="{StaticResource OlIconSendReceive}" Width="32" Height="32" /></Viewbox>
+                    <TextBlock Grid.Column="1" Classes="olOptBody" FontSize="15.5" Text="Options for working with OpenOutlook." Margin="14,0,0,0" VerticalAlignment="Center" />
+                  </Grid>
+                  <TextBlock Classes="olOptSection" Text="Send and receive" />
+                  <Border Classes="olOptRule" />
+                  <StackPanel Spacing="8" Margin="52,0,0,16">
+                    <TextBlock Classes="olOptBody" Text="Set send and receive settings for incoming items." />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <CheckBox Name="OptNewMailCheck" Content="_Schedule an automatic send/receive every" VerticalAlignment="Center"
+                                ToolTip.Tip="Each connected account is asked a few small questions (the Inbox's and the open folder's counts and newest message). Only when something changed is the mailbox copy brought up to date and the open list refreshed." />
+                      <NumericUpDown Name="OptNewMailMinutes" Minimum="1" Maximum="60" Increment="1" FormatString="0" Width="104" />
+                      <TextBlock Classes="olOptBody" VerticalAlignment="Center" Text="minutes." />
+                    </StackPanel>
+                    <TextBlock Classes="olOptBody" Foreground="{DynamicResource OlTextSecondary}" TextWrapping="Wrap" MaxWidth="640" HorizontalAlignment="Left"
+                               Text="New mail then shows in the Inbox and its unread number in the folder list without opening the folder. Send/Receive All Folders (F9) checks every account at once. The full update of each mailbox copy still runs every 15 minutes." />
                   </StackPanel>
                 </StackPanel>
 

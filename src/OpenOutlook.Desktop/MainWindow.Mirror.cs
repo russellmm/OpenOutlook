@@ -103,18 +103,18 @@ public partial class MainWindow
         foreach (var account in MirrorAccounts()) await SyncMirrorAsync(account, manual);
     }
 
-    /// <summary>Send/Receive All Folders in the Quick Access Toolbar: every mailbox copy catches up with its server in turn (after a sync that is
-    /// already running), then the folder on screen is shown again.</summary>
+    /// <summary>Send/Receive All Folders (Quick Access Toolbar, Send / Receive tab, F9): every account is checked for new mail and its mailbox copy catches up
+    /// with its server in turn (after a sync that is already running), then the folder on screen is shown again.</summary>
     private async void SendReceiveAllClicked(object? sender, RoutedEventArgs e)
     {
-        QuickSendReceiveButton.IsEnabled = false;
+        QuickSendReceiveButton.IsEnabled = RefreshInboxButton.IsEnabled = false;
         try
         {
-            foreach (var account in MirrorAccounts().ToList()) await SyncMirrorWhenIdleAsync(account, manual: true);
+            await CheckForNewMailAsync(manual: true);                                   // every account: the unread numbers at once, then its copy
             if (_activeGmailFolder is { } gmail) await ReloadGmailFolderAsync(gmail);
             else if (_activeMicrosoftFolder is not null) await RefreshMicrosoftFolderAsync();
         }
-        finally { QuickSendReceiveButton.IsEnabled = true; }
+        finally { QuickSendReceiveButton.IsEnabled = RefreshInboxButton.IsEnabled = true; }
     }
 
     /// <summary>Brings one account's mailbox copy up to date. Never throws: problems become the status shown in Data Files and the status bar.</summary>

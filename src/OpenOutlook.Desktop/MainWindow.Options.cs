@@ -23,9 +23,9 @@ public partial class MainWindow
     {
         ["groups"] = "Groups", ["people"] = "People", ["tasks"] = "Tasks",
         ["search"] = "Search", ["language"] = "Language", ["accessibility"] = "Accessibility",
-        ["advanced"] = "Advanced", ["ribbon"] = "Customize Ribbon", ["qat"] = "Quick Access Toolbar",
+        ["ribbon"] = "Customize Ribbon", ["qat"] = "Quick Access Toolbar",
         ["addins"] = "Add-ins"
-        // "trust" (Trust Center) has its own page now: PageTrustCenter, applied and collected below.
+        // "trust" (Trust Center) and "advanced" (Send and receive only so far) have their own pages: PageTrustCenter, applied and collected below.
     };
 
     // ---- opening and closing ----
@@ -42,6 +42,7 @@ public partial class MainWindow
         ApplyMailOptions(_options);
         ApplyTrustCenterOptions(_options);
         ApplyCalendarOptions(_options);
+        ApplyAdvancedOptions(_options);
         OptionsHost.IsVisible = true;
         OptionsFeedback.Text = "";
         SelectOptionsCategory("general");
@@ -71,6 +72,7 @@ public partial class MainWindow
         _options = CollectMailOptions(_options);
         _options = CollectTrustCenterOptions(_options);
         _options = CollectCalendarOptions(_options);
+        _options = CollectAdvancedOptions(_options);
         try
         {
             _optionsStore.Save(_options);
@@ -80,6 +82,7 @@ public partial class MainWindow
         { StatusText.Text = "Options changed, but they could not be saved. Check the settings folder."; }
         CloseOptionsDialog();
         _ = RemindersOptionsChangedAsync();
+        NewMailOptionsChanged();
     }
 
     private void OptionsCancelClicked(object? sender, RoutedEventArgs e) => CloseOptionsDialog();
@@ -97,6 +100,7 @@ public partial class MainWindow
         PageMail.IsVisible = key == "mail";
         PageTrustCenter.IsVisible = key == "trust";
         PageCalendar.IsVisible = key == "calendar";
+        PageAdvanced.IsVisible = key == "advanced";
         PageOptionPlaceholder.IsVisible = OptionCategoryNames.TryGetValue(key, out var name);
         if (name is not null) OptionsPlaceholderHeading.Text = name;
     }
@@ -120,6 +124,20 @@ public partial class MainWindow
         ReminderSound = OptReminderSound.IsChecked == true,
         ReminderLookBackDays = (int)Math.Clamp(OptReminderLookBack.Value ?? 30, 1, 90),
         ReminderCheckMinutes = (int)Math.Clamp(OptReminderCheckMinutes.Value ?? 1, 1, 60)
+    };
+
+    // ---- Advanced (Send and receive) ----
+
+    private void ApplyAdvancedOptions(OptionsSettings s)
+    {
+        OptNewMailCheck.IsChecked = s.NewMailCheckEnabled;
+        OptNewMailMinutes.Value = Math.Clamp(s.NewMailCheckMinutes, 1, 60);
+    }
+
+    private OptionsSettings CollectAdvancedOptions(OptionsSettings s) => s with
+    {
+        NewMailCheckEnabled = OptNewMailCheck.IsChecked == true,
+        NewMailCheckMinutes = (int)Math.Clamp(OptNewMailMinutes.Value ?? 1, 1, 60)
     };
 
     // ---- Trust Center (Automatic Download) ----

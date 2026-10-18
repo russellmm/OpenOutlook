@@ -104,7 +104,8 @@ public partial class MainWindow
             if (version != _folderVersion || cancellationToken.IsCancellationRequested) return;
             var messages = summaries.Select(ToGraphMessage).ToList();
             _currentGraphMessages = messages;
-            ShowGraphMessages(messages);
+            if (_graphRows is null) ShowGraphMessages(messages);
+            else ReconcileGraphMessages(messages);                                            // a reload (new mail, Send/Receive) keeps the selection
             StatusText.Text = $"{messages.Count} newest {selection.Name} messages · {selection.Account.DisplayAddress} ";
         }
         catch (OperationCanceledException) { }

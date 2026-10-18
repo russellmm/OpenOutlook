@@ -119,6 +119,13 @@ public sealed record OptionsSettings
     /// <summary>Outlook's "Play reminder sound" (Advanced > Reminders): a sound when a reminder comes due. On by default, as in Outlook.</summary>
     public bool ReminderSound { get; init; } = true;
 
+    // Advanced > Send and receive
+    /// <summary>Outlook's "Schedule an automatic send/receive every N minutes": a light check of every account for new mail (counts and newest
+    /// message; the mailbox copy is synchronised only when something changed). On by default.</summary>
+    public bool NewMailCheckEnabled { get; init; } = true;
+    /// <summary>Minutes between those checks (1 to 60, default 1).</summary>
+    public int NewMailCheckMinutes { get; init; } = 1;
+
     // Reading Pane dialog
     public bool ReadPaneMarkOnView { get; init; } = true;
     public int ReadPaneWaitSeconds { get; init; } = 2;
@@ -205,6 +212,7 @@ public sealed class OptionsSettingsStore
         ReadPaneWaitSeconds = Math.Clamp(s.ReadPaneWaitSeconds, 0, 300),
         ReminderLookBackDays = Math.Clamp(s.ReminderLookBackDays, 1, 90),
         ReminderCheckMinutes = Math.Clamp(s.ReminderCheckMinutes, 1, 60),
+        NewMailCheckMinutes = Math.Clamp(s.NewMailCheckMinutes, 1, 60),
         FrenchMode = Cap(s.FrenchMode, "Traditional and new spellings"),
         SpanishMode = Cap(s.SpanishMode, "Tuteo verb forms only"),
     };

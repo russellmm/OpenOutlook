@@ -914,6 +914,129 @@ public sealed class MainWindowHeadlessTests
         }
     }
 
+    /// <summary>A Gmail whose profile history id and Inbox counts follow its messages (the scheduled new-mail check's view).</summary>
+    private sealed class FakeGmailNewMail(Dictionary<string, HashSet<string>> labels) : HttpMessageHandler
+    {
+        public int History = 500;
+        public readonly List<string> Log = [];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath.Replace("/gmail/v1/users/me", "");
+            lock (Log) Log.Add(path);
+            string json;
+            if (path == "/profile") json = $$"""{"emailAddress":"me@example.org","historyId":"{{History}}"}""";
+            else if (path == "/labels") json = """{"labels":[{"id":"INBOX","name":"INBOX","type":"system"}]}""";
+            else if (path == "/labels/INBOX")
+                json = $$"""{"id":"INBOX","messagesTotal":{{labels.Count(p => p.Value.Contains("INBOX"))}},"messagesUnread":{{labels.Count(p => p.Value.Contains("INBOX") && p.Value.Contains("UNREAD"))}}}""";
+            else if (path == "/messages")
+                json = "{\"messages\":[" + string.Join(",", labels.Where(p => p.Value.Contains("INBOX")).OrderByDescending(p => p.Key).Select(p => $"{{\"id\":\"{p.Key}\"}}")) + "]}";
+            else if (path.StartsWith("/messages/", StringComparison.Ordinal))
+            {
+                var id = path.Split('/')[2];
+                var labelsJson = string.Join(",", labels[id].Select(l => "\"" + l + "\""));
+                json = "{\"id\":\"" + id + "\",\"threadId\":\"t\",\"labelIds\":[" + labelsJson + "],\"internalDate\":\"1700000000000\",\"sizeEstimate\":1500,\"snippet\":\"snippet " + id + "\"," +
+                       "\"payload\":{\"mimeType\":\"text/plain\",\"headers\":[{\"name\":\"From\",\"value\":\"Me <me@example.org>\"},{\"name\":\"Subject\",\"value\":\"Subject " + id + "\"},{\"name\":\"To\",\"value\":\"me@example.org\"}]," +
+                       "\"body\":{\"data\":\"aGVsbG8\"}}}";
+            }
+            else json = "{}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"), RequestMessage = request });
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task New_mail_check_shows_a_message_sent_to_myself_in_the_open_inbox_and_its_unread_number_without_losing_the_selection()
+    {
+        var labels = new Dictionary<string, HashSet<string>> { ["m1"] = ["INBOX"], ["m2"] = ["INBOX"] };
+        var server = new FakeGmailNewMail(labels);
+        var account = new OpenOutlook.Auth.ConnectedAccount(OpenOutlook.Auth.OAuthProvider.Google, "gmail-new-mail", "me@example.org", "client", DateTimeOffset.UtcNow,
+            ["https://www.googleapis.com/auth/gmail.modify"]);
+        ResetRegistry().Upsert(account);
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var boxes = (System.Collections.IDictionary)typeof(MainWindow).GetField("_gmailBoxes", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+            boxes[account.AccountId] = new OpenOutlook.Providers.Google.GmailMailbox(new HttpClient(server), _ => ValueTask.FromResult("tok"), "me@example.org");
+            var tree = window.FindControl<TreeView>("FolderTree")!;
+            var root = tree.Items.OfType<TreeViewItem>().Single(i => i.Tag is OpenOutlook.Auth.ConnectedAccount { AccountId: "gmail-new-mail" });
+            var inbox = root.Items.OfType<TreeViewItem>().First(i => HeaderText(i).StartsWith("Inbox", StringComparison.Ordinal));
+            tree.SelectedItem = inbox;
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            string Id(object row) => ((GraphMessageListRow)row).Message.Id;
+            await WaitUntil(() => list.CollectionView?.Cast<object>().Count() == 2);
+            list.SelectedItem = list.CollectionView!.Cast<object>().Single(r => Id(r) == "m1");
+            Dispatcher.UIThread.RunJobs();
+
+            await Call<Task>(window, "CheckForNewMailAsync", false);                         // the first check is the baseline: nothing reloads
+            Assert.Equal("Inbox", HeaderText(inbox));
+
+            labels["m3"] = ["INBOX", "UNREAD"];                                              // the message the owner sent to themself arrives
+            server.History = 501;
+            lock (server.Log) server.Log.Clear();
+            await Call<Task>(window, "CheckForNewMailAsync", false);
+            await WaitUntil(() => list.CollectionView!.Cast<object>().Count() == 3);
+            Assert.Equal(["m3", "m2", "m1"], list.CollectionView!.Cast<object>().Select(Id).ToArray());
+            Assert.Equal("m1", Id(list.SelectedItem!));                                        // the message being read stays selected
+            await WaitUntil(() => HeaderText(inbox) == "Inbox 1");
+            Assert.Equal("Inbox 1", HeaderText(inbox));                                        // "Inbox (1)" in the folder list without clicking it
+
+            lock (server.Log) server.Log.Clear();
+            await Call<Task>(window, "CheckForNewMailAsync", false);                         // nothing changed: one small request
+            lock (server.Log) Assert.Equal(["/profile"], server.Log);
+
+            lock (server.Log) server.Log.Clear();
+            window.FindControl<Button>("RefreshInboxButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));   // Send/Receive All Folders: checks and reloads at once
+            await WaitUntil(() => { lock (server.Log) return server.Log.Contains("/labels/INBOX") && server.Log.Contains("/messages"); });
+            lock (server.Log) Assert.Contains("/labels/INBOX", server.Log);
+            await WaitUntil(() => window.FindControl<Button>("QuickSendReceiveButton")!.IsEnabled);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Options_advanced_page_schedules_the_automatic_send_receive()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        var store = new OptionsSettingsStore();
+        var before = store.Load();
+        try
+        {
+            ShowWithSnapshotReader(window);
+            CallVoid(window, "OpenOptionsDialog");
+            CallVoid(window, "SelectOptionsCategory", "advanced");
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(window.FindControl<StackPanel>("PageAdvanced")!.IsVisible);
+            Assert.False(window.FindControl<StackPanel>("PageOptionPlaceholder")!.IsVisible);
+            var check = window.FindControl<CheckBox>("OptNewMailCheck")!;
+            var minutes = window.FindControl<NumericUpDown>("OptNewMailMinutes")!;
+            Assert.True(check.IsChecked);
+            Assert.Equal(1, minutes.Value);
+            check.IsChecked = false;
+            minutes.Value = 5;
+            CallVoid(window, "OptionsOkClicked", null, new RoutedEventArgs());
+            Dispatcher.UIThread.RunJobs();
+            var saved = store.Load();
+            Assert.False(saved.NewMailCheckEnabled);
+            Assert.Equal(5, saved.NewMailCheckMinutes);
+            Assert.True(window.FindControl<Button>("RefreshInboxButton")!.IsEnabled);           // Send/Receive All Folders works whatever folder is open
+        }
+        finally
+        {
+            store.Save(before);
+            window.Close();
+        }
+    }
+
+    private static string HeaderText(TreeViewItem item) => item.Header switch
+    {
+        TextBlock t => t.Text ?? "",
+        StackPanel p => string.Join(" ", p.Children.OfType<TextBlock>().Select(t => t.Text)),
+        var other => other?.ToString() ?? ""
+    };
+
     [AvaloniaFact]
     public async Task Gmail_actions_change_the_server_and_the_list()
     {

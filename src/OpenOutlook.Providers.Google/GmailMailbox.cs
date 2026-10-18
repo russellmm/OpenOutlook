@@ -261,6 +261,26 @@ public sealed class GmailMailbox
             await PostJsonAsync("/messages/" + id + "/trash", null, token, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>The mailbox's current history id (one request): Gmail raises it whenever anything in the mailbox changes, so an unchanged id
+    /// means no new mail. This is the scheduled send/receive's light check.</summary>
+    public async Task<string> GetHistoryIdAsync(CancellationToken cancellationToken = default)
+    {
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var json = await GetJsonAsync("/profile", token, cancellationToken).ConfigureAwait(false);
+        var id = OptionalString(json.RootElement, "historyId");
+        return id is { Length: >= 1 and <= 40 } && id.All(char.IsAsciiDigit) ? id : throw new GmailReadException("Gmail returned an invalid history id.");
+    }
+
+    /// <summary>One label's message counts (one request).</summary>
+    public async Task<(int Total, int Unread)> GetLabelCountsAsync(string labelId, CancellationToken cancellationToken = default)
+    {
+        if (!ValidLabelId(labelId)) throw new ArgumentException("A valid label id is required.", nameof(labelId));
+        var token = await VerifiedTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var json = await GetJsonAsync("/labels/" + Uri.EscapeDataString(labelId), token, cancellationToken).ConfigureAwait(false);
+        return OptionalInt(json.RootElement, "messagesTotal") is { } total and >= 0 && OptionalInt(json.RootElement, "messagesUnread") is { } unread and >= 0
+            ? (total, unread) : throw new GmailReadException("Gmail returned invalid label counts.");
+    }
+
     /// <summary>Creates a label (a "folder"); a name with slashes nests it under its parent label.</summary>
     public async Task<GmailLabel> CreateLabelAsync(string name, CancellationToken cancellationToken = default)
     {

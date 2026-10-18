@@ -34,7 +34,18 @@ public sealed class CalendarEditorHeadlessTests
             editor.EndTimeBox.Type("4 pm");                                                             // a longer meeting ...
             editor.StartTimeBox.Type("10:00");                                                          // ... keeps its length
             Assert.Equal(new TimeOnly(12, 0), editor.EndTimeBox.Time);
+            editor.StartTimeBox.OpenList();                                                             // the list stays open (it closed at once before)
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(editor.StartTimeBox.IsListOpen);
+            Assert.Equal(new TimeOnly(10, 0), editor.StartTimeBox.Time);                               // highlighting the current time takes nothing
+            editor.StartTimeBox.Highlight(22);                                                          // 11:00 AM, as with the arrow keys ...
+            Assert.True(editor.StartTimeBox.IsListOpen);
+            editor.StartTimeBox.AcceptHighlighted();                                                    // ... then Enter / a click
+            Assert.False(editor.StartTimeBox.IsListOpen);
+            Assert.Equal((new TimeOnly(11, 0), new TimeOnly(13, 0)), (editor.StartTimeBox.Time, editor.EndTimeBox.Time));
+            editor.StartTimeBox.Type("10:00");
             editor.EndTimeBox.OpenList();
+            Assert.True(editor.EndTimeBox.IsListOpen);
             Assert.Contains(OutlookTimeBox.Format(new TimeOnly(12, 0)) + " (2 hours)", editor.EndTimeBox.ListLabels);      // in the computer's time format
             Assert.Equal(OutlookTimeBox.Format(new TimeOnly(10, 0)) + " (0 minutes)", editor.EndTimeBox.ListLabels[0]);
             editor.StartDateBox.Type("10/24/2026");

@@ -130,9 +130,13 @@ public sealed class OutlookTimeBox : UserControl
     public OutlookTimeBox()
     {
         _button.Content = new TextBlock { Text = "\u25be", FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = Themed.Brush("OlText", Brushes.Black) };
-        _list.SelectionChanged += (_, _) =>
+        // A time is taken by a click or by Enter - not by the highlight moving: opening the list highlights the current time, and taking that closed the
+        // list at once (owner 2026-10-17: "the time dropdowns do not work").
+        _list.AddHandler(InputElement.PointerReleasedEvent, (_, _) => AcceptHighlighted(), RoutingStrategies.Bubble, handledEventsToo: true);
+        _list.KeyDown += (_, e) =>
         {
-            if (_list.SelectedItem is ListBoxItem { Tag: TimeOnly t } && _popup!.IsOpen) { Time = t; _popup.IsOpen = false; }
+            if (e.Key == Key.Enter) { AcceptHighlighted(); e.Handled = true; }
+            else if (e.Key == Key.Escape) { _popup!.IsOpen = false; _text.Focus(); e.Handled = true; }
         };
         _popup = new Popup
         {
@@ -217,6 +221,20 @@ public sealed class OutlookTimeBox : UserControl
         }
         _popup.IsOpen = true;
         if (current is not null) { _list.SelectedItem = current; _list.ScrollIntoView(current); }
+        _list.Focus();
+    }
+
+    internal bool IsListOpen => _popup.IsOpen;
+    /// <summary>Highlights an entry as the arrow keys would (does not take it).</summary>
+    internal void Highlight(int index) => _list.SelectedIndex = index;
+
+    /// <summary>Takes the highlighted time (a click or Enter) and closes the list.</summary>
+    internal void AcceptHighlighted()
+    {
+        if (!_popup.IsOpen || _list.SelectedItem is not ListBoxItem { Tag: TimeOnly t }) return;
+        Time = t;
+        _popup.IsOpen = false;
+        _text.Focus();
     }
 
     public new bool IsEnabled { get => _text.IsEnabled; set { _text.IsEnabled = _button.IsEnabled = value; } }

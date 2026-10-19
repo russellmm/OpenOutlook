@@ -60,7 +60,19 @@ public partial class MainWindow
         if (draftId is null && (seed ?? new ComposeSeed()) is { Body: "" } blank) seed = blank with { Html = _options.ComposeFormat != "Plain Text" };
         var compose = new ComposeWindow(accounts, initial, seed, draftId) { RecipientLookup = LookupRecipientsAsync, RecentRecipients = RecentRecipients };
         compose.Sent += AddSentRecipientsToSafeSenders;
+        compose.DraftStored += address => _ = CatchUpAfterDraftSavedAsync(address);
         compose.Show(this);
+    }
+
+    /// <summary>A draft was saved on the server: the account's copy and counts are brought up to date now, not at the next scheduled check.</summary>
+    private async Task CatchUpAfterDraftSavedAsync(string address)
+    {
+        try
+        {
+            if (MirrorAccounts().FirstOrDefault(a => a.DisplayAddress.Equals(address, StringComparison.OrdinalIgnoreCase)) is { } account)
+                await CatchUpAccountAsync(account);
+        }
+        catch (Exception e) { AppLog.Error("compose", e, "bringing Drafts up to date after saving a draft failed; the next check will do it"); }
     }
 
     private bool IsSelf(string address, ConnectedAccount account) =>

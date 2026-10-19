@@ -65,7 +65,7 @@ public static class RecipientDirectory
     /// <summary>Word starts: "bry" finds "Petri, Bryan" and "bryan.petri@pse.com"; "pse" finds the domain.</summary>
     public static bool Matches(RecipientEntry e, string q, bool nameOnly = false)
     {
-        static IEnumerable<string> Words(string s) => s.Split([' ', ',', '.', '@', '_', '-', '\'', '"', '(', ')'], StringSplitOptions.RemoveEmptyEntries);
+        static IEnumerable<string> Words(string s) => s.Split(new[] { ' ', ',', '.', '@', '_', '-', '\'', '"', '(', ')' }, StringSplitOptions.RemoveEmptyEntries);
         if (Words(e.Name ?? "").Any(w => w.StartsWith(q, StringComparison.CurrentCultureIgnoreCase)) || (e.Name ?? "").StartsWith(q, StringComparison.CurrentCultureIgnoreCase))
             return true;
         var parts = q.Split(' ', StringSplitOptions.RemoveEmptyEntries);                     // "bryan petri" finds "Petri, Bryan": every word starts a word of the name

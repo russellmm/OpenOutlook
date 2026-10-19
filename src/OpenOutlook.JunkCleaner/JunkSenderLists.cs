@@ -141,7 +141,7 @@ public sealed record JunkLists
         else if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF) text = Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
         else if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) text = Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
         else text = Encoding.UTF8.GetString(bytes);
-        return Normalize(kind, text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+        return Normalize(kind, text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')));
     }
 

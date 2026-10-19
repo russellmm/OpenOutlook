@@ -69,6 +69,8 @@ public sealed partial class ComposeWindow : Window
     public Func<string, Task<(IReadOnlyList<RecipientEntry> Contacts, IReadOnlyList<RecipientEntry> Recent)>>? RecipientLookup { get; set; }
     /// <summary>After a send: the From address and every To / Cc / Bcc address (the main window adds them to Safe Senders when that is turned on).</summary>
     public event Action<string, IReadOnlyList<string>>? Sent;
+    /// <summary>A draft was stored on the server (Save, or Yes on close): the main window brings that account's Drafts up to date at once.</summary>
+    public event Action<string>? DraftStored;
     /// <summary>Where sent recipients are remembered (recent-recipients.json); tests point it elsewhere.</summary>
     public RecentRecipientsStore RecentRecipients { get; set; } = new();
 
@@ -635,6 +637,7 @@ public sealed partial class ComposeWindow : Window
             _dirty = false;
             _savedContent = content;
             _status.Text = _backend.SavedMessage;
+            DraftStored?.Invoke(_account.Address);
             return true;
         }
         catch (Exception ex)

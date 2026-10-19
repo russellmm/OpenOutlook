@@ -236,7 +236,9 @@ public sealed partial class AccountSettingsWindow : Window
         var remove = Tool("Remove", "OlIconDetach", "Close the file in OpenOutlook (the file itself is never deleted)");
         var create = Tool("New…", "OlIconOpenArchive", "Create a new, empty Outlook data file (.pst) and show it in the folder list");
         create.Click += async (_, _) => { var note = await _host.CreateDataFileAsync(this); if (note is not null) _note.Text = note; Refresh(); };
-        var byPath = Tool("Add by path…", "OlIconOpenArchive", "Type or paste a path such as X:\\email\\old.pst or \\\\server\\share\\mail.pst, for a network drive the file dialog does not show");
+        var byPath = Tool("Add by path…", "OlIconOpenArchive", OperatingSystem.IsWindows()
+            ? "Type or paste a path such as X:\\email\\old.pst or \\\\server\\share\\mail.pst, for a network drive the file dialog does not show"
+            : "Type or paste a path such as /home/you/mail/old.pst or /mnt/share/mail.pst, for a folder the file dialog does not show");
         byPath.Click += async (_, _) =>
         {
             var path = await AskForPathAsync();
@@ -272,12 +274,12 @@ public sealed partial class AccountSettingsWindow : Window
     /// <summary>A one-line prompt for a file path; returns null when cancelled.</summary>
     private async Task<string?> AskForPathAsync()
     {
-        var box = new TextBox { Watermark = "X:\\email\\archive.pst   or   \\\\server\\share\\archive.pst", MinWidth = 520 };
+        var box = new TextBox { Watermark = OperatingSystem.IsWindows() ? "X:\\email\\archive.pst   or   \\\\server\\share\\archive.pst" : "/home/you/mail/archive.pst   or   /mnt/share/archive.pst", Width = 520 };
         var ok = new Button { Content = "Open", IsDefault = true, Padding = new Thickness(22, 5) };
         var cancel = new Button { Content = "Cancel", IsCancel = true, Padding = new Thickness(22, 5) };
         var dialog = new Window
         {
-            Title = "Add a data file by path", SizeToContent = SizeToContent.WidthAndHeight, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Title = "Add a data file by path", Width = 562, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = Themed.Brush("OlCard", Brushes.White), CanResize = false
         };
         ok.Click += (_, _) => dialog.Close(box.Text);
@@ -287,7 +289,7 @@ public sealed partial class AccountSettingsWindow : Window
             Margin = new Thickness(20), Spacing = 10,
             Children =
             {
-                new TextBlock { Text = "Path of the .pst file (network drives and \\\\server\\share paths work):", FontSize = 13 }, box,
+                new TextBlock { Text = OperatingSystem.IsWindows() ? "Path of the .pst file (network drives and \\\\server\\share paths work):" : "Path of the .pst file:", FontSize = 13 }, box,
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { ok, cancel } }
             }
         };

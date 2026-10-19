@@ -311,9 +311,7 @@ These have no automated test; they were verified in the app or with a tool, and 
 - Flag status and categories do not travel through MIME; messages with an embedded message cannot go to a mailbox; moving out of a read-only data file is refused (copy works).
 - Gmail live copy/move, calendar invitations, Linux calendar, People against the live account: unverified.
 - WebKitGTK file navigation for > 2 MB messages (X11 Linux): untested.
-- Dark theme: the Options page keeps a white background with light text (unreadable); the app does not follow the desktop's dark preference (2026-10-15).
-- The File screen's left column overlaps itself in a short window ("Save Attachments" struck by a separator, "Account" on top of "Print") (2026-10-15).
-- After a start in a small window the message list's Subject column keeps all the width (Received cut, Size gone); People list not alphabetical; attachment chips have no right-click menu; Add by path shows a Windows-only hint on Linux (2026-10-15).
+- Fixed 2026-10-19 (0.1.72): the Options page and two dialogs follow the theme (were white); the File screen's left column scrolls in a short window instead of overlapping; attachment chips open their menu on right-click too; Add by path shows Linux paths and a fixed-width dialog. Still open: the app does not follow the desktop's dark preference; after a start in a small window the message list's Subject column keeps all the width (Received cut, Size gone); People list possibly not alphabetical (sorts by File as / surname; owner to re-check).
 
 ## Test environment caveats
 

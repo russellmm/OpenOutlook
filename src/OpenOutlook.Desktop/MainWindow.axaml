@@ -568,7 +568,9 @@
     <Border Name="BackstageHost" IsVisible="False" Background="{DynamicResource OlBackstagePane}" KeyDown="BackstageKeyDown">
       <Grid ColumnDefinitions="205,*">
         <Border Grid.Column="0" Background="{DynamicResource OlBackstageNav}">
-          <DockPanel LastChildFill="True">
+          <!-- in a short window the column scrolls instead of drawing its bottom items over its top ones -->
+          <ScrollViewer Name="BackstageNavScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <DockPanel LastChildFill="True" MinHeight="540" Height="{Binding #BackstageNavScroll.Bounds.Height}">
             <Button DockPanel.Dock="Top" Name="BackstageBackButton" Classes="olBsBack" Click="CloseBackstageClicked" ToolTip.Tip="Return to mail (Esc)">
               <Viewbox Width="26" Height="26"><ContentControl Template="{StaticResource OlIconBackArrow}" Width="32" Height="32" /></Viewbox>
             </Button>
@@ -638,6 +640,7 @@
               </RadioButton>
             </StackPanel>
           </DockPanel>
+          </ScrollViewer>
         </Border>
 
         <!-- The space round the page is the content's Margin, not the ScrollViewer's Padding: Padding is left out of the scroll range,
@@ -871,7 +874,7 @@
     </Border>
 
     <!-- ==================== Outlook Options dialog (classic File > Options) ==================== -->
-    <Border Name="OptionsHost" IsVisible="False" Background="White" KeyDown="OptionsKeyDown">
+    <Border Name="OptionsHost" IsVisible="False" Background="{DynamicResource OlCard}" KeyDown="OptionsKeyDown">
       <Grid RowDefinitions="Auto,*">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="16,9,10,7">
           <TextBlock Text="Outlook Options" FontSize="14.5" Foreground="{DynamicResource OlText}" VerticalAlignment="Center" />
@@ -1321,7 +1324,7 @@
 
     <!-- ==================== Editor Options dialog (Proofing) ==================== -->
     <Panel Name="EditorOptionsHost" IsVisible="False" Background="#66000000" KeyDown="EditorDialogKeyDown">
-      <Border Width="980" MaxHeight="720" Background="White" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1"
+      <Border Width="980" MaxHeight="720" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1"
               BoxShadow="0 14 44 0 #55000000" HorizontalAlignment="Center" VerticalAlignment="Center">
         <Grid RowDefinitions="Auto,*,Auto">
           <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="16,9,10,7">
@@ -1420,7 +1423,7 @@
 
     <!-- ==================== Reading Pane dialog ==================== -->
     <Panel Name="ReadingPaneHost" IsVisible="False" Background="#66000000" KeyDown="ReadingPaneDialogKeyDown">
-      <Border Width="640" Background="White" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1"
+      <Border Width="640" Background="{DynamicResource OlCard}" BorderBrush="{DynamicResource OlStrongBorder}" BorderThickness="1"
               BoxShadow="0 14 44 0 #55000000" HorizontalAlignment="Center" VerticalAlignment="Center">
         <Grid RowDefinitions="Auto,*,Auto">
           <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="16,9,10,7">

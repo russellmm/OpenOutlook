@@ -22,6 +22,7 @@ public partial class MainWindow
 
     private void StartNewMailScheduler()
     {
+        StartNewMailBadge();
         AddHandler(KeyDownEvent, (_, e) =>                                                 // F9, as in Outlook: Send/Receive All Folders
         {
             if (e.Key != Avalonia.Input.Key.F9 || e.KeyModifiers != Avalonia.Input.KeyModifiers.None || !QuickSendReceiveButton.IsEnabled) return;
@@ -91,6 +92,7 @@ public partial class MainWindow
             _newMailProbes[account.AccountId] = probe = new GraphNewMailProbe(_graphHttp, account.AccountId);
         var probes = await probe.ProbeAsync(token, open is null ? ["inbox"] : ["inbox", open.Id]);
         ApplyFolderCounts(account, probes.ToDictionary(p => p.FolderId, p => p.UnreadCount, StringComparer.Ordinal));     // "Inbox (1)" at once
+        NoteInboxUnread(account.AccountId, probes[0].UnreadCount);
         var inbox = _newMail.Observe(account.AccountId, "inbox", probes[0].Fingerprint);
         NewMailVerdict? openVerdict = open is null ? null : _newMail.Observe(account.AccountId, open.Id, probes[1].Fingerprint);
         if (!NewMailTracker.ShouldSync(inbox, openVerdict, synced, manual)) return;
@@ -107,6 +109,7 @@ public partial class MainWindow
         var open = _activeGmailFolder is { } folder && folder.Account.AccountId == account.AccountId && folder.LabelId != "INBOX" ? folder : null;
         var (total, unread) = await box.GetLabelCountsAsync("INBOX");
         SetGmailUnread(account, "INBOX", unread);
+        NoteInboxUnread(account.AccountId, unread);
         var inbox = _newMail.Observe(account.AccountId, "INBOX", $"{total}/{unread}");
         NewMailVerdict? openVerdict = null;
         if (open is not null)

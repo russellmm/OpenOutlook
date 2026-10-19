@@ -144,6 +144,13 @@ public partial class MainWindow
             var save = new MenuItem { Header = "Save as…" };
             save.Click += (_, _) => { _chipChoice = name; _openAttachment = false; ExportAttachmentClicked(chip, new Avalonia.Interactivity.RoutedEventArgs()); };
             chip.Flyout = new MenuFlyout { Items = { open, save } };
+            // a right-click opens the same menu as a left-click (Avalonia's button flyout opens on the left button only)
+            chip.PointerPressed += (_, e) =>
+            {
+                if (!e.GetCurrentPoint(chip).Properties.IsRightButtonPressed || !chip.IsEnabled) return;
+                chip.Flyout?.ShowAt(chip);
+                e.Handled = true;
+            };
             AttachmentChips.Children.Add(chip);
         }
     }

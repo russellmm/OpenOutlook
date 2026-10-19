@@ -83,7 +83,7 @@ class Fixer(FO.FolderOps):
             for rid, cells in tc.rows:
                 if cells.get(c30):
                     continue
-                if tn == ROOT_HIER and rid & 0x1F != 2:
+                if tn == ROOT_HIER and (rid & 0x1F) != 2:
                     continue                          # search folders in the root table carry no ID; its normal folders do (SCANPST adds them)
                 r1.append((tn, rid))
                 if apply:

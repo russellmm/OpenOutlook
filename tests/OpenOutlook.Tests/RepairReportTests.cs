@@ -45,4 +45,18 @@ public sealed class RepairReportTests
         Assert.Contains("2 problems found; nothing can be repaired automatically.", plain);
         Assert.Contains("Repaired 2 items.", ArchiveRepairWindow.Summarize(new PstScanReport([], 0, 2), true, File));
     }
+
+    [Fact]
+    public void Inconsistencies_only_the_repair_finds_are_reported_not_called_sound()
+    {
+        // rmarrash_outlook.pst (2026-10-18): the checker lists nothing, the fixer finds 15 root-table folder rows without ID cells, SCANPST says minor
+        var fix = new OpenPst.PstFixReport(RowsWithoutIds: 15, 0, 0, 0, 0);
+        var report = new PstScanReport([], fix.Total, 0, OpenOutlook.PstNative.NativePstEngine.FixLines(fix));
+        var text = ArchiveRepairWindow.Summarize(report, false, File);
+        Assert.DoesNotContain("No problems found", text);
+        Assert.Contains("15 minor inconsistencies", text);
+        Assert.Contains("- 15 table rows without the ID cells", text);
+        Assert.Contains("cannot be repaired", ArchiveRepairWindow.Summarize(report, false, File with { CanRepair = false }));
+        Assert.Empty(OpenOutlook.PstNative.NativePstEngine.FixLines(new OpenPst.PstFixReport(0, 0, 0, 0, 0)));
+    }
 }

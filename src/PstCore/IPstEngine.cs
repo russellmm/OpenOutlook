@@ -62,4 +62,7 @@ public interface IPstEngine : IDisposable
 /// <param name="Findings">One line per problem the scan found; empty when the archive is clean.</param>
 /// <param name="Fixable">Inconsistencies the built-in repair can fix (before a repair).</param>
 /// <param name="Fixed">Inconsistencies a repair just fixed (0 for a plain scan).</param>
-public sealed record PstScanReport(IReadOnlyList<string> Findings, int Fixable, int Fixed);
+/// <param name="FixableItems">What <paramref name="Fixable"/> is made of, one line per repair rule with a count. The repair's rules find
+/// inconsistencies the checker does not list as problems (2026-10-18: 15 folder rows without ID cells in an Outlook-written file, which
+/// SCANPST calls minor and the window used to call "No problems found").</param>
+public sealed record PstScanReport(IReadOnlyList<string> Findings, int Fixable, int Fixed, IReadOnlyList<string>? FixableItems = null);

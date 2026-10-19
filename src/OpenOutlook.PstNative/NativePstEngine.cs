@@ -371,6 +371,28 @@ namespace OpenOutlook.PstNative
         static int Total(PstFixReport f) =>
             f.RowsWithoutIds + f.DanglingIdMapRecords + f.MessagesNotIndexed + f.RowVersionIssues + f.NidMarkIssues + f.RowCellIssues + f.AmapIssues + f.FolderIssues + f.RefsIssues + f.RowSyncIssues + f.TableIssues;
 
+        /// <summary>One line per repair rule that found something (the fixer's counts; SCANPST reports these as "minor inconsistencies").</summary>
+        public static IReadOnlyList<string> FixLines(PstFixReport f)
+        {
+            var lines = new List<string>();
+            void Add(int n, string what) { if (n > 0) lines.Add($"{n} {what}"); }
+            Add(f.RowsWithoutIds, "table rows without the ID cells Outlook writes (0x0E30 / 0x0E33 / 0x0E34)");
+            Add(f.DanglingIdMapRecords, "ID-map records pointing at deleted items");
+            Add(f.MessagesNotIndexed, "messages missing from Outlook's message index");
+            Add(f.RowVersionIssues, "duplicate or too-high row versions");
+            Add(f.NidMarkIssues, "header NID high-water marks too low");
+            Add(f.RowCellIssues, "message rows without the row cells Outlook writes");
+            Add(f.AmapIssues, "allocation-map problems");
+            Add(f.FolderIssues, "incomplete folders (tables or parent row)");
+            Add(f.RefsIssues, "block reference problems");
+            Add(f.RowSyncIssues, "message rows that differ from their message");
+            Add(f.TableIssues, "table problems");
+            return lines;
+        }
+
+        static PstScanReport Report(PstCheckResult check, PstFixReport fix, int fixedCount) =>
+            new(Lines(check), Total(fix), fixedCount, FixLines(fix));
+
         static IReadOnlyList<string> Lines(PstCheckResult r) =>
             r.Problems == 0 ? Array.Empty<string>() : r.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
@@ -379,7 +401,7 @@ namespace OpenOutlook.PstNative
             lock (_gate)
             {
                 FlushPending();
-                return Wrap(() => new PstScanReport(Lines(_file.Check()), Total(_file.Fix(false)), 0));
+                return Wrap(() => Report(_file.Check(), _file.Fix(false), 0));
             }
         }
 
@@ -392,7 +414,7 @@ namespace OpenOutlook.PstNative
                 return Wrap(() =>
                 {
                     var fixedCount = Total(_file.Fix(true));
-                    return new PstScanReport(Lines(_file.Check()), Total(_file.Fix(false)), fixedCount);
+                    return Report(_file.Check(), _file.Fix(false), fixedCount);
                 });
             }
         }

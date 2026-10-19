@@ -314,7 +314,16 @@ internal sealed class ArchiveRepairWindow : Window
         var problems = r.Findings.Where(l => l.StartsWith("  ", StringComparison.Ordinal)).Select(l => l.Trim()).ToList();
         var checks = r.Findings.Where(l => !l.StartsWith("  ", StringComparison.Ordinal)).ToList();
         if (problems.Count == 0 && r.Findings.Count > 0) { problems = r.Findings.ToList(); checks = []; }   // a report without the indented format
-        if (problems.Count == 0) lines.Add("No problems found. The archive is structurally sound.");
+        var fixable = r.FixableItems ?? [];
+        if (problems.Count == 0 && r.Fixable == 0) lines.Add("No problems found. The archive is structurally sound.");
+        else if (problems.Count == 0)
+        {
+            // the repair's rules found what the checker does not list (SCANPST: "Only minor inconsistencies were found")
+            lines.Add($"No structural problems found, but {r.Fixable} minor inconsistenc{(r.Fixable == 1 ? "y" : "ies")} " +
+                      "(the kind SCANPST reports as minor) can be repaired automatically.");
+            if (!file.CanRepair) lines.Add("This archive is open read-only, so it cannot be repaired.");
+            if (fixable.Count > 0) { lines.Add(""); lines.AddRange(fixable.Select(l => "- " + l)); }
+        }
         else
         {
             lines.Add($"{problems.Count} problem{(problems.Count == 1 ? "" : "s")} found; " +
@@ -328,6 +337,12 @@ internal sealed class ArchiveRepairWindow : Window
             lines.Add("");
             lines.AddRange(problems.Take(500).Select(l => "- " + l));
             if (problems.Count > 500) lines.Add($"... and {problems.Count - 500} more.");
+            if (fixable.Count > 0)
+            {
+                lines.Add("");
+                lines.Add("The repair fixes:");
+                lines.AddRange(fixable.Select(l => "- " + l));
+            }
             if (checks.Count > 0)
             {
                 lines.Add("");

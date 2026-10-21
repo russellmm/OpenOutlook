@@ -88,6 +88,25 @@ public sealed class JunkBccRuleTests
         finally { File.Delete(path); }
     }
 
+    [Fact]
+    public void An_emoji_cut_by_the_subject_limit_does_not_stop_the_history_from_being_written()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "oo-junklog-" + Guid.NewGuid().ToString("N") + ".log");
+        try
+        {
+            var subject = new string('x', 69) + "\U0001F381 free gift";            // the emoji's first half is the 70th character (2026-10-21: "Unable to translate Unicode character \\uDB41")
+            var lone = "Broken \uDB41 subject from the server";
+            var hits = new List<JunkCleanerHit> { new("m1", subject, "a@spam.example", ["keyword"]), new("m2", lone, "b@spam.example", ["keyword"]) };
+            new JunkCleanerLog(path).Append("me@example.org", new JunkCleanerRunResult(2, hits, hits, [], false), scheduled: false);
+            var lines = File.ReadAllLines(path);
+            Assert.Equal(2, lines.Length);
+            Assert.Contains(new string('x', 69) + "…", lines[0]);
+            Assert.Contains("Broken \uFFFD subject", lines[1]);
+            Assert.Equal("ab\U0001F381…", JunkCleanerLog.Clip("ab\U0001F381cdef", 4));     // a whole pair that fits is kept
+        }
+        finally { File.Delete(path); }
+    }
+
     private static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     private sealed class FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler

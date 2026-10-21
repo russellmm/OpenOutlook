@@ -27,7 +27,7 @@ public sealed class JunkCleanerLog(string path)
             while (bytes > MaxBytes && drop < all.Count - 1) bytes -= System.Text.Encoding.UTF8.GetByteCount(all[drop++]) + Environment.NewLine.Length;
             File.WriteAllLines(Path, all.Skip(drop));
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { }   // the history must never fail a run whose messages have already moved
     }
 
     public IReadOnlyList<string> Recent(int count = 200)
@@ -36,5 +36,16 @@ public sealed class JunkCleanerLog(string path)
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
     }
 
-    private static string Clip(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+    /// <summary>Shortens without splitting an emoji (a surrogate pair): half of one cannot be written as UTF-8 and made the whole write fail.</summary>
+    internal static string Clip(string s, int max)
+    {
+        if (s.Length > max) s = s[..(char.IsHighSurrogate(s[max - 1]) ? max - 1 : max)] + "…";
+        var b = new System.Text.StringBuilder(s.Length);       // a lone surrogate from the server itself becomes U+FFFD
+        for (var i = 0; i < s.Length; i++)
+        {
+            if (char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1])) { b.Append(s, i++, 2); continue; }
+            b.Append(char.IsSurrogate(s[i]) ? '\uFFFD' : s[i]);
+        }
+        return b.ToString();
+    }
 }

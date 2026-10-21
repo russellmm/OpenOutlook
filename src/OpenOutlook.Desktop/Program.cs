@@ -30,6 +30,7 @@ internal static class Program
         // Message colours as written, like Outlook (Options > Mail > Message colors): WebView2 reads this once per process.
         try { ReaderColorProfile.Apply(new OptionsSettingsStore().Load().ReaderColorsAsWritten); }
         catch (Exception) { /* settings trouble must never stop startup */ }
+        LinuxDragCursors.Install();          // drag cursors from the desktop theme, not the X cursor font
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

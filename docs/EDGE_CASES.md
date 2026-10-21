@@ -280,6 +280,7 @@ All settings stores share the same rules: a missing file gives defaults, a corru
 
 | Case | Why | Handled in | Test |
 |---|---|---|---|
+| Linux drag cursors come from the desktop's cursor theme (dnd-move / dnd-copy / dnd-link / dnd-no-drop via libXcursor, X's theme and size); missing ones leave Avalonia's | Owner 2026-10-21: a move showed a plus sign (Avalonia's X11 back end uses the X cursor font: DragMove = diamond_cross) | `LinuxDragCursors` | `DragCursorHeadlessTests.Avalonias_drag_cursors_are_replaced_by_the_themes_and_other_cursors_are_left_alone` *(headless)* |
 | Bundled chrome-headless-shell found beside the app and listed first; old profiles cleaned | Pinned renderer | `BrowserHtmlRenderer.BundledBrowsers` | `BundledBrowserTests.*` |
 | WSLg: drives added to the file dialog once; primary monitor read from the WSLg log | Windows opened on the wrong monitor | WSL helpers | `BundledBrowserTests.WSL_drives_are_added_to_the_file_dialog_sidebar_once_and_other_bookmarks_stay`, `.The_primary_monitor_origin_comes_from_the_newest_monitor_list_of_the_WSLg_log` |
 | Ubuntu 23.10+ AppArmor blocks the browser sandbox (SIGTRAP) | 2026-10-06 bare metal | deb ships `packaging/openoutlook-chromium.apparmor` | **Manual** (deb install); the tar.gz has no profile |

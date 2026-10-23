@@ -81,10 +81,15 @@ public partial class MainWindow
         flyout.Items.Add(new Separator());
         flyout.Items.Add(Action("Delete", "delete"));
         flyout.Items.Add(JunkMenu());
+        var junkKeyword = new MenuItem { Header = "Add Sender to Junk _Keywords..." };
+        ToolTip.SetTip(junkKeyword, "Add the From name of this message to the Junk Cleaner's keyword list (you can edit it first)");
+        junkKeyword.Click += async (_, _) => await AddSenderToJunkKeywordsAsync();
+        flyout.Items.Add(junkKeyword);
         flyout.Items.Add(new Separator());
         flyout.Items.Add(MessagePropertiesMenuItem());
         flyout.Opening += (_, _) =>
         {
+            junkKeyword.IsVisible = InJunkEmailFolder;                                              // Microsoft Junk Email only (owner 2026-10-22)
             var gmail = _activeGmailFolder is not null;
             var pst = _activePath is not null;
             var online = gmail || _activeMicrosoftFolder is not null;

@@ -2118,6 +2118,69 @@ public sealed class MainWindowHeadlessTests
         finally { window.Close(); }
     }
 
+    [AvaloniaFact]
+    public async Task Add_sender_to_junk_keywords_shows_only_in_junk_email_and_adds_the_edited_from_name()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        ShowWithSnapshotReader(window);
+        var directory = Path.Combine(Path.GetTempPath(), "oo-junkkw-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var file = new OpenOutlook.JunkCleaner.JunkKeywordFile(directory);                   // never the owner's real junk-keywords.json
+            file.Save(["casino"]);
+            typeof(MainWindow).GetField("_junkKeywordFile", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, file);
+            var account = new OpenOutlook.Auth.ConnectedAccount(
+                OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "headless-junkkw-" + Guid.NewGuid().ToString("N")[..8], "person@hotmail.test", "client", DateTimeOffset.UtcNow, ["Mail.ReadWrite"]);
+            var folderType = typeof(MainWindow).GetNestedType("MicrosoftFolderSelection", BindingFlags.NonPublic)!;
+            var folderField = typeof(MainWindow).GetField("_activeMicrosoftFolder", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            var rows = new System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow>([
+                new GraphMessageListRow(new OpenOutlook.Providers.Microsoft.GraphInboxMessage("m1", "Stop taking", "Dementia Breakthrough", "person@hotmail.test",
+                    DateTimeOffset.UtcNow, 100, false, false, "", FromAddress: "x@spam.example"))]);
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            list.ItemsSource = new Avalonia.Collections.DataGridCollectionView(rows);
+            list.SelectedItem = rows[0];
+            CallVoid(window, "InitMessageContextMenu");
+            var flyout = (MenuFlyout)list.ContextFlyout!;
+            var item = flyout.Items.OfType<MenuItem>().Single(i => (string?)i.Header == "Add Sender to Junk _Keywords...");
+
+            folderField.SetValue(window, Activator.CreateInstance(folderType, account, "inbox", "Inbox"));
+            flyout.ShowAt(list);
+            Assert.False(item.IsVisible);                                                          // not outside Junk Email
+            flyout.Hide();
+            folderField.SetValue(window, Activator.CreateInstance(folderType, account, "junk-id", "Junk Email"));
+            flyout.ShowAt(list);
+            Assert.True(item.IsVisible);
+            flyout.Hide();
+
+            window.JunkKeywordPromptOverride = s => { Assert.Equal("Dementia Breakthrough", s); return Task.FromResult<string?>(null); };   // Cancel: nothing added
+            await window.AddSenderToJunkKeywordsAsync();
+            Assert.Equal(["casino"], file.Load());
+
+            window.JunkKeywordPromptOverride = _ => Task.FromResult<string?>("  Dementia ");       // edited to one word
+            await window.AddSenderToJunkKeywordsAsync();
+            Assert.Equal(["casino", "Dementia"], file.Load());
+
+            window.JunkKeywordPromptOverride = _ => Task.FromResult<string?>("dementia");           // already there (any case)
+            await window.AddSenderToJunkKeywordsAsync();
+            Assert.Equal(["casino", "Dementia"], file.Load());
+            Assert.Contains("already", window.FindControl<TextBlock>("StatusText")!.Text);
+
+            window.JunkKeywordPromptOverride = _ => Task.FromResult<string?>("ab");                 // too short to be safe
+            await window.AddSenderToJunkKeywordsAsync();
+            Assert.Equal(["casino", "Dementia"], file.Load());
+
+            window.JunkKeywordPromptOverride = _ => Task.FromResult<string?>("Brain Health, Memory Fix");   // commas: several keywords
+            await window.AddSenderToJunkKeywordsAsync();
+            Assert.Equal(["casino", "Dementia", "Brain Health", "Memory Fix"], file.Load());
+        }
+        finally
+        {
+            window.Close();
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private sealed class JunkGraph(List<(string Id, string To)> moves, string accountId) : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

@@ -58,6 +58,60 @@ public partial class MainWindow
         { return "Could not save the keywords: " + e.Message; }
     }
 
+    /// <summary>Test seam for the "Add Sender to Junk Keywords" box: gets the suggested text, returns the text to add or null (Cancel).</summary>
+    internal Func<string, Task<string?>>? JunkKeywordPromptOverride { get; set; }
+
+    /// <summary>Right-click in Junk Email > "Add Sender to Junk Keywords...": the From name of the selected message, edited by the user, joins
+    /// <c>junk-keywords.json</c> (owner 2026-10-22). Commas split it into several keywords; keywords under 3 characters are refused (they would match almost any sender).</summary>
+    internal async Task AddSenderToJunkKeywordsAsync()
+    {
+        var message = MessageList.SelectedItems.OfType<GraphMessageListRow>().FirstOrDefault()?.Message;
+        if (message is null) { StatusText.Text = "Select a message first."; return; }
+        var suggested = (string.IsNullOrWhiteSpace(message.From) ? message.FromAddress : message.From).Trim();
+        var typed = JunkKeywordPromptOverride is not null ? await JunkKeywordPromptOverride(suggested) : await AskJunkKeywordAsync(suggested);
+        if (typed is null) return;
+        var entered = AccountSettingsWindow.ParseJunkKeywords(typed);
+        if (entered.Count == 0) { StatusText.Text = "No keyword was added (the box was empty)."; return; }
+        if (entered.FirstOrDefault(k => k.Length < 3) is { } tooShort) { StatusText.Text = $"\"{tooShort}\" is too short to be a junk keyword (3 characters or more); nothing was added."; return; }
+        IReadOnlyList<string> current;
+        try { current = _junkKeywordFile.Load(); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        { StatusText.Text = "The Junk Cleaner keyword file could not be read (" + e.Message + "); nothing was added."; return; }
+        var added = entered.Where(k => !current.Contains(k, StringComparer.OrdinalIgnoreCase)).ToList();
+        if (added.Count == 0) { StatusText.Text = $"\"{string.Join(", ", entered)}\" is already in the junk keyword list."; return; }
+        try { _junkKeywordFile.Save(current.Concat(added)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { StatusText.Text = "Could not save the keywords: " + e.Message; return; }
+        StatusText.Text = $"Added to the junk keywords: {string.Join(", ", added)} ({current.Count + added.Count} keywords).";
+        AppLog.Note("junk", $"keyword(s) added from the sender of a Junk Email message: {string.Join(", ", added)}");
+    }
+
+    private async Task<string?> AskJunkKeywordAsync(string suggested)
+    {
+        var box = new TextBox { Text = suggested, MaxLength = 200 };
+        var dialog = new Window
+        {
+            Title = "Add Sender to Junk Keywords", Width = 480, SizeToContent = SizeToContent.Height, CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Themed.Brush("OlCard", Brushes.White),
+        };
+        var ok = new Button { Content = "OK", MinWidth = 90, IsDefault = true };
+        var cancel = new Button { Content = "Cancel", MinWidth = 90, IsCancel = true };
+        ok.Click += (_, _) => dialog.Close(box.Text ?? "");
+        cancel.Click += (_, _) => dialog.Close(null);
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(16), Spacing = 10, Children =
+            {
+                new TextBlock { Text = "Keyword (edit it to the word or words to match; commas separate several):", TextWrapping = TextWrapping.Wrap },
+                box,
+                new TextBlock { Text = "The Junk Cleaner removes junk whose From line contains a keyword.", TextWrapping = TextWrapping.Wrap, Opacity = 0.75 },
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { ok, cancel } },
+            }
+        };
+        dialog.Opened += (_, _) => { box.Focus(); box.SelectAll(); };
+        return await dialog.ShowDialog<string?>(this);
+    }
+
     /// <summary>The file path of the keyword list; the file is created (empty) when it does not exist so an editor can open it.</summary>
     private string JunkKeywordsPath()
     {

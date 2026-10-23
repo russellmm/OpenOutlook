@@ -1,4 +1,4 @@
-# Session handoff (updated 2026-10-21; last build 0.1.76)
+# Session handoff (updated 2026-10-22; last build 0.1.77)
 
 > Documentation map (kept in step with the code as of 2026-10-16): `README.md` (overview, build), `docs/FEATURES.md` (every feature per platform), `BUILD_STATUS.md` (state, tests, open items), `PRODUCT_REQUIREMENTS.md` (requirements + conformance table), `DESIGN_SPEC.md` (baseline design; sections 11-18 = design as built). This file is the chronological working log; older material is in `docs/history/`.
 
@@ -410,3 +410,4 @@ Owner: dragging showed a plus sign instead of a move / copy symbol. Cause: Avalo
 
 ## Junk Email: Add Sender to Junk Keywords (2026-10-22)
 Owner: right-click a message in the Hotmail Junk Email folder and add its From words to the junk keyword list. New context-menu item **Add Sender to Junk Keywords...** (under Junk; visible only in a Microsoft Junk Email folder): a box pre-filled with the From name (else the address), editable; OK adds the text to `junk-keywords.json` (commas = several keywords; an existing keyword, any case, is not added twice; under 3 characters refused), Cancel adds nothing; status line and log say what was added. Code `MainWindow.Junk.cs` (`AddSenderToJunkKeywordsAsync`, `AskJunkKeywordAsync`, test seam `JunkKeywordPromptOverride`), menu in `MainWindow.MoveDrag.cs`. Test: headless `Add_sender_to_junk_keywords_shows_only_in_junk_email_and_adds_the_edited_from_name` (+ EDGE_CASES row). No build made (Windows still 0.1.76).
+Windows **0.1.77** published from `84be179` into `F:\Claude\OpenOutlook_win` (+ `openpst.dll`): unit 728 + the 5 known `OfflineMessageCacheTests` failures, headless 75/75. Linux not repackaged.

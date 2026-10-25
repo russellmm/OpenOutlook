@@ -18,15 +18,15 @@ public sealed partial class AccountSettingsWindow
     private Button? _junkSaveKeywords;
     private string _junkKeywordsSaved = "";
     private readonly TextBlock _junkKeywordInfo = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap };
-    private readonly CheckBox _junkHigh = new() { Content = "Also remove junk marked High importance (any sender)" };
-    private readonly CheckBox _junkNoTo = new() { Content = "Also remove junk with no To address" };
-    private readonly CheckBox _junkFlagged = new() { Content = "Also remove junk that is flagged" };
-    private readonly CheckBox _junkBcc = new() { Content = "Also remove junk with anyone in Bcc",
-        [ToolTip.TipProperty] = "Real mail never shows you its Bcc list; junk that names recipients in a Bcc field is a mass mailing. Applies to every sender." };
-    private readonly CheckBox _junkNotToMe = new() { Content = "Also remove junk not addressed to me (my address is not on the To line)",
-        [ToolTip.TipProperty] = "Junk that lists other people, or nobody, on its To line instead of this account's address. Cc and Bcc do not count. " +
-            "Mail sent to another of your addresses (an alias) is not addressed to this account either, so it would be removed." };
-    private readonly CheckBox _junkBehalf = new() { Content = "Also remove junk sent \"on behalf of\" someone else" };
+    // The rules besides the keywords live in the "Other rules..." window (JunkRulesWindow); the tab shows which are on.
+    private readonly TextBlock _junkRulesSummary = new() { FontSize = 13, TextWrapping = TextWrapping.Wrap };
+    private Button? _junkRulesButton;
+    private JunkRuleOptions _junkRules;
+    private IReadOnlyList<string>? _junkBrands;
+
+    /// <summary>Set in tests: answers the "Other rules..." window instead of showing it.</summary>
+    internal Func<JunkRulesWindow, Task>? JunkRulesDialogOverride { get; set; }
+    internal string JunkRulesSummaryText => _junkRulesSummary.Text ?? "";
     private readonly TextBox _junkLog = new() { IsReadOnly = true, AcceptsReturn = true, FontSize = 12, MinHeight = 110, TextWrapping = TextWrapping.NoWrap };
     private bool _junkLoading;
 
@@ -67,21 +67,18 @@ public sealed partial class AccountSettingsWindow
             LoadJunk();
             _note.Text = note;
         };
+        var rulesButton = Tool("Other rules…", "OlIconRemoveJunk", "Choose the rules besides the keywords: sender checks, recipients, subject and message rules");
+        _junkRulesButton = rulesButton;
+        rulesButton.Click += async (_, _) => await EditJunkRulesAsync();
         _junkKeywords.TextChanged += (_, _) => { if (!_junkLoading) saveKeywords.IsEnabled = _junkKeywords.Text != _junkKeywordsSaved; };
         _junkAccount.SelectionChanged += (_, _) => LoadJunk();
         _junkEnabled.IsCheckedChanged += (_, _) => SaveJunk();
         _junkAuto.IsCheckedChanged += (_, _) => SaveJunk();
-        _junkHigh.IsCheckedChanged += (_, _) => SaveJunk();
-        _junkNoTo.IsCheckedChanged += (_, _) => SaveJunk();
-        _junkBehalf.IsCheckedChanged += (_, _) => SaveJunk();
-        _junkFlagged.IsCheckedChanged += (_, _) => SaveJunk();
-        _junkBcc.IsCheckedChanged += (_, _) => SaveJunk();
-        _junkNotToMe.IsCheckedChanged += (_, _) => SaveJunk();
         _junkInterval.ValueChanged += (_, _) => SaveJunk();
         TextBlock Label(string t) => new() { Text = t, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 10, 0, 4), Foreground = Themed.Brush("OlText", Brushes.Black) };
         var intro = new TextBlock
         {
-            Text = "Removes messages from the Junk folder when the sender matches a keyword. Matches are moved to Deleted Items, never deleted for good, at most 500 per run. Microsoft accounts only.",
+            Text = "Removes messages from the Junk folder when the sender matches a keyword or the message matches one of the other rules. Matches are moved to Deleted Items, never deleted for good, at most 500 per run. Microsoft accounts only.",
             TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = gray
         };
         var interval = new StackPanel
@@ -99,7 +96,7 @@ public sealed partial class AccountSettingsWindow
                 _junkEnabled, _junkAuto, interval,
                 Label("Remove junk whose From line contains any of these keywords (separate them with commas)"), _junkKeywordInfo, _junkKeywords,
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { saveKeywords, reload, openFile } },
-                Label("Other rules"), _junkHigh, _junkNoTo, _junkNotToMe, _junkBehalf, _junkFlagged, _junkBcc,
+                Label("Other rules"), _junkRulesSummary, new StackPanel { Orientation = Orientation.Horizontal, Children = { rulesButton } },
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 8, 0, 0), Children = { clean, import } },
                 Label($"What was removed (newest first; the history keeps the latest {JunkCleanerLog.MaxEntries:N0} entries)"), _junkLog
             }
@@ -135,7 +132,7 @@ public sealed partial class AccountSettingsWindow
         try
         {
             var account = SelectedJunkAccount();
-            foreach (var c in new Control[] { _junkEnabled, _junkAuto, _junkInterval, _junkKeywords, _junkHigh, _junkNoTo, _junkNotToMe, _junkBehalf, _junkFlagged, _junkBcc }) c.IsEnabled = account is not null;
+            foreach (var c in new Control[] { _junkEnabled, _junkAuto, _junkInterval, _junkKeywords }) c.IsEnabled = account is not null;
             var s = account is null ? null : _host.JunkSettings(account.AccountId);
             _junkEnabled.IsChecked = s?.Enabled == true;
             _junkAuto.IsChecked = s?.AutoClean == true;
@@ -144,12 +141,10 @@ public sealed partial class AccountSettingsWindow
             _junkKeywords.Text = _junkKeywordsSaved;
             if (_junkSaveKeywords is not null) _junkSaveKeywords.IsEnabled = false;
             _junkKeywordInfo.Text = s is null ? "" : $"{s.Keywords.Count} keyword{(s.Keywords.Count == 1 ? "" : "s")} in {_host.JunkKeywordsPath()}";
-            _junkHigh.IsChecked = s?.Rules.DeleteHighImportance == true;
-            _junkNoTo.IsChecked = s?.Rules.DeleteMissingTo == true;
-            _junkBehalf.IsChecked = s?.Rules.DeleteOnBehalfOf == true;
-            _junkFlagged.IsChecked = s?.Rules.DeleteFlagged == true;
-            _junkBcc.IsChecked = s?.Rules.DeleteWithBcc == true;
-            _junkNotToMe.IsChecked = s?.Rules.DeleteNotToMe == true;
+            if (_junkRulesButton is not null) _junkRulesButton.IsEnabled = account is not null;
+            _junkRules = s?.Rules ?? new JunkRuleOptions();
+            _junkBrands = s?.Brands;
+            _junkRulesSummary.Text = account is null ? "" : JunkRulesWindow.Summary(_junkRules);
         }
         finally { _junkLoading = false; }
         RefreshJunkLog();
@@ -163,8 +158,23 @@ public sealed partial class AccountSettingsWindow
         {
             AccountId = a.AccountId, Enabled = _junkEnabled.IsChecked == true, AutoClean = _junkAuto.IsChecked == true,
             IntervalMinutes = Math.Clamp((int)(_junkInterval.Value ?? 15), 1, 60), Keywords = keywords,
-            Rules = new JunkRuleOptions(_junkHigh.IsChecked == true, _junkNoTo.IsChecked == true, _junkBehalf.IsChecked == true, _junkFlagged.IsChecked == true, _junkBcc.IsChecked == true, _junkNotToMe.IsChecked == true)
+            Rules = _junkRules, Brands = _junkBrands
         });
+    }
+
+    /// <summary>Opens "Other rules..."; OK saves the chosen rules for the selected account at once.</summary>
+    internal async Task EditJunkRulesAsync()
+    {
+        if (SelectedJunkAccount() is not { } a) { _note.Text = "Select an account first."; return; }
+        var window = new JunkRulesWindow(a.DisplayAddress, _junkRules, _junkBrands);
+        if (JunkRulesDialogOverride is { } answer) await answer(window);
+        else await window.ShowDialog(this);
+        if (window.Result is not { } result) return;
+        _junkRules = result.Rules;
+        _junkBrands = result.Brands;
+        SaveJunk();
+        _junkRulesSummary.Text = JunkRulesWindow.Summary(_junkRules);
+        _note.Text = "Junk Cleaner rules saved.";
     }
 
     private void RefreshJunkLog()

@@ -66,7 +66,22 @@ public sealed class JunkCleanerSettingsStore
             ["deleteOnBehalfOf"] = settings.Rules.DeleteOnBehalfOf,
             ["deleteFlagged"] = settings.Rules.DeleteFlagged,
             ["deleteWithBcc"] = settings.Rules.DeleteWithBcc,
-            ["deleteNotToMe"] = settings.Rules.DeleteNotToMe
+            ["deleteNotToMe"] = settings.Rules.DeleteNotToMe,
+            ["deleteUnauthenticated"] = settings.Rules.DeleteUnauthenticated,
+            ["deleteFakeSenderAddress"] = settings.Rules.DeleteFakeSenderAddress,
+            ["deleteImpersonation"] = settings.Rules.DeleteImpersonation,
+            ["deleteHiddenText"] = settings.Rules.DeleteHiddenText,
+            ["deleteInvitations"] = settings.Rules.DeleteInvitations,
+            ["deleteCrowd"] = settings.Rules.DeleteCrowd,
+            ["deleteForeignScript"] = settings.Rules.DeleteForeignScript,
+            ["deleteUsernameInSubject"] = settings.Rules.DeleteUsernameInSubject,
+            ["deleteEmojiSubject"] = settings.Rules.DeleteEmojiSubject,
+            ["deleteBulk"] = settings.Rules.DeleteBulk,
+            ["deleteFreeMail"] = settings.Rules.DeleteFreeMail,
+            ["deleteRandomCode"] = settings.Rules.DeleteRandomCode,
+            ["crowdSize"] = settings.Rules.CrowdSize,
+            ["bulkLevel"] = settings.Rules.BulkLevel,
+            ["brands"] = settings.Brands is { Count: > 0 } b ? NormalizeKeywords(b) : null
         };
         File.WriteAllText(path, JsonSerializer.Serialize(dto, JsonOptions));
     }
@@ -85,8 +100,16 @@ public sealed class JunkCleanerSettingsStore
             AlwaysClean = source.AlwaysClean,
             IntervalMinutes = Math.Clamp(source.IntervalMinutes.GetValueOrDefault(5), 1, 60),
             Rules = new JunkRuleOptions(source.DeleteHighImportance, source.DeleteMissingTo,
-                source.DeleteOnBehalfOf, DeleteWithBcc: source.DeleteWithBcc == true, DeleteNotToMe: source.DeleteNotToMe == true),
-            DeleteFlagged = source.DeleteFlagged
+                source.DeleteOnBehalfOf, DeleteWithBcc: source.DeleteWithBcc == true, DeleteNotToMe: source.DeleteNotToMe == true,
+                DeleteUnauthenticated: source.DeleteUnauthenticated == true, DeleteFakeSenderAddress: source.DeleteFakeSenderAddress == true,
+                DeleteImpersonation: source.DeleteImpersonation == true, DeleteHiddenText: source.DeleteHiddenText == true,
+                DeleteInvitations: source.DeleteInvitations == true, DeleteCrowd: source.DeleteCrowd == true,
+                DeleteForeignScript: source.DeleteForeignScript == true, DeleteUsernameInSubject: source.DeleteUsernameInSubject == true,
+                DeleteEmojiSubject: source.DeleteEmojiSubject == true, DeleteBulk: source.DeleteBulk == true,
+                DeleteFreeMail: source.DeleteFreeMail == true, DeleteRandomCode: source.DeleteRandomCode == true,
+                CrowdSize: Math.Clamp(source.CrowdSize ?? 0, 0, 1000), BulkLevel: Math.Clamp(source.BulkLevel ?? 0, 0, 9)),
+            DeleteFlagged = source.DeleteFlagged,
+            Brands = source.Brands is { Count: > 0 } ? NormalizeKeywords(source.Brands) : null
         };
     }
 

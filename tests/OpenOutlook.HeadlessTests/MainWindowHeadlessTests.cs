@@ -1498,6 +1498,47 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public async Task Other_rules_window_selects_all_keeps_cancel_harmless_and_saves_numbers_and_companies()
+    {
+        var host = new FakeHost();
+        var settings = new AccountSettingsWindow(host, startOnJunk: true);
+        settings.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            settings.JunkRulesDialogOverride = w => { w.SetAll(true); return Task.CompletedTask; };              // ticked, then closed without OK
+            await settings.EditJunkRulesAsync();
+            Assert.Empty(host.JunkSaved);                                                                      // Cancel saves nothing
+            settings.JunkRulesDialogOverride = w =>
+            {
+                Assert.Equal(18, w.Boxes.Count);                                                               // the six old rules plus the twelve new ones
+                Assert.Equal(10, (int)w.Crowd.Value!); Assert.Equal(5, (int)w.Bulk.Value!);
+                Assert.StartsWith("Amazon, Apple", w.Brands.Text);                                             // the built-in company list
+                w.SetAll(true); w.Crowd.Value = 25; w.Bulk.Value = 7;
+                w.Accept(); return Task.CompletedTask;
+            };
+            await settings.EditJunkRulesAsync();
+            var saved = host.JunkSaved.Last();
+            Assert.All(JunkRulesWindow.Rules, r => Assert.True(r.Get(saved.Rules), r.Key));
+            Assert.Equal(25, saved.Rules.CrowdSize); Assert.Equal(7, saved.Rules.BulkLevel);
+            Assert.Null(saved.Brands);                                                                         // the built-in list is stored as "none"
+            Assert.StartsWith("18 of 18 rules on: Sender not verified", settings.JunkRulesSummaryText);
+            settings.JunkRulesDialogOverride = w => { w.Boxes["emoji"].IsChecked = false; w.Brands.Text = "McAfee, Norton,, Acme Bank"; w.Accept(); return Task.CompletedTask; };
+            await settings.EditJunkRulesAsync();
+            saved = host.JunkSaved.Last();
+            Assert.False(saved.Rules.DeleteEmojiSubject); Assert.True(saved.Rules.DeleteUnauthenticated);
+            Assert.Equal(["McAfee", "Norton", "Acme Bank"], saved.Brands);
+            var window = new JunkRulesWindow("me@hotmail.test", saved.Rules, saved.Brands);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("McAfee, Norton, Acme Bank", window.Brands.Text);                                     // reopening shows the saved list
+            Shot(window, "16b-junk-other-rules");
+            window.Close();
+        }
+        finally { settings.Close(); }
+    }
+
+    [AvaloniaFact]
     public void The_junk_cleaner_tab_edits_settings_and_runs_a_clean()
     {
         var host = new FakeHost();
@@ -1519,8 +1560,11 @@ public sealed class MainWindowHeadlessTests
             enable.IsChecked = true;
             Dispatcher.UIThread.RunJobs();
             Assert.True(host.JunkSaved.Last().Enabled);
-            window.GetVisualDescendants().OfType<CheckBox>().First(c => c.Content?.ToString()!.Contains("no To") == true).IsChecked = true;
+            Assert.Equal("No other rules are on (0 of 18).", window.JunkRulesSummaryText);
+            window.JunkRulesDialogOverride = w => { w.Boxes["noto"].IsChecked = true; w.Accept(); return Task.CompletedTask; };
+            window.GetVisualDescendants().OfType<Button>().First(b => Cap(b) == "Other rules…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
+            Assert.Equal("1 of 18 rules on: No To address.", window.JunkRulesSummaryText);
             Assert.Equal(["temu"], host.JunkSaved.Last().Keywords);                              // saving a rule keeps the keywords as they are in the file
             keywords.Text = "temu, Shein ,, free spins" + (char)10 + "temu";
             Dispatcher.UIThread.RunJobs();

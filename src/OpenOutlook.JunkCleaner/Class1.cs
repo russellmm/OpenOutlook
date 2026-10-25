@@ -16,7 +16,26 @@ public readonly record struct JunkRuleOptions(
     bool DeleteOnBehalfOf = false,
     bool DeleteFlagged = false,
     bool DeleteWithBcc = false,
-    bool DeleteNotToMe = false);
+    bool DeleteNotToMe = false,
+    // Header and subject rules from the 2026-10-25 survey of the Hotmail Junk folder (JunkSignals).
+    bool DeleteUnauthenticated = false,
+    bool DeleteFakeSenderAddress = false,
+    bool DeleteImpersonation = false,
+    bool DeleteHiddenText = false,
+    bool DeleteInvitations = false,
+    bool DeleteCrowd = false,
+    bool DeleteForeignScript = false,
+    bool DeleteUsernameInSubject = false,
+    bool DeleteEmojiSubject = false,
+    bool DeleteBulk = false,
+    bool DeleteFreeMail = false,
+    bool DeleteRandomCode = false,
+    int CrowdSize = 0,                 // 0 = JunkSignals.DefaultCrowdSize (a default(JunkRuleOptions) has zeros, not these defaults)
+    int BulkLevel = 0)                 // 0 = JunkSignals.DefaultBulkLevel
+{
+    public int EffectiveCrowdSize => CrowdSize > 0 ? CrowdSize : JunkSignals.DefaultCrowdSize;
+    public int EffectiveBulkLevel => BulkLevel is >= 1 and <= 9 ? BulkLevel : JunkSignals.DefaultBulkLevel;
+}
 
 public static class JunkMatcher
 {

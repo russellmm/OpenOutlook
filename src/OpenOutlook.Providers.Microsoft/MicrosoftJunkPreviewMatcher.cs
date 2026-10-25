@@ -70,7 +70,11 @@ public sealed class MicrosoftJunkPreviewMatcher
             // HasToRecipients is null if the Graph field was absent or malformed. Never infer
             // 'no To' from ToRecipients.Count: the old reader collapsed missing and empty lists.
             var reasons = JunkMatcher.MatchReasons(fields, keywords, importance,
-                message.HasToRecipients, settings.Rules, message.IsFlagged, message.HasBccRecipients, message.ToRecipients, _ownAddress);
+                message.HasToRecipients, settings.Rules, message.IsFlagged, message.HasBccRecipients, message.ToRecipients, _ownAddress).ToList();
+            var headers = (message.InternetMessageHeaders ?? []).Where(h => h is not null).Select(h => new KeyValuePair<string, string>(h.Name, h.Value)).ToList();
+            var recipients = message.HasToRecipients is null ? (int?)null : message.ToRecipients.Count + message.CcRecipients.Count;
+            reasons.AddRange(JunkSignals.Reasons(new JunkMessageFacts(message.Subject, message.From ?? message.Sender, fromHeader, headers, recipients, _ownAddress),
+                settings.Rules, settings.Brands));
             if (reasons.Count != 0)
             {
                 // The portable matcher embeds the matching keyword in its reason; preview

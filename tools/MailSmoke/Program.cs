@@ -480,7 +480,7 @@ if (step == "openeditable")
 // Everything below signs in to the owner's real accounts, and the end of the file SENDS MAIL between them. It runs only for a step named
 // explicitly ("sendtest" for the send / reply / forward test). An unknown or missing step used to fall through to that test: a typo, or an
 // old build that did not have a new step yet, sent real messages (it happened four times on 2026-10-15).
-var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rendergmail", "renderlive", "livegmail", "livepush", "scanlocal", "launchtest", "render", "localfolder", "mirror", "gmailtiming", "openpath", "gmailsync", "timing", "junkscan", "attach", "reportnotjunk" };
+var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rendergmail", "renderlive", "livegmail", "livepush", "scanlocal", "launchtest", "render", "localfolder", "mirror", "gmailtiming", "openpath", "gmailsync", "timing", "junkscan", "junkheaders", "junkrules", "attach", "reportnotjunk" };
 if (!liveSteps.Contains(step))
 {
     Console.Error.WriteLine(step.Length == 0 ? "MailSmoke: name a step." : $"MailSmoke: unknown step '{step}'.");
@@ -862,6 +862,38 @@ if (step == "junkscan" && mAcc is not null)
     var scan = await runner.ScanAsync(cfg);
     Console.WriteLine($"Junk folder: {scan.Scanned} messages, {scan.Matched.Count} would be moved to Deleted Items");
     foreach (var h in scan.Matched.Take(40)) Console.WriteLine($"  {h.Sender}  |  {h.Subject}  [{string.Join(", ", h.Reasons)}]");
+    return 0;
+}
+
+if (step == "junkrules" && mAcc is not null)
+{
+    // dry run: every Junk Cleaner rule on (keywords from junk-keywords.json), Hotmail Junk folder scanned, nothing moved or saved
+    var keywords = new OpenOutlook.JunkCleaner.JunkKeywordFile(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "OpenOutlook")).Load();
+    var allRules = OpenOutlook.Desktop.JunkRulesWindow.Rules.Aggregate(new OpenOutlook.JunkCleaner.JunkRuleOptions(), (o, r) => OpenOutlook.Desktop.JunkRulesWindow.With(o, r.Key, true));
+    var cfg = new OpenOutlook.JunkCleaner.JunkCleanerAccountSettings { AccountId = mAcc.AccountId, Enabled = true, Keywords = keywords, Rules = allRules };
+    var runner = new MicrosoftJunkCleanerRunner(new GraphJunkMailReader(graphHttp, async ct => await mSession!.GetAccessTokenAsync(ct), mAcc.AccountId),
+        new GraphMailWriter(graphHttp, mAcc.AccountId), ct => mSession!.GetAccessTokenAsync(ct), mAcc.AccountId, ownAddress: mAcc.DisplayAddress);
+    var scan = await runner.ScanAsync(cfg);
+    Console.WriteLine($"Junk folder: {scan.Scanned} messages, {scan.Matched.Count} would be moved; {keywords.Count} keywords, all {OpenOutlook.Desktop.JunkRulesWindow.Rules.Count} rules on");
+    foreach (var g in scan.Matched.SelectMany(h => h.Reasons).GroupBy(r => r.StartsWith("Pretends to be") ? "Pretends to be a company" : r.StartsWith("Sent to") ? "Sent to a crowd" : r.StartsWith("Bulk rating") ? "Bulk rating" : r).OrderByDescending(g => g.Count()))
+        Console.WriteLine($"  {g.Count(),3}  {g.Key}");
+    var hitIds = scan.Matched.Select(h => h.MessageId).ToHashSet();
+    var left = (await new GraphJunkMailReader(graphHttp, async ct => await mSession!.GetAccessTokenAsync(ct), mAcc.AccountId).ListJunkMessagesAsync(50, 1000)).Where(m => !hitIds.Contains(m.Id)).ToList();
+    Console.WriteLine($"Not matched ({left.Count}):");
+    foreach (var m in left) Console.WriteLine($"  {m.From}  |  {m.Subject}");
+    return 0;
+}
+
+if (step == "junkheaders" && mAcc is not null)
+{
+    // read-only: saves the Hotmail Junk folder's senders, recipients and internet headers to .local/junk/junk-headers.json for spam-rule analysis
+    var reader = new GraphJunkMailReader(graphHttp, async ct => await mSession!.GetAccessTokenAsync(ct), mAcc.AccountId);
+    var list = await reader.ListJunkMessagesAsync(pageSize: 50, maxMessages: 1000);
+    var dir = Path.Combine(args.Length > 1 ? args[1] : ".local", "junk");
+    Directory.CreateDirectory(dir);
+    var outPath = Path.Combine(dir, "junk-headers.json");
+    File.WriteAllText(outPath, System.Text.Json.JsonSerializer.Serialize(list, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine($"Junk folder: {list.Count} messages written to {Path.GetFullPath(outPath)}");
     return 0;
 }
 

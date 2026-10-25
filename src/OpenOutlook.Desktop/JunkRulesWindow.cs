@@ -75,8 +75,9 @@ public sealed class JunkRulesWindow : Window
     }
 
     private readonly Dictionary<string, CheckBox> _boxes = [];
-    private readonly NumericUpDown _crowd = new() { Minimum = 2, Maximum = 1000, Increment = 1, Width = 110, FormatString = "0" };
-    private readonly NumericUpDown _bulk = new() { Minimum = 1, Maximum = 9, Increment = 1, Width = 90, FormatString = "0" };
+    // Wide enough for the value beside the spinner's two buttons (90 cut the digit off, owner 2026-10-25).
+    private readonly NumericUpDown _crowd = new() { Minimum = 2, Maximum = 1000, Increment = 1, MinWidth = 130, FormatString = "0" };
+    private readonly NumericUpDown _bulk = new() { Minimum = 1, Maximum = 9, Increment = 1, MinWidth = 130, FormatString = "0" };
     private readonly TextBox _brands = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 60, MaxHeight = 140, FontSize = 12 };
     private readonly JunkRuleOptions _start;
 

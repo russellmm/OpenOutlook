@@ -2423,13 +2423,18 @@ public sealed partial class MainWindow : Window
         _htmlRenderCancellation = cancellation;
         try
         {
+            // Building the safe document parses and sanitizes the whole message: off the UI thread, on a copy of the pictures
+            // (the picture loader keeps adding to the live table while this runs).
+            var showOriginal = _showOriginalHtml;
+            var pictures = new Dictionary<string, byte[]>(_inlineImageBytes, StringComparer.Ordinal);
             if (!_preferSnapshotForMessage)
             {
-                var interactive = _showOriginalHtml ? html : SafeHtmlDocument.BuildInteractive(html, _inlineImageBytes);
+                var interactive = showOriginal ? html : await Task.Run(() => SafeHtmlDocument.BuildInteractive(html, pictures), cancellation.Token);
                 if (await TryShowEmbeddedHtmlAsync(interactive, version, cancellation.Token)) return;
             }
             cancellation.Token.ThrowIfCancellationRequested();
-            var document = _showOriginalHtml ? html : SafeHtmlDocument.Build(html, _inlineImageBytes);
+            var document = showOriginal ? html : await Task.Run(() => SafeHtmlDocument.Build(html, pictures), cancellation.Token);
+            if (cancellation.IsCancellationRequested || version != _messageVersion) return;
             var width = (int)Math.Clamp(ReaderPane.Bounds.Width - 36, 400, 1200);
             var rendered = await BrowserHtmlRenderer.RenderDocumentAsync(document, width, cancellation.Token,
                 trustedOriginal: _showOriginalHtml);

@@ -177,8 +177,16 @@ public static partial class SafeHtmlDocument
 
     public static string Build(string html, IReadOnlyDictionary<string, byte[]> images)
     {
+        var (document, cssPictures) = BuildWithCssMarkers(html, images);
+        return cssPictures.Fill(document);
+    }
+
+    /// <summary>The safe document with every CSS picture still a short placeholder (see <see cref="CssPictureMarkers"/>); Fill puts the data in.</summary>
+    private static (string Document, CssPictureMarkers CssPictures) BuildWithCssMarkers(string html, IReadOnlyDictionary<string, byte[]> images)
+    {
         ArgumentNullException.ThrowIfNull(images);
         var document = Parse(html);
+        var cssPictures = new CssPictureMarkers(images);
         var approvedImageData = new Dictionary<string, (string Source, string? OriginalTitle)>(StringComparer.Ordinal);
         var approvedLinks = new Dictionary<string, string>(StringComparer.Ordinal);
         var imageMarkerPrefix = "openoutlook-image-" + Guid.NewGuid().ToString("N") + "-";
@@ -220,17 +228,17 @@ public static partial class SafeHtmlDocument
             // passed through ReplaceCssUrls as well, its "data:" prefix would be keyed a second time,
             // never match the loaded-image table, and every background= attribute would render as none.
             if (element.HasAttribute("style"))
-                element.SetAttribute("style", ReplaceCssUrls(element.GetAttribute("style") ?? "", images));
+                element.SetAttribute("style", ReplaceCssUrls(element.GetAttribute("style") ?? "", cssPictures));
             if (element.HasAttribute("background"))
             {
-                var source = DataUri(element.GetAttribute("background"), images);
+                var source = cssPictures.Marker(element.GetAttribute("background"));
                 element.RemoveAttribute("background");
                 if (source is not null)
                     element.SetAttribute("style", (element.GetAttribute("style") ?? "") +
                         ";background-image:url('" + source + "')");
             }
             if (element.LocalName == "style")
-                element.TextContent = ReplaceCssUrls(element.TextContent, images);
+                element.TextContent = ReplaceCssUrls(element.TextContent, cssPictures);
         }
 
         var sanitizer = CreateSanitizer();
@@ -267,7 +275,7 @@ public static partial class SafeHtmlDocument
         viewport.SetAttribute("content", "width=device-width, initial-scale=1");
         safe.Head.Append(viewport);
         // Browser requests are also intercepted and aborted. CSP is a second independent barrier.
-        return "<!doctype html>" + safe.DocumentElement.OuterHtml;
+        return ("<!doctype html>" + safe.DocumentElement.OuterHtml, cssPictures);
     }
 
     public static bool TryLink(string? value, out string url)
@@ -286,11 +294,12 @@ public static partial class SafeHtmlDocument
     /// <summary>For a native dialog that cancels navigation and opens approved links externally.</summary>
     public static string BuildInteractive(string html, IReadOnlyDictionary<string, byte[]> images)
     {
-        var safe = new HtmlParser().ParseDocument(Build(html, images));
+        var (document, cssPictures) = BuildWithCssMarkers(html, images);
+        var safe = new HtmlParser().ParseDocument(document);
         foreach (var anchor in safe.QuerySelectorAll("a[data-openoutlook-url]"))
             if (TryLink(anchor.GetAttribute("data-openoutlook-url"), out var url))
                 anchor.SetAttribute("href", url);
-        return "<!doctype html>" + safe.DocumentElement.OuterHtml;
+        return cssPictures.Fill("<!doctype html>" + safe.DocumentElement.OuterHtml);
     }
 
     public static bool TrySource(string? value, out HtmlImageSource source)
@@ -337,6 +346,57 @@ public static partial class SafeHtmlDocument
         { return null; }
     }
 
+    /// <summary>
+    /// CSS pictures go through the sanitizer as short placeholders and get their data only afterwards, like the img markers in
+    /// Build. The sanitizer parses every style sheet and style attribute; with the base64 of the pictures inside, a United Cruises
+    /// mailing (17 content:url() banner rules, two of them 1.5 MB PNGs, all dropped anyway as content is not allowed) took 7.6 s
+    /// per build on the UI thread, and the reader builds twice per message. The placeholder is a valid data URI, so the sanitizer
+    /// treats it exactly as it would the real one; its random part cannot be guessed by the message.
+    /// </summary>
+    private sealed class CssPictureMarkers(IReadOnlyDictionary<string, byte[]> images)
+    {
+        private readonly string _prefix = "data:image/png;base64,OOcss" + Guid.NewGuid().ToString("N") + "z";
+        private readonly List<string> _data = [];
+        private readonly Dictionary<string, int> _byKey = new(StringComparer.Ordinal);
+
+        public string? Marker(string? source)
+        {
+            if (!TrySource(source, out var parsed)) return null;
+            if (!_byKey.TryGetValue(parsed.Key, out var index))
+            {
+                if (DataUri(source, images) is not { } data) return null;
+                _data.Add(data);
+                index = _byKey[parsed.Key] = _data.Count - 1;
+            }
+            return _prefix + index.ToString(System.Globalization.CultureInfo.InvariantCulture) + "z";
+        }
+
+        public string Fill(string document)
+        {
+            if (_data.Count == 0) return document;
+            var builder = new System.Text.StringBuilder(document.Length);
+            var at = 0;
+            for (var found = document.IndexOf(_prefix, StringComparison.Ordinal); found >= 0;
+                found = document.IndexOf(_prefix, at, StringComparison.Ordinal))
+            {
+                var digits = found + _prefix.Length;
+                var end = digits;
+                while (end < document.Length && char.IsAsciiDigit(document[end])) end++;
+                if (end == digits || end >= document.Length || document[end] != 'z' ||
+                    !int.TryParse(document.AsSpan(digits, end - digits), System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out var index) || index >= _data.Count)
+                {
+                    builder.Append(document, at, digits - at);
+                    at = digits;
+                    continue;
+                }
+                builder.Append(document, at, found - at).Append(_data[index]);
+                at = end + 1;
+            }
+            return builder.Append(document, at, document.Length - at).ToString();
+        }
+    }
+
     private static string? DataUri(string? source, IReadOnlyDictionary<string, byte[]> images)
     {
         if (!TrySource(source, out var parsed) || !images.TryGetValue(parsed.Key, out var bytes)) return null;
@@ -346,8 +406,8 @@ public static partial class SafeHtmlDocument
         return "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
     }
 
-    private static string ReplaceCssUrls(string css, IReadOnlyDictionary<string, byte[]> images) =>
-        CssUrl().Replace(css, match => DataUri(match.Groups[2].Value, images) is { } data
+    private static string ReplaceCssUrls(string css, CssPictureMarkers pictures) =>
+        CssUrl().Replace(css, match => pictures.Marker(match.Groups[2].Value) is { } data
             ? "url('" + data + "')" : "none");
 
     private static AngleSharp.Html.Dom.IHtmlDocument Parse(string html)

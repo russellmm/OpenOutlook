@@ -245,6 +245,44 @@ public sealed class SafeHtmlDocumentTests
     }
 
     [Fact]
+    public void CssPicturesGetTheirDataAfterSanitizing()
+    {
+        // A United Cruises mailing swaps banners with ~17 content:url() rules; with the pictures' base64 in the style sheet the
+        // sanitizer took 7.6 s. The pictures now pass the sanitizer as placeholders and get their data afterwards.
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=");
+        var data = "data:image/png;base64," + Convert.ToBase64String(png);
+        var banners = string.Concat(Enumerable.Range(1, 17).Select(i => $"#b{i} {{ content:url(\"cid:banner\"); }}\n"));
+        var html = "<html><head><style>" + banners + ".hero { background-image:url('cid:banner'); }</style></head><body>" +
+            "<div class=\"hero\">Hero</div><table><tr><td style=\"background:url(cid:banner)\">Cell</td></tr></table>" +
+            "<table id=\"missing\" background=\"cid:missing\"><tr><td>None</td></tr></table></body></html>";
+        var images = new Dictionary<string, byte[]> { ["cid:banner"] = png };
+
+        foreach (var safe in new[] { SafeHtmlDocument.Build(html, images), SafeHtmlDocument.BuildInteractive(html, images) })
+        {
+            Assert.DoesNotContain("OOcss", safe);
+            Assert.DoesNotContain("content:", safe.Replace(" ", ""));                 // content is not an allowed property
+            var document = new HtmlParser().ParseDocument(safe);
+            Assert.Contains(data, string.Concat(document.QuerySelectorAll("style").Select(style => style.TextContent)).Replace(" ", ""));
+            Assert.Contains(data, document.QuerySelector("td[style]")!.GetAttribute("style")!.Replace(" ", ""));
+            Assert.Null(document.QuerySelector("#missing")!.GetAttribute("background"));
+        }
+    }
+
+    [Fact]
+    public void MessageCannotForgeACssPicturePlaceholder()
+    {
+        // The placeholder's random part is new for every build, so text the message writes that looks like one stays as it is.
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=");
+        var forged = "data:image/png;base64,OOcss00000000000000000000000000000000z0z";
+        var html = $"<div style=\"background-image:url('{forged}')\">x</div><p style=\"background:url(cid:a)\">y</p>";
+        var safe = SafeHtmlDocument.Build(html, new Dictionary<string, byte[]> { ["cid:a"] = png });
+        Assert.DoesNotContain("OOcss", safe);                                  // an unapproved data URI is not a loaded picture: none
+        Assert.Contains(Convert.ToBase64String(png), safe);
+    }
+
+    [Fact]
     public void Failed_remote_image_has_visible_fallback_without_request_url()
     {
         var interactive = SafeHtmlDocument.BuildInteractive(

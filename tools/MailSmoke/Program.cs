@@ -333,7 +333,7 @@ if (step == "compare")
 {
     // renders one message the way the reader does (sanitized + loaded pictures) and as the original HTML, side by side PNGs: MailSmoke compare <copy of a pst> <subject part> <out dir> [width]
     using var e = OpenOutlook.PstNative.PstEngineFactory.Open(Path.GetFullPath(args[1]));
-    var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase));
+    var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase) || m.From.Contains(args[2], StringComparison.OrdinalIgnoreCase));
     if (hit is null) { Console.WriteLine("no such message"); return 1; }
     var html = e.OpenMessage(hit).BodyHtml;
     var outDir = Directory.CreateDirectory(args[3]).FullName;
@@ -397,12 +397,12 @@ if (step == "imgprobe")
 {
     // finds a message by subject in a (copy of a) PST, writes its HTML next to the file and tries every <img> the way the reader does: MailSmoke imgprobe <file> <subject part>
     using var e = OpenOutlook.PstNative.PstEngineFactory.Open(Path.GetFullPath(args[1]));
-    var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase));
+    var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase) || m.From.Contains(args[2], StringComparison.OrdinalIgnoreCase));
     if (hit is null) { Console.WriteLine("no such message"); return 1; }
     var msg = e.OpenMessage(hit);
     var html = msg.BodyHtml;
     File.WriteAllText(Path.ChangeExtension(args[1], ".html"), html);
-    Console.WriteLine($"{hit.Subject} | html {html.Length} chars | attachments {msg.Attachments.Count}");
+    Console.WriteLine($"{hit.From}: {hit.Subject} | html {html.Length} chars"); foreach (var a in msg.Attachments) Console.WriteLine($"  attachment {a.FileName} {a.MimeTag} {a.Size} bytes method {a.Method} cid {a.ContentId}");
     var urls = SafeHtmlDocument.FindImages(html).Where(x => x.ContactsExternalSite).Select(x => x.Value).ToList();     // exactly what the reader loads (img, background=, CSS url())
     var bg = System.Text.RegularExpressions.Regex.Matches(html, "(?:background(?:-image)?\\s*:[^;\"]*url\\(|background\\s*=\\s*[\"'])\\s*['\"]?([^'\")]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count;
     Console.WriteLine($"{urls.Count} img sources, {bg} CSS/attribute background images");
@@ -430,6 +430,36 @@ if (step == "imgprobe")
     return 0;
 }
 
+if (step == "readerprobe")
+{
+    // Offline apart from fetching the pictures. Times every stage the snapshot reader runs for one message: readerprobe <copy of a pst> <subject or sender part>
+    using var e = OpenOutlook.PstNative.PstEngineFactory.Open(Path.GetFullPath(args[1]));
+    var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase) || m.From.Contains(args[2], StringComparison.OrdinalIgnoreCase));
+    if (hit is null) { Console.WriteLine("no such message"); return 1; }
+    var html = e.OpenMessage(hit).BodyHtml;
+    var w = System.Diagnostics.Stopwatch.StartNew();
+    var runs = SafeHtmlPreview.Parse(html);
+    Console.WriteLine($"parse {w.ElapsedMilliseconds} ms ({runs.Count} runs)"); w.Restart();
+    var sources = SafeHtmlDocument.FindImages(html);
+    Console.WriteLine($"find images {w.ElapsedMilliseconds} ms ({sources.Count})"); w.Restart();
+    var bytes = new Dictionary<string, byte[]>();
+    using var client = OpenOutlook.Desktop.SafeRemoteImageLoader.CreateClient();
+    foreach (var s in sources.Where(s => s.ContactsExternalSite))
+        try { bytes[s.Key] = await OpenOutlook.Desktop.SafeRemoteImageLoader.FetchAsync(s.Value, client); } catch (Exception) { }
+    Console.WriteLine($"fetch {w.ElapsedMilliseconds} ms ({bytes.Count} pictures, {bytes.Values.Sum(b => b.Length):N0} bytes)"); w.Restart();
+    foreach (var (pass, pics) in new[] { ("no pictures", new Dictionary<string, byte[]>()), ("all pictures", bytes) })
+    {
+        w.Restart();
+        var doc = SafeHtmlDocument.Build(html, pics);
+        Console.WriteLine($"[{pass}] build {w.ElapsedMilliseconds} ms ({doc.Length:N0} chars)"); w.Restart();
+        var r = await BrowserHtmlRenderer.RenderDocumentAsync(doc, 800, CancellationToken.None, trustedOriginal: false);
+        Console.WriteLine($"[{pass}] render {w.ElapsedMilliseconds} ms, {r.Pages.Count} tiles ({r.Pages.Sum(p => p.Length):N0} PNG bytes), {r.Text.Count} runs, {r.Links.Count} links"); w.Restart();
+        var text = new SnapshotText(r.Text);
+        Console.WriteLine($"[{pass}] snapshot text {w.ElapsedMilliseconds} ms ({text.Text.Length} chars)");
+        for (var i = 0; i < r.Pages.Count; i++) File.WriteAllBytes(Path.ChangeExtension(args[1], $".{pass.Replace(' ', '_')}.{i}.png"), r.Pages[i]);
+    }
+    return 0;
+}
 if (step == "selprobe")
 {
     // Offline. Times the snapshot reader's character measurement on real mail: selprobe <copy of a pst> <subject text> [more subjects...]
@@ -484,7 +514,7 @@ var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rende
 if (!liveSteps.Contains(step))
 {
     Console.Error.WriteLine(step.Length == 0 ? "MailSmoke: name a step." : $"MailSmoke: unknown step '{step}'.");
-    Console.Error.WriteLine("Offline steps: mkbigrecips, mkmulti, mkmany, touchall, wvprobe, editorprobe, compare, imgsurvey, imgprobe, openeditable, selprobe, colorprobe.");
+    Console.Error.WriteLine("Offline steps: mkbigrecips, mkmulti, mkmany, touchall, wvprobe, editorprobe, compare, imgsurvey, imgprobe, readerprobe, openeditable, selprobe, colorprobe.");
     Console.Error.WriteLine("Live steps (use the real accounts): " + string.Join(", ", liveSteps.Order()) + ". 'sendtest' sends real mail.");
     return 2;
 }
@@ -726,7 +756,7 @@ if (step == "render")
     {
         // render <copy of a pst> <subject text>: the first message whose subject contains the text
         using var e = OpenOutlook.PstNative.PstEngineFactory.Open(args[1]);
-        var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase));
+        var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase) || m.From.Contains(args[2], StringComparison.OrdinalIgnoreCase));
         if (hit is null) { Console.WriteLine("no such message"); return 1; }
         var msg = e.OpenMessage(hit);
         Console.WriteLine($"message: {hit.Subject}; html {msg.BodyHtml?.Length}, text {msg.BodyText?.Length}");

@@ -109,6 +109,7 @@ public sealed partial class MainWindow : Window
         _shortcuts = _shortcutStore.Load();
         _options = _optionsStore.Load();   // Trust Center and other options apply from startup, not only after the dialog is opened
         ApplyAppearance();
+        CaptureDefaultColumns();                                  // for Change View > Default View, before the saved layout changes them
         var layout = _viewLayoutStore.Load();
         ApplyViewLayout(layout);
         if (WslTarget() is { } early) Position = early;          // asked for before the window is shown, so WSLg opens it there

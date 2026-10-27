@@ -7,7 +7,7 @@
   Ribbon groups that have no implementation behind them are present but report themselves as planned when
   clicked — the layout is meant to be the real one now, with functionality arriving into it.
 -->
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="OpenOutlook.Desktop.MainWindow" Title="OpenOutlook" Icon="/Assets/openoutlook.png" Width="1380" Height="850" MinWidth="900" MinHeight="560" Background="{DynamicResource OlChrome}" FontFamily="Inter, Segoe UI">
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:OpenOutlook.Desktop" x:Class="OpenOutlook.Desktop.MainWindow" Title="OpenOutlook" Icon="/Assets/openoutlook.png" Width="1380" Height="850" MinWidth="900" MinHeight="560" Background="{DynamicResource OlChrome}" FontFamily="Inter, Segoe UI">
   <Grid RowDefinitions="Auto,*">
 
     <!-- Title strip: quick commands left, search centred, account right -->
@@ -350,8 +350,13 @@
                       <Button Classes="olLarge" Click="ShortcutsClicked" ToolTip.Tip="Assign keyboard shortcuts for mail actions">
                         <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconKeyboard}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Shortcuts" /></StackPanel>
                       </Button>
-                      <Button Classes="olLarge" Tag="Change View" Click="RibbonPlaceholderClicked" ToolTip.Tip="Planned feature">
+                      <Button Name="ChangeViewButton" Classes="olLarge" ToolTip.Tip="Change the view of the mail folders">
                         <StackPanel><Viewbox Width="28" Height="28" HorizontalAlignment="Center"><ContentControl Template="{StaticResource OlIconReadingPane}" Width="32" Height="32" /></Viewbox><TextBlock Classes="olCaption" Text="Change View" /></StackPanel>
+                        <Button.Flyout>
+                          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                            <MenuItem Name="DefaultViewMenuItem" Header="Default View" Click="DefaultViewClicked" ToolTip.Tip="Put the panes and message list columns back as they were installed" />
+                          </MenuFlyout>
+                        </Button.Flyout>
                       </Button>
                     </StackPanel>
                     
@@ -415,7 +420,7 @@
               <TreeView Name="FolderTree" Classes="olFolders" SelectionChanged="FolderSelected" Margin="0,4,0,0" />
             </DockPanel>
 
-            <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" Width="5" />
+            <local:PaneSplitter Grid.Column="1" />
 
             <!-- Message list -->
             <DockPanel Grid.Column="2" ClipToBounds="True">
@@ -484,7 +489,7 @@
               </DataGrid>
             </DockPanel>
 
-            <GridSplitter Grid.Column="3" Background="Transparent" ResizeDirection="Columns" Width="5" />
+            <local:PaneSplitter Grid.Column="3" />
 
             <!-- Reading pane -->
             <Grid Name="ReaderPane" Grid.Column="4" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">

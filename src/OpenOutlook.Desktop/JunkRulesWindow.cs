@@ -88,10 +88,10 @@ public sealed class JunkRulesWindow : Window
     internal NumericUpDown Bulk => _bulk;
     internal TextBox Brands => _brands;
 
-    public JunkRulesWindow(string address, JunkRuleOptions rules, IReadOnlyList<string>? brands)
+    public JunkRulesWindow(string address, JunkRuleOptions rules, IReadOnlyList<string>? brands, string? title = null)
     {
         _start = rules;
-        Title = "Other rules - " + address;
+        Title = (title ?? "Other rules") + " - " + address;
         Width = 680; Height = 720; MinWidth = 520; MinHeight = 480;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Themed.Brush("OlCard", Brushes.White);

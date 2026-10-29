@@ -15,6 +15,8 @@ public sealed class PaneSplitterHeadlessTests
     private static (MainWindow Window, Grid Grid) Open()
     {
         var window = new MainWindow { Width = 1400, Height = 800 };
+        // On Windows the reader's WebView2 cannot attach to the headless host (RPC_E_CHANGED_MODE); Linux already removes it without WebKitGTK.
+        if (window.FindControl<Control>("MainHtmlWebView") is { Parent: Panel parent } webView) parent.Children.Remove(webView);
         window.Show();
         Dispatcher.UIThread.RunJobs();
         return (window, window.FindControl<Grid>("PaneGrid")!);

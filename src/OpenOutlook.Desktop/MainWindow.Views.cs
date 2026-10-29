@@ -14,7 +14,7 @@ public partial class MainWindow
 
     /// <summary>Takes the message list's columns as the window defines them, before a saved layout changes them.</summary>
     private void CaptureDefaultColumns() =>
-        _defaultColumns = MessageList.Columns.Select((column, index) => new MessageColumnLayout(index, column.DisplayIndex,
+        _defaultColumns = MessageList.Columns.Take(ColumnNames.Length).Select((column, index) => new MessageColumnLayout(index, column.DisplayIndex,
             column.Width.UnitType is DataGridLengthUnitType.Pixel or DataGridLengthUnitType.Star ? column.Width.Value : column.ActualWidth,
             column.Width.UnitType == DataGridLengthUnitType.Star, column.IsVisible)).ToArray();
 
@@ -36,6 +36,7 @@ public partial class MainWindow
                 target.Width = new DataGridLength(column.Width,
                     column.IsStar ? DataGridLengthUnitType.Star : DataGridLengthUnitType.Pixel);
             }
+        if (SpamColumn.IsVisible) SpamColumn.DisplayIndex = 0;
         ScheduleLayoutSave();
         StatusText.Text = "The view is back to the default layout.";
         AppLog.Note("view", "Change View > Default View: pane widths and message list columns reset");

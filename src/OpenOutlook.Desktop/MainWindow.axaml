@@ -431,6 +431,21 @@
                 <Button Grid.Column="3" Name="ArrangeByButton" Classes="olChip" Content="By date ▾" VerticalAlignment="Center" Click="ArrangeByClicked" ToolTip.Tip="Arrange the list by a field" />
               </Grid>
               <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource OlHairline}" />
+              <!-- Inbox spam check bar (MainWindow.SpamCheck.cs): acts on the messages ticked in the list's first column -->
+              <Border DockPanel.Dock="Top" Name="SpamBar" IsVisible="False" Background="{DynamicResource OlGroupBand}" Padding="10,5"
+                      BorderBrush="{DynamicResource OlHairline}" BorderThickness="0,0,0,1">
+                <DockPanel>
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0">
+                    <Button Name="SpamBlockButton" Classes="olChip" Content="Block Sender and Delete" Click="SpamBlockClicked"
+                            ToolTip.Tip="Add the senders of the ticked messages to Blocked Senders and move the messages to Deleted Items" />
+                    <Button Name="SpamDeleteButton" Classes="olChip" Content="Delete" Click="SpamDeleteClicked"
+                            ToolTip.Tip="Move the ticked messages to Deleted Items" />
+                    <Button Name="SpamMoreButton" Classes="olChip" Content="···" Click="SpamMoreClicked"
+                            ToolTip.Tip="Check again, choose the rules, or turn the spam check off" />
+                  </StackPanel>
+                  <TextBlock Name="SpamBarText" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource OlText}" />
+                </DockPanel>
+              </Border>
               <DataGrid Name="MessageList" Classes="olList" SelectionMode="Extended" SelectionChanged="MessageSelected" Sorting="MessageListSorting"
                         LoadingRowGroup="MessageListLoadingRowGroup" AutoGenerateColumns="False"
                         IsReadOnly="True" CanUserSortColumns="True" CanUserReorderColumns="True"
@@ -482,6 +497,18 @@
                     <DataGridTemplateColumn.CellTemplate>
                       <DataTemplate>
                         <Viewbox Width="14" Height="14" HorizontalAlignment="Center" IsVisible="{Binding IsFlagged}"><ContentControl Template="{StaticResource OlIconFlag}" Width="32" Height="32" /></Viewbox>
+                      </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
+                  <!-- Inbox spam check (MainWindow.SpamCheck.cs): shown only in a Microsoft Inbox, always first; not part of view-layout.json -->
+                  <DataGridTemplateColumn Width="30" IsVisible="False" CanUserSort="False" CanUserReorder="False">
+                    <DataGridTemplateColumn.Header>
+                      <Viewbox Width="14" Height="14" ToolTip.Tip="Suspected spam: ticked messages are removed by Block Sender and Delete or Delete in the bar above"><ContentControl Template="{StaticResource OlIconJunk}" Width="32" Height="32" /></Viewbox>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                      <DataTemplate>
+                        <CheckBox Name="SpamTickBox" IsVisible="{Binding IsSpamSuspect}" IsChecked="{Binding IsSpamTicked, Mode=TwoWay}" ToolTip.Tip="{Binding SpamTip}"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="0" MinHeight="0" Padding="0" Click="SpamTickClicked" />
                       </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                   </DataGridTemplateColumn>

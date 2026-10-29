@@ -38,5 +38,32 @@ public sealed class GraphMessageListRow(GraphInboxMessage message) : INotifyProp
     public string FlagName => IsFlagged ? "Flagged" : "No flag";
     public string AttachmentName => HasAttachment ? "With attachments" : "No attachments";
     public int? SizeBytes => Message.SizeBytes;
+
+    /// <summary>Why the Inbox spam check suspects this message (MainWindow.SpamCheck.cs); null = not suspected.</summary>
+    public IReadOnlyList<string>? SpamReasons { get; private set; }
+    public bool IsSpamSuspect => SpamReasons is { Count: > 0 };
+    public string SpamTip => IsSpamSuspect ? "Suspected spam: " + string.Join(", ", SpamReasons!) + ". Untick if it is not spam." : "";
+    private bool _spamTicked;
+
+    /// <summary>The first column's check box: ticked = included in Block Sender and Delete / Delete.</summary>
+    public bool IsSpamTicked
+    {
+        get => _spamTicked;
+        set
+        {
+            if (_spamTicked == value) return;
+            _spamTicked = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSpamTicked)));
+        }
+    }
+
+    internal void SetSpam(IReadOnlyList<string>? reasons, bool ticked)
+    {
+        if (ReferenceEquals(SpamReasons, reasons) && _spamTicked == ticked) return;
+        SpamReasons = reasons is { Count: > 0 } ? reasons : null;
+        IsSpamTicked = IsSpamSuspect && ticked;
+        foreach (var name in new[] { nameof(SpamReasons), nameof(IsSpamSuspect), nameof(SpamTip) })
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
     public string SizeDisplay => SizeBytes is null ? "" : $"{(SizeBytes.Value + 1023L) / 1024:N0} KB";
 }

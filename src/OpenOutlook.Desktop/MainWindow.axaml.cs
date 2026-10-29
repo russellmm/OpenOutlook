@@ -650,6 +650,7 @@ public sealed partial class MainWindow : Window
         _activeGmailFolder = null;
         _currentGraphMessages = null;
         _graphRows = null;
+        HideSpamBar();
         ExportFolderButton.IsEnabled = false;
         if (FolderTree.SelectedItem is TreeViewItem { Tag: GmailFolderSelection gmail })
         {
@@ -731,6 +732,7 @@ public sealed partial class MainWindow : Window
         _gmailBoxes.Clear();
         _currentGraphMessages = null;
         _graphRows = null;
+        HideSpamBar();
         Interlocked.Increment(ref _messageVersion);
         MessageList.ItemsSource = null; RefreshItemCount();
         ClearReader();
@@ -965,6 +967,7 @@ public sealed partial class MainWindow : Window
         finally { _updatingMessageList = false; }
         TrackReadingPaneItem(); // leaving the previous folder's open item closes it out for read-tracking
         UpdateArrangeChip();
+        UpdateSpamMarks();
     }
 
     private void ReconcileGraphMessages(IReadOnlyList<GraphInboxMessage> messages)
@@ -996,6 +999,7 @@ public sealed partial class MainWindow : Window
             if (_activeGraphMessage?.Id == messages[index].Id)
                 _activeGraphMessage = messages[index];
         }
+        UpdateSpamMarks();
     }
 
     private async void PreviewJunkImportClicked(object? sender, RoutedEventArgs e)
@@ -1104,6 +1108,7 @@ public sealed partial class MainWindow : Window
         finally { _updatingMessageList = false; }
         TrackReadingPaneItem(); // leaving the previous folder's open item closes it out for read-tracking
         UpdateArrangeChip();
+        UpdateSpamMarks();
     }
 
     private void GroupByDateChanged(object? sender, RoutedEventArgs e)
@@ -1834,7 +1839,7 @@ public sealed partial class MainWindow : Window
         foreach (var column in settings.Columns.OrderBy(column => column.DisplayIndex))
         {
             var target = MessageList.Columns[column.ColumnIndex];
-            if (settings.Columns.Count == MessageList.Columns.Count) target.IsVisible = column.Visible;
+            if (settings.Columns.Count == ColumnNames.Length) target.IsVisible = column.Visible;
             target.DisplayIndex = column.DisplayIndex;
             target.Width = new DataGridLength(column.Width,
                 column.IsStar ? DataGridLengthUnitType.Star : DataGridLengthUnitType.Pixel);
@@ -1913,12 +1918,15 @@ public sealed partial class MainWindow : Window
         var reader = PaneGrid.ColumnDefinitions[4].ActualWidth;
         var total = folder + messages + reader;
         if (total <= 0 || _portraitReading) return;   // the collapsed portrait-reading widths are temporary
-        var columns = MessageList.Columns.Select((column, index) =>
+        // The spam check column (after ColumnNames) is not saved; the others' order is saved without it.
+        var saved = MessageList.Columns.Take(ColumnNames.Length).ToList();
+        var order = saved.OrderBy(column => column.DisplayIndex).ToList();
+        var columns = saved.Select((column, index) =>
         {
             var isStar = column.Width.UnitType == DataGridLengthUnitType.Star;
             var width = column.Width.UnitType is DataGridLengthUnitType.Pixel or DataGridLengthUnitType.Star
                 ? column.Width.Value : column.ActualWidth;
-            return new MessageColumnLayout(index, column.DisplayIndex, width, isStar, column.IsVisible);
+            return new MessageColumnLayout(index, order.IndexOf(column), width, isStar, column.IsVisible);
         }).ToArray();
         var settings = new ViewLayoutSettings
         {

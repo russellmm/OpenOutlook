@@ -130,7 +130,7 @@ public sealed partial class MainWindow
         var clean = new MenuItem { Header = "_Clean Junk Folder...", Tag = "clean", Icon = MenuIcon("OlIconRemoveJunk") };
         ToolTip.SetTip(clean, "Remove messages that match your Junk Cleaner keywords and rules from the Junk Email folder (a preview first)");
         clean.Click += (s, a) => CleanJunkNowClicked(s, a);
-        foreach (var x in new Control[] { block, never, domain, group, new Separator(), notJunk, options, new Separator(), phishing, clean }) junk.Items.Add(x);
+        foreach (var x in new Control[] { block, never, domain, group, new Separator(), notJunk, options, new Separator(), phishing, clean, new Separator() }.Concat(SpamCheckMenuItems())) junk.Items.Add(x);
         junk.SubmenuOpened += (_, _) =>
         {
             var microsoft = _activeMicrosoftFolder is not null && MessageList.SelectedItems.OfType<GraphMessageListRow>().Any();
@@ -177,7 +177,7 @@ public sealed partial class MainWindow
                 item.IsEnabled = item.Tag switch
                 {
                     "notJunk" => microsoft && InJunkEmailFolder,
-                    "options" or "clean" => _activeMicrosoftFolder is not null || JunkListAccounts().Count > 0,
+                    "options" or "clean" or "spamCheck" or "spamRules" => _activeMicrosoftFolder is not null || JunkListAccounts().Count > 0,
                     "phishing" => false,
                     null => true,
                     _ => microsoft,

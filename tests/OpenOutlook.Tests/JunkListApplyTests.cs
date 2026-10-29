@@ -78,6 +78,53 @@ public sealed class JunkListApplyTests
     }
 
     [Fact]
+    public async Task The_inbox_spam_check_marks_rule_and_blocked_matches_skips_safe_mail_and_moves_nothing()
+    {
+        var (runner, moves) = Make(junk: [],
+            inbox: [Message("i1", "promo@temu.example"), Message("i2", "deal@spam.example"), Message("i3", "promo@amazon.com"), Message("i4", "a@b.example"),
+                    Message("i5", "promo@spam.example")]);
+        // the Junk Cleaner's own opt-in is off: the Inbox check has its own switch
+        var settings = new JunkCleanerAccountSettings { AccountId = "acct", Enabled = false, Keywords = ["promo"] };
+        var result = await runner.ScanInboxAsync(settings, 200, default, Lists);
+        Assert.Equal(["i1", "i5", "i2"], result.Matched.Select(m => m.MessageId));
+        Assert.Equal(["From keyword"], result.Matched[0].Reasons);
+        Assert.Equal(["Blocked sender", "From keyword"], result.Matched[1].Reasons);
+        Assert.Equal(["Blocked sender"], result.Matched[2].Reasons);
+        Assert.Equal("deal@spam.example", result.Matched[2].Sender);
+        Assert.Equal(["i1", "i2", "i3", "i4", "i5"], result.ScannedIds);           // the safe one (i3) was looked at too
+        Assert.Empty(moves);
+    }
+
+    [Fact]
+    public void The_inbox_spam_check_remembers_unticked_messages_and_keeps_its_own_rules()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "oo-spam-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new InboxSpamCheckStore(dir);
+            var fresh = store.For("acct");
+            Assert.True(fresh.Enabled);
+            Assert.True(fresh.Rules.DeleteUnauthenticated);
+            Assert.False(fresh.Rules.DeleteFlagged);                                // Junk-folder rules such as Flagged stay off for the Inbox
+            var account = InboxSpamCheckStore.WithNotSpam(fresh, "m1", true);
+            account = InboxSpamCheckStore.WithNotSpam(account, "m2", true);
+            account = InboxSpamCheckStore.WithNotSpam(account, "m1", false);         // ticked again
+            store.Save(account with { Rules = new JunkRuleOptions(DeleteEmojiSubject: true) });
+            store.Save(new InboxSpamCheckAccount { AccountId = "other", Enabled = false });
+            var back = new InboxSpamCheckStore(dir).For("acct");
+            Assert.Equal(["m2"], back.NotSpam);
+            Assert.True(back.Rules.DeleteEmojiSubject);
+            Assert.False(back.Rules.DeleteUnauthenticated);
+            Assert.False(store.For("other").Enabled);
+            store.Save(back with { NotSpam = Enumerable.Range(0, InboxSpamCheckStore.MaxNotSpam + 5).Select(i => "x" + i).ToArray() });
+            var trimmed = store.For("acct").NotSpam;
+            Assert.Equal(InboxSpamCheckStore.MaxNotSpam, trimmed.Count);
+            Assert.Equal("x5", trimmed[0]);                                         // the oldest are dropped
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    [Fact]
     public async Task The_junk_menu_reads_sender_and_recipient_addresses_and_reports_to_microsofts_beta_endpoint()
     {
         var calls = new List<(string Url, string? Body)>();

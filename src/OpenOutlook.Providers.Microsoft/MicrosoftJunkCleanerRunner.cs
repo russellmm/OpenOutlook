@@ -5,8 +5,9 @@ namespace OpenOutlook.Providers.Microsoft;
 /// <summary>One message the cleaner matched (or moved): what the manual-run preview and the run log show.</summary>
 public sealed record JunkCleanerHit(string MessageId, string Subject, string Sender, IReadOnlyList<string> Reasons);
 
+/// <param name="ScannedIds">Every message looked at, safe ones included (the Inbox spam check uses it to see which list rows were checked).</param>
 public sealed record JunkCleanerRunResult(int Scanned, IReadOnlyList<JunkCleanerHit> Matched, IReadOnlyList<JunkCleanerHit> Moved,
-    IReadOnlyList<string> Failures, bool CapReached);
+    IReadOnlyList<string> Failures, bool CapReached, IReadOnlyList<string>? ScannedIds = null);
 
 /// <summary>What applying the Safe / Blocked Senders lists did: safe mail moved from Junk Email to the Inbox, blocked mail from the Inbox to Junk Email.</summary>
 public sealed record JunkListRunResult(IReadOnlyList<JunkCleanerHit> Rescued, IReadOnlyList<JunkCleanerHit> Blocked, IReadOnlyList<string> Failures);
@@ -27,6 +28,22 @@ public sealed class MicrosoftJunkCleanerRunner(GraphJunkMailReader reader, Graph
     public async Task<JunkCleanerRunResult> ScanAsync(JunkCleanerAccountSettings settings, CancellationToken ct = default, JunkLists? lists = null, ISet<string>? contacts = null)
     {
         var all = await reader.ListJunkMessagesAsync(50, 1000, ct).ConfigureAwait(false);
+        return Match(all, settings, lists, contacts);
+    }
+
+    /// <summary>
+    /// The Inbox spam check (owner 2026-10-29): matches the newest <paramref name="max"/> Inbox messages against the given rules without
+    /// changing anything. Mail the lists call safe is never matched, mail from a blocked sender always is ("Blocked sender"); the settings' own
+    /// opt-in is ignored (the caller has its own).
+    /// </summary>
+    public async Task<JunkCleanerRunResult> ScanInboxAsync(JunkCleanerAccountSettings settings, int max = 200, CancellationToken ct = default, JunkLists? lists = null, ISet<string>? contacts = null)
+    {
+        var all = await reader.ListInboxMessagesAsync(50, max, ct).ConfigureAwait(false);
+        return Match(all, settings with { Enabled = true }, lists, contacts, markBlocked: true);
+    }
+
+    private JunkCleanerRunResult Match(IReadOnlyList<GraphJunkMessage> all, JunkCleanerAccountSettings settings, JunkLists? lists, ISet<string>? contacts, bool markBlocked = false)
+    {
         var messages = lists is null ? all : all.Where(m => Verdict(lists, m, contacts) != JunkListVerdict.Safe).ToList();
         var preview = new MicrosoftJunkPreviewMatcher(accountId, ownAddress).Preview(accountId, settings, messages);
         var byId = messages.ToDictionary(m => m.Id, StringComparer.Ordinal);
@@ -35,7 +52,14 @@ public sealed class MicrosoftJunkCleanerRunner(GraphJunkMailReader reader, Graph
             var message = byId[m.MessageId];
             return new JunkCleanerHit(m.MessageId, message.Subject ?? "(no subject)", message.From ?? message.Sender ?? "", m.Reasons);
         }).ToList();
-        return new JunkCleanerRunResult(messages.Count, matched, [], [], matched.Count > maxMoves);
+        if (markBlocked && lists is not null)
+        {
+            var blocked = messages.Where(m => Verdict(lists, m, contacts) == JunkListVerdict.Blocked).ToDictionary(m => m.Id, StringComparer.Ordinal);
+            for (var i = 0; i < matched.Count; i++)
+                if (blocked.Remove(matched[i].MessageId)) matched[i] = matched[i] with { Reasons = ["Blocked sender", .. matched[i].Reasons] };
+            matched.AddRange(blocked.Values.Select(m => new JunkCleanerHit(m.Id, m.Subject ?? "(no subject)", m.From ?? m.Sender ?? "", ["Blocked sender"])));
+        }
+        return new JunkCleanerRunResult(messages.Count, matched, [], [], matched.Count > maxMoves, all.Select(m => m.Id).ToArray());
     }
 
     /// <summary>Moves the given matches (at most <see cref="MaxMovesPerRun"/>) to Deleted Items; one failure never stops the rest.</summary>

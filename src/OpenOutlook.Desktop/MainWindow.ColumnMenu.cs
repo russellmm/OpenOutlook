@@ -25,7 +25,7 @@ public partial class MainWindow
     {
         header = (source as Visual)?.FindAncestorOfType<DataGridColumnHeader>(includeSelf: true);
         if (header is not DataGridColumnHeader h) return null;
-        for (var i = 0; i < MessageList.Columns.Count; i++)
+        for (var i = 0; i < ColumnNames.Length; i++)                  // not the spam check column: it has no header menu
             if (ReferenceEquals(MessageList.Columns[i].Header, h.Content) || Equals(MessageList.Columns[i].Header, h.Content)) return i;
         return null;
     }
@@ -94,6 +94,7 @@ public partial class MainWindow
         target.IsVisible = visible;
         if (visible && column >= 5)                                  // Importance and Flag come in at the left, next to the paperclip, as in Outlook
             target.DisplayIndex = column == 5 ? 0 : Math.Min(1, MessageList.Columns.Count - 1);
+        if (SpamColumn.IsVisible) SpamColumn.DisplayIndex = 0;
         PersistViewLayout();
     }
 

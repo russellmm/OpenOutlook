@@ -2128,8 +2128,8 @@ public sealed class MainWindowHeadlessTests
             CallVoid(window, "InitMessageContextMenu");
             var junkMenu = ((MenuFlyout)list.ContextFlyout!).Items.OfType<MenuItem>().Single(i => (string?)i.Header == "Junk");
             Assert.Equal(["_Block Sender", "_Never Block Sender", "Never Block Sender's _Domain", "Never Block this Group or _Mailing List", "N_ot Junk", "Junk E-mail _Options...",
-                "Report _Phishing", "_Clean Junk Folder..."], junkMenu.Items.OfType<MenuItem>().Select(i => (string)i.Header!));
-            Assert.Equal([true, false, false, false, true, true, true, true], junkMenu.Items.OfType<MenuItem>().Select(i => i.Icon is not null));   // Outlook's icons
+                "Report _Phishing", "_Clean Junk Folder...", "Check the Inbox for _Spam", "Inbox Spam _Rules..."], junkMenu.Items.OfType<MenuItem>().Select(i => (string)i.Header!));
+            Assert.Equal([true, false, false, false, true, true, true, true, true, false], junkMenu.Items.OfType<MenuItem>().Select(i => i.Icon is not null));   // Outlook's icons (the spam check's is its tick)
             Assert.Null(window.FindControl<Button>("CleanJunkButton"));                                // the separate Junk ribbon group is gone
 
             var inbox = Rows(("m1", "Deals@Spam.example"));
@@ -2217,6 +2217,96 @@ public sealed class MainWindowHeadlessTests
             window.JunkKeywordPromptOverride = _ => Task.FromResult<string?>("Brain Health, Memory Fix");   // commas: several keywords
             await window.AddSenderToJunkKeywordsAsync();
             Assert.Equal(["casino", "Dementia", "Brain Health", "Memory Fix"], file.Load());
+        }
+        finally
+        {
+            window.Close();
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Inbox_spam_check_ticks_suspects_first_and_blocks_and_deletes_only_the_ticked_ones()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        ShowWithSnapshotReader(window);
+        var directory = Path.Combine(Path.GetTempPath(), "oo-spam-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            var spamStore = new OpenOutlook.JunkCleaner.InboxSpamCheckStore(directory);                // never the owner's real settings
+            typeof(MainWindow).GetField("_spamStore", flags)!.SetValue(window, spamStore);
+            typeof(MainWindow).GetField("_junkListsStoreValue", flags)!.SetValue(window, new OpenOutlook.JunkCleaner.JunkListsStore(directory));
+            var account = new OpenOutlook.Auth.ConnectedAccount(
+                OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "headless-spam-" + Guid.NewGuid().ToString("N")[..8], "person@hotmail.test", "client", DateTimeOffset.UtcNow,
+                ["Mail.ReadWrite", "Mail.Send"]);
+            var moves = new List<(string Id, string To)>();
+            typeof(MainWindow).GetField("_graphHttp", flags)!.SetValue(window, new HttpClient(new JunkGraph(moves, account.AccountId)));
+            typeof(MainWindow).GetField("_activeMicrosoftAccount", flags)!.SetValue(window, account);
+            var session = new MicrosoftMailSession(account, new OpenOutlook.Auth.UnavailableSecretStore(), new HttpClient());
+            typeof(MicrosoftMailSession).GetField("_accessToken", flags)!.SetValue(session, "headless-token");
+            typeof(MicrosoftMailSession).GetField("_expiresAt", flags)!.SetValue(session, DateTimeOffset.UtcNow.AddHours(1));
+            ((System.Collections.IDictionary)typeof(MainWindow).GetField("_microsoftSessions", flags)!.GetValue(window)!)[account.AccountId] = session;
+            var folderType = typeof(MainWindow).GetNestedType("MicrosoftFolderSelection", BindingFlags.NonPublic)!;
+            typeof(MainWindow).GetField("_activeMicrosoftFolder", flags)!.SetValue(window, Activator.CreateInstance(folderType, account, "inbox", "Inbox"));
+            var scans = 0;
+            window.SpamScanOverride = (_, settings) =>
+            {
+                scans++;
+                Assert.True(settings.Rules.DeleteUnauthenticated);
+                return Task.FromResult(new OpenOutlook.Providers.Microsoft.JunkCleanerRunResult(3,
+                    [new("m1", "Win", "deals@spam.example", ["Sender not verified"]), new("m2", "Hi", "pal@friend.example", ["Random code"])], [], [], false, ["m1", "m2", "m3"]));
+            };
+            OpenOutlook.Providers.Microsoft.GraphInboxMessage Message(string id, string from) =>
+                new(id, "Subject " + id, "Shop", "person@hotmail.test", DateTimeOffset.UtcNow, 100, false, true, "", FromAddress: from);
+            typeof(MainWindow).GetMethod("ShowGraphMessages", flags)!.Invoke(window,
+                [new List<OpenOutlook.Providers.Microsoft.GraphInboxMessage> { Message("m1", ""), Message("m2", "pal@friend.example"), Message("m3", "boss@work.example") }]);
+            var bar = window.FindControl<Border>("SpamBar")!;
+            await WaitUntil(() => bar.IsVisible);
+            var rows = (System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow>)typeof(MainWindow).GetField("_graphRows", flags)!.GetValue(window)!;
+            var list = window.FindControl<DataGrid>("MessageList")!;
+            var column = list.Columns[^1];
+            Assert.True(column.IsVisible);
+            Assert.Equal(0, column.DisplayIndex);                                                   // the left-most column
+            Assert.Equal([true, true, false], rows.Select(r => r.IsSpamTicked));
+            Assert.Contains("Sender not verified", rows[0].SpamTip);
+            Assert.Equal(1, scans);
+
+            window.SetSpamTick(account, rows[1], false);                                             // not spam: remembered
+            Assert.Equal(["m2"], spamStore.For(account.AccountId).NotSpam);
+            Assert.Contains("2 messages look like spam; 1 ticked", window.FindControl<TextBlock>("SpamBarText")!.Text);
+
+            window.SpamBlockConfirmOverride = (senders, count) =>
+            {
+                Assert.Equal(["deals@spam.example"], senders);                                      // taken from the check when the row has no address
+                Assert.Equal(1, count);
+                return Task.FromResult(true);
+            };
+            await window.BlockAndDeleteTickedSpamAsync();
+            await WaitUntil(() => moves.Count == 1);
+            Assert.Equal(("m1", "deleteditems"), moves[0]);
+            Assert.Contains("deals@spam.example", window.JunkListsStore.Load(account.AccountId).Effective.BlockedSenders);
+            Assert.Equal(["m2", "m3"], rows.Select(r => r.Message.Id));
+            Assert.False(rows[0].IsSpamTicked);                                                     // the unticked one stayed
+
+            typeof(MainWindow).GetMethod("ReconcileGraphMessages", flags)!.Invoke(window,
+                [new List<OpenOutlook.Providers.Microsoft.GraphInboxMessage> { Message("m2", "pal@friend.example"), Message("m3", "boss@work.example") }]);
+            Assert.False(rows[0].IsSpamTicked);                                                     // a reload keeps "not spam"
+            window.SetSpamTick(account, rows[0], true);
+            Assert.Empty(spamStore.For(account.AccountId).NotSpam);
+            window.DeleteTickedSpam();
+            await WaitUntil(() => moves.Count == 2);
+            Assert.Equal(("m2", "deleteditems"), moves[1]);
+            Assert.DoesNotContain("pal@friend.example", window.JunkListsStore.Load(account.AccountId).Effective.BlockedSenders);   // Delete blocks nobody
+            Assert.False(bar.IsVisible);                                                            // no suspects left
+            Assert.False(column.IsVisible);
+
+            window.SetSpamCheckEnabled(account, false);
+            Assert.False(spamStore.For(account.AccountId).Enabled);
+            typeof(MainWindow).GetMethod("ShowGraphMessages", flags)!.Invoke(window, [new List<OpenOutlook.Providers.Microsoft.GraphInboxMessage> { Message("m4", "x@y.example") }]);
+            Assert.Equal(1, scans);                                                                 // off: no check
+            Assert.False(bar.IsVisible);
         }
         finally
         {

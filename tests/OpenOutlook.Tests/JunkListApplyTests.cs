@@ -105,6 +105,7 @@ public sealed class JunkListApplyTests
             var fresh = store.For("acct");
             Assert.True(fresh.Enabled);
             Assert.True(fresh.Rules.DeleteUnauthenticated);
+            Assert.True(fresh.Rules.DeleteMissingTo);                               // mass mail from hijacked accounts passes every sender check
             Assert.False(fresh.Rules.DeleteFlagged);                                // Junk-folder rules such as Flagged stay off for the Inbox
             var account = InboxSpamCheckStore.WithNotSpam(fresh, "m1", true);
             account = InboxSpamCheckStore.WithNotSpam(account, "m2", true);

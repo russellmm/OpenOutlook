@@ -28,9 +28,12 @@ public sealed class InboxSpamCheckStore
 {
     public const int MaxNotSpam = 2000;
 
-    /// <summary>The rules a new account starts with: signs of forged or disguised mail that real Inbox mail rarely shows.</summary>
+    /// <summary>
+    /// The rules a new account starts with: signs of forged or disguised mail that real Inbox mail rarely shows. No To address and Bcc recipients
+    /// catch mass mailings from hijacked real accounts, which pass every sender check (owner's "mailbox cancellation" message, 2026-10-29).
+    /// </summary>
     public static readonly JunkRuleOptions DefaultRules = new(
-        DeleteUnauthenticated: true, DeleteFakeSenderAddress: true, DeleteImpersonation: true,
+        DeleteMissingTo: true, DeleteWithBcc: true, DeleteUnauthenticated: true, DeleteFakeSenderAddress: true, DeleteImpersonation: true,
         DeleteHiddenText: true, DeleteUsernameInSubject: true, DeleteRandomCode: true);
 
     private static readonly JsonSerializerOptions JsonOptions = new()

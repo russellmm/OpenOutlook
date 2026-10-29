@@ -67,17 +67,20 @@ public partial class MainWindow
 
     private void UpdateSpamBar()
     {
-        if (SpamInboxAccount is null || _graphRows is null) { HideSpamBar(); return; }
+        if (SpamInboxAccount is not { } account || _graphRows is null) { HideSpamBar(); return; }
         var suspects = _graphRows.Where(r => r.IsSpamSuspect).ToList();
         var ticked = suspects.Count(r => r.IsSpamTicked);
-        SpamBar.IsVisible = suspects.Count > 0;
+        SpamBar.IsVisible = true;                     // always while the check is on, so it is seen to run (owner 2026-10-29: "no indication that there is a spam check")
         if (suspects.Count > 0 && !SpamColumn.IsVisible)
         {
             SpamColumn.IsVisible = true;
             SpamColumn.DisplayIndex = 0;
         }
         else if (suspects.Count == 0) SpamColumn.IsVisible = false;
-        SpamBarText.Text = suspects.Count == 1
+        var scan = _spamScans.GetValueOrDefault(account.AccountId);
+        SpamBarText.Text = scan is null && suspects.Count == 0 ? "Checking the Inbox for spam..."
+            : suspects.Count == 0 ? $"Spam check: no suspected spam in the newest {scan!.Scanned.Count} Inbox messages."
+            : suspects.Count == 1
             ? (ticked == 1 ? "1 message looks like spam and is ticked. Untick it if it is not spam." : "1 message looked like spam; you unticked it.")
             : $"{suspects.Count} messages look like spam; {ticked} ticked. Untick any that are not spam.";
         SpamBlockButton.IsEnabled = SpamDeleteButton.IsEnabled = ticked > 0;

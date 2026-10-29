@@ -2263,11 +2263,10 @@ public sealed class MainWindowHeadlessTests
             typeof(MainWindow).GetMethod("ShowGraphMessages", flags)!.Invoke(window,
                 [new List<OpenOutlook.Providers.Microsoft.GraphInboxMessage> { Message("m1", ""), Message("m2", "pal@friend.example"), Message("m3", "boss@work.example") }]);
             var bar = window.FindControl<Border>("SpamBar")!;
-            await WaitUntil(() => bar.IsVisible);
+            var column = window.FindControl<DataGrid>("MessageList")!.Columns[^1];
+            await WaitUntil(() => column.IsVisible);
             var rows = (System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow>)typeof(MainWindow).GetField("_graphRows", flags)!.GetValue(window)!;
-            var list = window.FindControl<DataGrid>("MessageList")!;
-            var column = list.Columns[^1];
-            Assert.True(column.IsVisible);
+            Assert.True(bar.IsVisible);
             Assert.Equal(0, column.DisplayIndex);                                                   // the left-most column
             Assert.Equal([true, true, false], rows.Select(r => r.IsSpamTicked));
             Assert.Contains("Sender not verified", rows[0].SpamTip);
@@ -2299,8 +2298,10 @@ public sealed class MainWindowHeadlessTests
             await WaitUntil(() => moves.Count == 2);
             Assert.Equal(("m2", "deleteditems"), moves[1]);
             Assert.DoesNotContain("pal@friend.example", window.JunkListsStore.Load(account.AccountId).Effective.BlockedSenders);   // Delete blocks nobody
-            Assert.False(bar.IsVisible);                                                            // no suspects left
-            Assert.False(column.IsVisible);
+            Assert.True(bar.IsVisible);                                                             // the check stays visible with nothing marked
+            Assert.Equal("Spam check: no suspected spam in the newest 3 Inbox messages.", window.FindControl<TextBlock>("SpamBarText")!.Text);
+            Assert.False(window.FindControl<Button>("SpamDeleteButton")!.IsEnabled);
+            Assert.False(column.IsVisible);                                                         // the column only while something is marked
 
             window.SetSpamCheckEnabled(account, false);
             Assert.False(spamStore.For(account.AccountId).Enabled);

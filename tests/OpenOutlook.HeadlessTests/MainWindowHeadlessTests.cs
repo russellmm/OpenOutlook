@@ -2251,10 +2251,10 @@ public sealed class MainWindowHeadlessTests
             var folderType = typeof(MainWindow).GetNestedType("MicrosoftFolderSelection", BindingFlags.NonPublic)!;
             typeof(MainWindow).GetField("_activeMicrosoftFolder", flags)!.SetValue(window, Activator.CreateInstance(folderType, account, "inbox", "Inbox"));
             var scans = 0;
-            window.SpamScanOverride = (_, settings) =>
+            window.SpamScanOverride = (_, junk) =>
             {
                 scans++;
-                Assert.True(settings.Rules.DeleteUnauthenticated);
+                Assert.False(junk);
                 return Task.FromResult(new OpenOutlook.Providers.Microsoft.JunkCleanerRunResult(3,
                     [new("m1", "Win", "deals@spam.example", ["Sender not verified"]), new("m2", "Hi", "pal@friend.example", ["Random code"])], [], [], false, ["m1", "m2", "m3"]));
             };
@@ -2308,6 +2308,82 @@ public sealed class MainWindowHeadlessTests
             typeof(MainWindow).GetMethod("ShowGraphMessages", flags)!.Invoke(window, [new List<OpenOutlook.Providers.Microsoft.GraphInboxMessage> { Message("m4", "x@y.example") }]);
             Assert.Equal(1, scans);                                                                 // off: no check
             Assert.False(bar.IsVisible);
+        }
+        finally
+        {
+            window.Close();
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Junk_email_ticks_what_the_junk_cleaner_would_delete_and_the_cleaner_keeps_unticked_ones()
+    {
+        ResetRegistry();
+        var window = new MainWindow { Width = 1200, Height = 800 };
+        ShowWithSnapshotReader(window);
+        var directory = Path.Combine(Path.GetTempPath(), "oo-junkmarks-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            var spamStore = new OpenOutlook.JunkCleaner.InboxSpamCheckStore(directory);                // never the owner's real settings
+            typeof(MainWindow).GetField("_spamStore", flags)!.SetValue(window, spamStore);
+            typeof(MainWindow).GetField("_junkListsStoreValue", flags)!.SetValue(window, new OpenOutlook.JunkCleaner.JunkListsStore(directory));
+            typeof(MainWindow).GetField("_junkStore", flags)!.SetValue(window, new OpenOutlook.JunkCleaner.JunkCleanerSettingsStore(directory));
+            typeof(MainWindow).GetField("_junkKeywordFile", flags)!.SetValue(window, new OpenOutlook.JunkCleaner.JunkKeywordFile(directory));
+            var account = new OpenOutlook.Auth.ConnectedAccount(
+                OpenOutlook.Auth.OAuthProvider.MicrosoftConsumers, "headless-junkmarks-" + Guid.NewGuid().ToString("N")[..8], "person@hotmail.test", "client", DateTimeOffset.UtcNow,
+                ["Mail.ReadWrite", "Mail.Send"]);
+            var moves = new List<(string Id, string To)>();
+            typeof(MainWindow).GetField("_graphHttp", flags)!.SetValue(window, new HttpClient(new JunkGraph(moves, account.AccountId)));
+            typeof(MainWindow).GetField("_activeMicrosoftAccount", flags)!.SetValue(window, account);
+            var session = new MicrosoftMailSession(account, new OpenOutlook.Auth.UnavailableSecretStore(), new HttpClient());
+            typeof(MicrosoftMailSession).GetField("_accessToken", flags)!.SetValue(session, "headless-token");
+            typeof(MicrosoftMailSession).GetField("_expiresAt", flags)!.SetValue(session, DateTimeOffset.UtcNow.AddHours(1));
+            ((System.Collections.IDictionary)typeof(MainWindow).GetField("_microsoftSessions", flags)!.GetValue(window)!)[account.AccountId] = session;
+            var folderType = typeof(MainWindow).GetNestedType("MicrosoftFolderSelection", BindingFlags.NonPublic)!;
+            typeof(MainWindow).GetField("_activeMicrosoftFolder", flags)!.SetValue(window, Activator.CreateInstance(folderType, account, "junk-id", "Junk Email"));
+            var hits = new List<OpenOutlook.Providers.Microsoft.JunkCleanerHit>
+            {
+                new("j1", "Casino", "win@casino.example", ["From keyword"]), new("j2", "News", "news@shop.example", ["Emoji subject"]),
+            };
+            var scans = 0;
+            window.SpamScanOverride = (_, junk) =>
+            {
+                scans++;
+                Assert.True(junk);                                                                  // Junk Email uses the Junk Cleaner's own keywords and rules
+                return Task.FromResult(new OpenOutlook.Providers.Microsoft.JunkCleanerRunResult(3, hits, [], [], false, ["j1", "j2", "j3"]));
+            };
+            OpenOutlook.Providers.Microsoft.GraphInboxMessage Message(string id, string from) =>
+                new(id, "Subject " + id, "Shop", "person@hotmail.test", DateTimeOffset.UtcNow, 100, false, true, "", FromAddress: from);
+            typeof(MainWindow).GetMethod("ShowGraphMessages", flags)!.Invoke(window,
+                [new List<OpenOutlook.Providers.Microsoft.GraphInboxMessage> { Message("j1", "win@casino.example"), Message("j2", "news@shop.example"), Message("j3", "x@y.example") }]);
+            var column = window.FindControl<DataGrid>("MessageList")!.Columns[^1];
+            await WaitUntil(() => column.IsVisible);
+            var rows = (System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow>)typeof(MainWindow).GetField("_graphRows", flags)!.GetValue(window)!;
+            Assert.Equal([true, true, false], rows.Select(r => r.IsSpamTicked));
+            var text = window.FindControl<TextBlock>("SpamBarText")!;
+            Assert.Contains("2 messages match the Junk Cleaner's keywords and rules; 2 ticked", text.Text);
+            Assert.Contains("The Junk Cleaner is off", text.Text);                                  // no settings yet: off
+
+            window.SetSpamTick(account, rows[1], false);                                             // keep j2 in Junk Email
+            Assert.Equal(["j2"], spamStore.For(account.AccountId).KeepInJunk);
+            Assert.Empty(spamStore.For(account.AccountId).NotSpam);                                 // the Inbox's list is separate
+            var scan = new OpenOutlook.Providers.Microsoft.JunkCleanerRunResult(3, hits, [], [], false);
+            var cleaned = (OpenOutlook.Providers.Microsoft.JunkCleanerRunResult)typeof(MainWindow).GetMethod("WithoutKeptJunk", flags)!.Invoke(window, [account.AccountId, scan])!;
+            Assert.Equal(["j1"], cleaned.Matched.Select(h => h.MessageId));                          // a clean (manual or automatic) leaves j2
+
+            window.DeleteTickedSpam();
+            await WaitUntil(() => moves.Count == 1);
+            Assert.Equal(("j1", "deleteditems"), moves[0]);
+            Assert.Equal(["j2", "j3"], rows.Select(r => r.Message.Id));
+            Assert.Equal(1, scans);
+
+            typeof(MainWindow).GetMethod("SaveJunkSettings", flags)!.Invoke(window,
+                [new OpenOutlook.JunkCleaner.JunkCleanerAccountSettings { AccountId = account.AccountId, Enabled = true, AutoClean = true, IntervalMinutes = 15 }]);
+            await WaitUntil(() => scans == 2);                                                      // changed Junk Cleaner settings: marked again
+            Assert.Contains("deleted at the next automatic clean (every 15 min)", text.Text);
+            Assert.False(rows.Single(r => r.Message.Id == "j2").IsSpamTicked);                      // still kept
         }
         finally
         {

@@ -112,6 +112,10 @@ public sealed class JunkListApplyTests
             account = InboxSpamCheckStore.WithNotSpam(account, "m1", false);         // ticked again
             store.Save(account with { Rules = new JunkRuleOptions(DeleteEmojiSubject: true) });
             store.Save(new InboxSpamCheckAccount { AccountId = "other", Enabled = false });
+            var kept = InboxSpamCheckStore.WithNotSpam(store.For("acct"), "j1", true, junkFolder: true);   // Junk Email keeps its own list
+            Assert.Equal(["j1"], kept.KeepInJunk);
+            Assert.Equal(["m2"], kept.NotSpam);
+            Assert.Empty(InboxSpamCheckStore.WithNotSpam(kept, "j1", false, junkFolder: true).KeepInJunk);
             var back = new InboxSpamCheckStore(dir).For("acct");
             Assert.Equal(["m2"], back.NotSpam);
             Assert.True(back.Rules.DeleteEmojiSubject);

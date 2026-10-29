@@ -52,6 +52,7 @@ public partial class MainWindow
         try
         {
             _junkKeywordFile.Save(keywords);
+            ForgetJunkMarks();
             return $"Saved {keywords.Count} keyword{(keywords.Count == 1 ? "" : "s")} to {_junkKeywordFile.Path}.";
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -82,6 +83,7 @@ public partial class MainWindow
         try { _junkKeywordFile.Save(current.Concat(added)); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         { StatusText.Text = "Could not save the keywords: " + e.Message; return; }
+        ForgetJunkMarks();
         StatusText.Text = $"Added to the junk keywords: {string.Join(", ", added)} ({current.Count + added.Count} keywords).";
         AppLog.Note("junk", $"keyword(s) added from the sender of a Junk Email message: {string.Join(", ", added)}");
     }
@@ -131,6 +133,7 @@ public partial class MainWindow
             settings = settings with { Keywords = [] };
             var all = _junkStore.Load().Accounts.Where(a => a.AccountId != settings.AccountId).Append(settings).ToArray();
             _junkStore.Save(new JunkCleanerSettings { Accounts = all });
+            ForgetJunkMarks(settings.AccountId);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
         { StatusText.Text = "Could not save the Junk Cleaner settings: " + e.Message; }
@@ -163,7 +166,8 @@ public partial class MainWindow
             StatusText.Text = $"Looking through the Junk folder of {account.DisplayAddress}…";
             var runner = MakeJunkRunner(account);
             var lists = JunkListsStore.Load(account.AccountId);
-            var scan = await runner.ScanAsync(settings, default, lists.Effective, await TrustedContactsAsync(account, lists));      // safe senders are never offered
+            var scan = WithoutKeptJunk(account.AccountId,                                                  // safe senders are never offered, messages unticked in Junk Email are kept
+                await runner.ScanAsync(settings, default, lists.Effective, await TrustedContactsAsync(account, lists)));
             if (scan.Matched.Count == 0) return $"Nothing in the Junk folder matches ({scan.Scanned} messages looked at).";
             var dialog = new JunkPreviewDialog(account.DisplayAddress, scan);
             await dialog.ShowDialog(owner);
@@ -360,7 +364,9 @@ public partial class MainWindow
             try
             {
                 var lists = JunkListsStore.Load(account.AccountId);
-                var result = await MakeJunkRunner(account).CleanAsync(settings, default, lists.Effective, await TrustedContactsAsync(account, lists));
+                var runner = MakeJunkRunner(account);
+                var scan = WithoutKeptJunk(account.AccountId, await runner.ScanAsync(settings, default, lists.Effective, await TrustedContactsAsync(account, lists)));
+                var result = await runner.MoveAsync(scan);
                 if (result.Moved.Count > 0 || result.Failures.Count > 0) _junkLog.Append(account.DisplayAddress, result, scheduled: true);
                 if (result.Moved.Count > 0) await AfterJunkRunAsync(account, result);
             }

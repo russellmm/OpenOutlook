@@ -16,6 +16,8 @@ public sealed record InboxSpamCheckAccount
     public JunkRuleOptions Rules { get; init; } = InboxSpamCheckStore.DefaultRules;
     /// <summary>Message ids the user unticked, oldest first, at most <see cref="InboxSpamCheckStore.MaxNotSpam"/>.</summary>
     public IReadOnlyList<string> NotSpam { get; init; } = [];
+    /// <summary>Junk Email messages the user unticked (2026-10-29): the Junk Cleaner leaves them; oldest first, at most <see cref="InboxSpamCheckStore.MaxNotSpam"/>.</summary>
+    public IReadOnlyList<string> KeepInJunk { get; init; } = [];
 }
 
 public sealed record InboxSpamCheckSettings
@@ -69,7 +71,7 @@ public sealed class InboxSpamCheckStore
 
     public void Save(InboxSpamCheckAccount account)
     {
-        var trimmed = account.NotSpam.Count > MaxNotSpam ? account with { NotSpam = account.NotSpam.Skip(account.NotSpam.Count - MaxNotSpam).ToArray() } : account;
+        var trimmed = account with { NotSpam = Newest(account.NotSpam), KeepInJunk = Newest(account.KeepInJunk) };
         InboxSpamCheckSettings current;
         try { current = Load(); }
         catch (JsonException) { current = new InboxSpamCheckSettings(); }               // a damaged file is replaced: it holds no mail, only choices
@@ -88,11 +90,13 @@ public sealed class InboxSpamCheckStore
         }
     }
 
-    /// <summary>Ticked again = no longer "not spam"; unticked = remembered (newest last).</summary>
-    public static InboxSpamCheckAccount WithNotSpam(InboxSpamCheckAccount account, string messageId, bool notSpam)
+    private static IReadOnlyList<string> Newest(IReadOnlyList<string> ids) => ids.Count > MaxNotSpam ? ids.Skip(ids.Count - MaxNotSpam).ToArray() : ids;
+
+    /// <summary>Ticked again = no longer "not spam" (or, in Junk Email, no longer kept); unticked = remembered (newest last).</summary>
+    public static InboxSpamCheckAccount WithNotSpam(InboxSpamCheckAccount account, string messageId, bool notSpam, bool junkFolder = false)
     {
-        var list = account.NotSpam.Where(id => id != messageId).ToList();
+        var list = (junkFolder ? account.KeepInJunk : account.NotSpam).Where(id => id != messageId).ToList();
         if (notSpam) list.Add(messageId);
-        return account with { NotSpam = list };
+        return junkFolder ? account with { KeepInJunk = list } : account with { NotSpam = list };
     }
 }

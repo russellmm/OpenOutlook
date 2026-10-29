@@ -13,6 +13,8 @@ namespace OpenOutlook.Desktop;
 /// set, see <see cref="InboxSpamCheckAccount"/>), the Junk Cleaner keywords and Blocked Senders. Suspects get a ticked check box in the list's first
 /// column; the bar above the list removes the ticked ones with Block Sender and Delete (senders to Blocked Senders, messages to Deleted Items) or
 /// Delete. Unticking remembers the message as not spam. Nothing moves without a click; mail the Safe lists or contacts trust is never marked.
+/// The same marks show in Junk Email (owner, same day): there they are what the Junk Cleaner's keywords and rules would delete, and a message
+/// unticked there is kept by the Junk Cleaner (manual and automatic runs), so the ticks are exactly what a clean removes.
 /// </summary>
 public partial class MainWindow
 {
@@ -23,40 +25,49 @@ public partial class MainWindow
     private static readonly TimeSpan SpamRecheck = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan SpamMinGap = TimeSpan.FromSeconds(30);
 
-    /// <summary>One finished check of an account's Inbox: when, which messages were looked at, and the suspects by message id.</summary>
+    /// <summary>One finished check of an account's Inbox or Junk Email: when, which messages were looked at, and the suspects by message id.</summary>
     private sealed record SpamScan(DateTime At, HashSet<string> Scanned, Dictionary<string, JunkCleanerHit> Suspects);
 
-    /// <summary>Test seam: replaces the Graph scan of the Inbox.</summary>
-    internal Func<ConnectedAccount, InboxSpamCheckAccount, Task<JunkCleanerRunResult>>? SpamScanOverride { get; set; }
+    /// <summary>The folder the marks are for: a Microsoft Inbox, or its Junk Email folder (<paramref name="Junk"/>).</summary>
+    private readonly record struct SpamFolder(ConnectedAccount Account, bool Junk)
+    {
+        public string Key => Junk ? Account.AccountId + "|junk" : Account.AccountId;
+        public string Name => Junk ? "Junk Email" : "Inbox";
+    }
+
+    /// <summary>Test seam: replaces the Graph scan of the Inbox (junk = false) or the Junk Email folder (junk = true).</summary>
+    internal Func<ConnectedAccount, bool, Task<JunkCleanerRunResult>>? SpamScanOverride { get; set; }
     /// <summary>Test seam: answers the Block Sender and Delete confirmation.</summary>
     internal Func<IReadOnlyList<string>, int, Task<bool>>? SpamBlockConfirmOverride { get; set; }
 
     /// <summary>The check box column: the last column of the grid, always shown first; not part of view-layout.json.</summary>
     private DataGridColumn SpamColumn => MessageList.Columns[ColumnNames.Length];
 
-    private ConnectedAccount? SpamInboxAccount =>
-        _activeMicrosoftFolder is { Id: "inbox" } folder && folder.Account.Provider == OAuthProvider.MicrosoftConsumers && _graphRows is not null ? folder.Account : null;
+    private SpamFolder? SpamTarget =>
+        _activeMicrosoftFolder is { } folder && folder.Account.Provider == OAuthProvider.MicrosoftConsumers && _graphRows is not null
+            ? folder.Id == "inbox" ? new SpamFolder(folder.Account, false) : InJunkEmailFolder ? new SpamFolder(folder.Account, true) : null
+            : null;
 
     /// <summary>After the list was filled or changed: marks the known suspects and starts a check when new mail arrived or the last one is old.</summary>
     private void UpdateSpamMarks()
     {
-        if (SpamInboxAccount is not { } account || !_spamStore.For(account.AccountId).Enabled)
+        if (SpamTarget is not { } target || !target.Junk && !_spamStore.For(target.Account.AccountId).Enabled)
         {
             HideSpamBar();
             return;
         }
-        var settings = _spamStore.For(account.AccountId);
-        _spamScans.TryGetValue(account.AccountId, out var scan);
+        var settings = _spamStore.For(target.Account.AccountId);
+        _spamScans.TryGetValue(target.Key, out var scan);
         if (scan is not null)
         {
-            var notSpam = settings.NotSpam.ToHashSet(StringComparer.Ordinal);
+            var unticked = (target.Junk ? settings.KeepInJunk : settings.NotSpam).ToHashSet(StringComparer.Ordinal);
             foreach (var row in _graphRows!)
-                row.SetSpam(scan.Suspects.TryGetValue(row.Message.Id, out var hit) ? hit.Reasons : null, !notSpam.Contains(row.Message.Id));
+                row.SetSpam(scan.Suspects.TryGetValue(row.Message.Id, out var hit) ? hit.Reasons : null, !unticked.Contains(row.Message.Id));
         }
         UpdateSpamBar();
         var due = scan is null || DateTime.UtcNow - scan.At > SpamRecheck ||
             _graphRows!.OrderByDescending(r => r.ReceivedSort).Take(50).Any(r => !scan.Scanned.Contains(r.Message.Id));
-        if (due) _ = RunSpamCheckAsync(account, force: false);
+        if (due) _ = RunSpamCheckAsync(target.Account, force: false, target.Junk);
     }
 
     private void HideSpamBar()
@@ -67,7 +78,7 @@ public partial class MainWindow
 
     private void UpdateSpamBar()
     {
-        if (SpamInboxAccount is not { } account || _graphRows is null) { HideSpamBar(); return; }
+        if (SpamTarget is not { } target || _graphRows is null) { HideSpamBar(); return; }
         var suspects = _graphRows.Where(r => r.IsSpamSuspect).ToList();
         var ticked = suspects.Count(r => r.IsSpamTicked);
         SpamBar.IsVisible = true;                     // always while the check is on, so it is seen to run (owner 2026-10-29: "no indication that there is a spam check")
@@ -77,8 +88,9 @@ public partial class MainWindow
             SpamColumn.DisplayIndex = 0;
         }
         else if (suspects.Count == 0) SpamColumn.IsVisible = false;
-        var scan = _spamScans.GetValueOrDefault(account.AccountId);
-        SpamBarText.Text = scan is null && suspects.Count == 0 ? "Checking the Inbox for spam..."
+        var scan = _spamScans.GetValueOrDefault(target.Key);
+        SpamBarText.Text = target.Junk ? JunkBarText(target.Account, scan, suspects.Count, ticked)
+            : scan is null && suspects.Count == 0 ? "Checking the Inbox for spam..."
             : suspects.Count == 0 ? $"Spam check: no suspected spam in the newest {scan!.Scanned.Count} Inbox messages."
             : suspects.Count == 1
             ? (ticked == 1 ? "1 message looks like spam and is ticked. Untick it if it is not spam." : "1 message looked like spam; you unticked it.")
@@ -86,32 +98,52 @@ public partial class MainWindow
         SpamBlockButton.IsEnabled = SpamDeleteButton.IsEnabled = ticked > 0;
     }
 
-    /// <summary>Scans the account's Inbox (at most one scan per account at a time, and not again within 30 seconds unless forced).</summary>
-    internal async Task RunSpamCheckAsync(ConnectedAccount account, bool force)
+    /// <summary>The bar in Junk Email: what the Junk Cleaner's keywords and rules match, and when the ticked ones go.</summary>
+    private string JunkBarText(ConnectedAccount account, SpamScan? scan, int suspects, int ticked)
     {
-        var id = account.AccountId;
-        if (_spamBusy.Contains(id)) return;
-        if (!force && _spamStarted.TryGetValue(id, out var started) && DateTime.UtcNow - started < SpamMinGap) return;
-        var settings = _spamStore.For(id);
-        if (!settings.Enabled) return;
-        _spamBusy.Add(id);
-        _spamStarted[id] = DateTime.UtcNow;
+        if (scan is null && suspects == 0) return "Checking Junk Email against the Junk Cleaner's keywords and rules...";
+        if (suspects == 0) return $"Junk Cleaner: none of the {scan!.Scanned.Count} Junk Email messages matches its keywords and rules.";
+        var settings = JunkSettingsFor(account.AccountId);
+        var when = !settings.Enabled ? "The Junk Cleaner is off, so nothing is deleted until you click Delete."
+            : settings.AutoClean ? $"Ticked ones are deleted at the next automatic clean (every {settings.IntervalMinutes} min) or now with Delete."
+            : "Ticked ones are deleted by Clean Junk Folder or now with Delete.";
+        return (suspects == 1 ? $"1 message matches the Junk Cleaner's keywords and rules; {ticked} ticked. "
+            : $"{suspects} messages match the Junk Cleaner's keywords and rules; {ticked} ticked. ") + when + " Untick any you want to keep.";
+    }
+
+    /// <summary>Scans the account's Inbox or Junk Email (one scan per folder at a time, and not again within 30 seconds unless forced).</summary>
+    internal async Task RunSpamCheckAsync(ConnectedAccount account, bool force, bool junk = false)
+    {
+        var target = new SpamFolder(account, junk);
+        if (_spamBusy.Contains(target.Key)) return;
+        if (!force && _spamStarted.TryGetValue(target.Key, out var started) && DateTime.UtcNow - started < SpamMinGap) return;
+        if (!junk && !_spamStore.For(account.AccountId).Enabled) return;
+        _spamBusy.Add(target.Key);
+        _spamStarted[target.Key] = DateTime.UtcNow;
         try
         {
-            var result = SpamScanOverride is { } scan ? await scan(account, settings) : await ScanInboxForSpamAsync(account, settings);
-            _spamScans[id] = new SpamScan(DateTime.UtcNow, (result.ScannedIds ?? []).ToHashSet(StringComparer.Ordinal),
+            var result = SpamScanOverride is { } scan ? await scan(account, junk)
+                : junk ? await ScanJunkForMarksAsync(account) : await ScanInboxForSpamAsync(account, _spamStore.For(account.AccountId));
+            _spamScans[target.Key] = new SpamScan(DateTime.UtcNow, (result.ScannedIds ?? []).ToHashSet(StringComparer.Ordinal),
                 result.Matched.ToDictionary(h => h.MessageId, StringComparer.Ordinal));
-            AppLog.Note("spam-check", $"{account.DisplayAddress}: {result.Scanned} Inbox messages checked, {result.Matched.Count} look like spam");
-            if (force) StatusText.Text = result.Matched.Count == 0 ? "No spam found in the Inbox." : $"{result.Matched.Count} Inbox message{(result.Matched.Count == 1 ? " looks" : "s look")} like spam.";
+            AppLog.Note("spam-check", $"{account.DisplayAddress}: {result.Scanned} {target.Name} messages checked, {result.Matched.Count} " + (junk ? "match the Junk Cleaner" : "look like spam"));
+            if (force) StatusText.Text = result.Matched.Count == 0 ? $"Nothing marked in {target.Name}." : $"{result.Matched.Count} {target.Name} message{(result.Matched.Count == 1 ? "" : "s")} marked.";
         }
         catch (Exception e) when (e is GraphMailException or HttpRequestException or ArgumentException or OperationCanceledException or InvalidOperationException)
         {
-            AppLog.Error("spam-check", e, $"checking the Inbox of {account.DisplayAddress} failed");
-            if (force) StatusText.Text = "The spam check could not read the Inbox: " + e.Message;
+            AppLog.Error("spam-check", e, $"checking {target.Name} of {account.DisplayAddress} failed");
+            if (force) StatusText.Text = $"The check could not read {target.Name}: " + e.Message;
             return;
         }
-        finally { _spamBusy.Remove(id); }
-        if (SpamInboxAccount?.AccountId == id) UpdateSpamMarks();
+        finally { _spamBusy.Remove(target.Key); }
+        if (SpamTarget?.Key == target.Key) UpdateSpamMarks();
+    }
+
+    private async Task<HashSet<string>?> SpamContactsAsync(ConnectedAccount account, JunkListsAccount lists)
+    {
+        try { return await TrustedContactsAsync(account, lists); }
+        catch (Exception e) when (e is GraphMailException or HttpRequestException or InvalidOperationException)
+        { AppLog.Error("spam-check", e, "reading the contacts failed; checking without them"); return null; }
     }
 
     private async Task<JunkCleanerRunResult> ScanInboxForSpamAsync(ConnectedAccount account, InboxSpamCheckAccount settings)
@@ -123,24 +155,43 @@ public partial class MainWindow
             Keywords = settings.UseKeywords ? junk.Keywords : [],
         };
         var lists = JunkListsStore.Load(account.AccountId);
-        HashSet<string>? contacts = null;
-        try { contacts = await TrustedContactsAsync(account, lists); }
-        catch (Exception e) when (e is GraphMailException or HttpRequestException or InvalidOperationException)
-        { AppLog.Error("spam-check", e, "reading the contacts failed; checking without them"); }
-        return await MakeJunkRunner(account).ScanInboxAsync(rules, 200, default, lists.Effective, contacts);
+        return await MakeJunkRunner(account).ScanInboxAsync(rules, 200, default, lists.Effective, await SpamContactsAsync(account, lists));
+    }
+
+    /// <summary>What the Junk Cleaner's keywords and rules match in Junk Email, as a clean would see it (marked even while the cleaner is off).</summary>
+    private async Task<JunkCleanerRunResult> ScanJunkForMarksAsync(ConnectedAccount account)
+    {
+        var lists = JunkListsStore.Load(account.AccountId);
+        return await MakeJunkRunner(account).ScanAsync(JunkSettingsFor(account.AccountId) with { Enabled = true }, default, lists.Effective, await SpamContactsAsync(account, lists));
+    }
+
+    /// <summary>A clean leaves the Junk Email messages the user unticked.</summary>
+    private JunkCleanerRunResult WithoutKeptJunk(string accountId, JunkCleanerRunResult scan)
+    {
+        var keep = _spamStore.For(accountId).KeepInJunk.ToHashSet(StringComparer.Ordinal);
+        return keep.Count == 0 ? scan : scan with { Matched = scan.Matched.Where(h => !keep.Contains(h.MessageId)).ToList() };
+    }
+
+    /// <summary>The Junk Cleaner's settings (one account) or the shared keyword file (null = every account) changed: Junk Email's marks are worked out again.</summary>
+    private void ForgetJunkMarks(string? accountId = null)
+    {
+        foreach (var key in _spamScans.Keys.Where(k => k.EndsWith("|junk", StringComparison.Ordinal) && (accountId is null || k == accountId + "|junk")).ToList())
+            _spamScans.Remove(key);
+        if (SpamTarget is { Junk: true } target && (accountId is null || target.Account.AccountId == accountId)) _ = RunSpamCheckAsync(target.Account, force: true, junk: true);
     }
 
     /// <summary>Ticking or unticking a message's box: an unticked suspect is remembered as not spam.</summary>
     private void SpamTickClicked(object? sender, RoutedEventArgs e)
     {
-        if ((sender as Control)?.DataContext is not GraphMessageListRow row || SpamInboxAccount is not { } account) return;
-        SetSpamTick(account, row, row.IsSpamTicked);
+        if ((sender as Control)?.DataContext is not GraphMessageListRow row || SpamTarget is not { } target) return;
+        SetSpamTick(target.Account, row, row.IsSpamTicked);
     }
 
     internal void SetSpamTick(ConnectedAccount account, GraphMessageListRow row, bool ticked)
     {
         row.IsSpamTicked = ticked;
-        try { _spamStore.Save(InboxSpamCheckStore.WithNotSpam(_spamStore.For(account.AccountId), row.Message.Id, !ticked)); }
+        var junk = SpamTarget?.Junk == true;
+        try { _spamStore.Save(InboxSpamCheckStore.WithNotSpam(_spamStore.For(account.AccountId), row.Message.Id, !ticked, junk)); }
         catch (Exception x) when (x is IOException or UnauthorizedAccessException)
         { StatusText.Text = "Could not remember the choice: " + x.Message; }
         UpdateSpamBar();
@@ -155,7 +206,8 @@ public partial class MainWindow
     /// <summary>Adds the ticked messages' senders to Blocked Senders (after a confirmation that names them), then deletes the messages.</summary>
     internal async Task BlockAndDeleteTickedSpamAsync()
     {
-        if (SpamInboxAccount is not { } account || _activeMicrosoftFolder is not { } folder) return;
+        if (SpamTarget is not { } target || _activeMicrosoftFolder is not { } folder) return;
+        var account = target.Account;
         var rows = TickedSpamRows();
         if (rows.Count == 0) return;
         if (!account.CanWriteMicrosoftMail)
@@ -163,7 +215,7 @@ public partial class MainWindow
             await ExplainMailActionAsync("This saved Microsoft sign-in has read-only mail access. Sign in again to allow organizing mail.", account);
             return;
         }
-        var scan = _spamScans.GetValueOrDefault(account.AccountId);
+        var scan = _spamScans.GetValueOrDefault(target.Key);
         var senders = rows.Select(r => JunkLists.Address(r.Message.FromAddress) ??
                 (scan?.Suspects.TryGetValue(r.Message.Id, out var hit) == true ? JunkLists.Address(hit.Sender) : null))
             .OfType<string>().Distinct(StringComparer.Ordinal).ToList();
@@ -173,33 +225,33 @@ public partial class MainWindow
             var lists = JunkListsStore.Load(account.AccountId).WithAdded(JunkListKind.BlockedSenders, senders.ToArray());
             SaveJunkLists(lists);
         }
-        AppLog.Note("spam-check", $"Block Sender and Delete ({account.DisplayAddress}): {string.Join(", ", senders)}; {rows.Count} message(s) to Deleted Items");
-        DeleteSpamRows(account, folder, rows);
+        AppLog.Note("spam-check", $"Block Sender and Delete in {target.Name} ({account.DisplayAddress}): {string.Join(", ", senders)}; {rows.Count} message(s) to Deleted Items");
+        DeleteSpamRows(target, folder, rows);
         StatusText.Text = $"{(senders.Count == 1 ? senders[0] : $"{senders.Count} senders")} added to Blocked Senders; " +
             (rows.Count == 1 ? "1 message deleted." : $"{rows.Count} messages deleted.");
     }
 
     internal void DeleteTickedSpam()
     {
-        if (SpamInboxAccount is not { } account || _activeMicrosoftFolder is not { } folder) return;
+        if (SpamTarget is not { } target || _activeMicrosoftFolder is not { } folder) return;
         var rows = TickedSpamRows();
         if (rows.Count == 0) return;
-        if (!account.CanWriteMicrosoftMail)
+        if (!target.Account.CanWriteMicrosoftMail)
         {
-            _ = ExplainMailActionAsync("This saved Microsoft sign-in has read-only mail access. Sign in again to allow organizing mail.", account);
+            _ = ExplainMailActionAsync("This saved Microsoft sign-in has read-only mail access. Sign in again to allow organizing mail.", target.Account);
             return;
         }
-        AppLog.Note("spam-check", $"Delete ({account.DisplayAddress}): {rows.Count} message(s) to Deleted Items");
-        DeleteSpamRows(account, folder, rows);
+        AppLog.Note("spam-check", $"Delete in {target.Name} ({target.Account.DisplayAddress}): {rows.Count} message(s) to Deleted Items");
+        DeleteSpamRows(target, folder, rows);
     }
 
     /// <summary>Moves the rows' messages to Deleted Items like the Delete button (the list changes at once; a refusal puts them back).</summary>
-    private void DeleteSpamRows(ConnectedAccount account, MicrosoftFolderSelection folder, IReadOnlyList<GraphMessageListRow> rows)
+    private void DeleteSpamRows(SpamFolder target, MicrosoftFolderSelection folder, IReadOnlyList<GraphMessageListRow> rows)
     {
         var messages = rows.Select(r => r.Message).ToList();
-        if (_spamScans.TryGetValue(account.AccountId, out var scan))
+        if (_spamScans.TryGetValue(target.Key, out var scan))
             foreach (var m in messages) scan.Suspects.Remove(m.Id);
-        ActAtOnce(account, folder, "delete", messages);
+        ActAtOnce(target.Account, folder, "delete", messages);
         UpdateSpamBar();
     }
 
@@ -233,7 +285,8 @@ public partial class MainWindow
     /// <summary>The bar's ··· menu.</summary>
     private void SpamMoreClicked(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control button || SpamInboxAccount is not { } account) return;
+        if (sender is not Control button || SpamTarget is not { } target) return;
+        var account = target.Account;
         MenuItem Item(string text, Action run)
         {
             var item = new MenuItem { Header = text };
@@ -247,11 +300,15 @@ public partial class MainWindow
                 Item("Tick all", () => SetAllSpamTicks(account, true)),
                 Item("Untick all", () => SetAllSpamTicks(account, false)),
                 new Separator(),
-                Item("Check again", () => _ = RunSpamCheckAsync(account, force: true)),
-                Item("Inbox spam rules...", () => _ = EditSpamRulesAsync(account)),
-                Item("Turn off the Inbox spam check", () => SetSpamCheckEnabled(account, false)),
+                Item("Check again", () => _ = RunSpamCheckAsync(account, force: true, target.Junk)),
             }
         };
+        if (target.Junk) flyout.Items.Add(Item("Junk Cleaner rules...", () => _ = EditJunkCleanerRulesAsync(account)));
+        else
+        {
+            flyout.Items.Add(Item("Inbox spam rules...", () => _ = EditSpamRulesAsync(account)));
+            flyout.Items.Add(Item("Turn off the Inbox spam check", () => SetSpamCheckEnabled(account, false)));
+        }
         flyout.ShowAt(button);
     }
 
@@ -259,10 +316,11 @@ public partial class MainWindow
     {
         if (_graphRows is null) return;
         var settings = _spamStore.For(account.AccountId);
+        var junk = SpamTarget?.Junk == true;
         foreach (var row in _graphRows.Where(r => r.IsSpamSuspect))
         {
             row.IsSpamTicked = ticked;
-            settings = InboxSpamCheckStore.WithNotSpam(settings, row.Message.Id, !ticked);
+            settings = InboxSpamCheckStore.WithNotSpam(settings, row.Message.Id, !ticked, junk);
         }
         try { _spamStore.Save(settings); }
         catch (Exception x) when (x is IOException or UnauthorizedAccessException) { StatusText.Text = "Could not remember the choice: " + x.Message; }
@@ -276,11 +334,11 @@ public partial class MainWindow
         if (!enabled)
         {
             _spamScans.Remove(account.AccountId);
-            foreach (var row in _graphRows ?? []) row.SetSpam(null, false);
+            if (SpamTarget is { Junk: false }) foreach (var row in _graphRows ?? []) row.SetSpam(null, false);
         }
         StatusText.Text = enabled ? $"The Inbox spam check is on for {account.DisplayAddress}." : $"The Inbox spam check is off for {account.DisplayAddress}. Turn it on again from Home > Junk.";
         AppLog.Note("spam-check", $"Inbox spam check {(enabled ? "on" : "off")} for {account.DisplayAddress}");
-        if (enabled && SpamInboxAccount?.AccountId == account.AccountId) _ = RunSpamCheckAsync(account, force: true);
+        if (enabled && SpamTarget is { Junk: false } t && t.Account.AccountId == account.AccountId) _ = RunSpamCheckAsync(account, force: true);
         UpdateSpamMarks();
     }
 
@@ -298,6 +356,17 @@ public partial class MainWindow
         AppLog.Note("spam-check", $"Inbox spam rules for {account.DisplayAddress}: {JunkRulesWindow.Summary(result.Rules)}");
         _spamScans.Remove(account.AccountId);
         _ = RunSpamCheckAsync(account, force: true);
+    }
+
+    /// <summary>The Junk Cleaner's own rules (the Other rules... window of Account Settings), from the bar in Junk Email.</summary>
+    internal async Task EditJunkCleanerRulesAsync(ConnectedAccount account)
+    {
+        var junk = JunkSettingsFor(account.AccountId);
+        var window = new JunkRulesWindow(account.DisplayAddress, junk.Rules, junk.Brands);
+        await window.ShowDialog(this);
+        if (window.Result is not { } result) return;
+        SaveJunkSettings(junk with { Rules = result.Rules, Brands = result.Brands });
+        AppLog.Note("spam-check", $"Junk Cleaner rules for {account.DisplayAddress}: {JunkRulesWindow.Summary(result.Rules)}");
     }
 
     /// <summary>

@@ -1,9 +1,9 @@
 # OpenOutlook: feature inventory and status
 
-Status date: **2026-10-11**. This is the single place that says what OpenOutlook does today, on which platform, where the code is and which file holds the setting. The requirements are in `PRODUCT_REQUIREMENTS.md`, the design in `DESIGN_SPEC.md` (section 11 onwards describes what was built after the original baseline), the build state in `BUILD_STATUS.md`, and the history in `docs/history/` and `docs/session-handoff-2026-10.md`.
+Status date: **2026-10-29** (build 0.1.84). This is the single place that says what OpenOutlook does today, on which platform, where the code is and which file holds the setting. The requirements are in `PRODUCT_REQUIREMENTS.md`, the design in `DESIGN_SPEC.md` (section 11 onwards describes what was built after the original baseline), the build state in `BUILD_STATUS.md`, and the history in `docs/history/` and `docs/session-handoff-2026-10.md`.
 
 Legend: **Yes** = built and used; **Partly** = built with the stated limits; **No** = not built (a ribbon button for it, if any, says "To be implemented"); **n/a** = does not apply.
-Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). **Linux** = the `.deb` / tar.gz, tested on Ubuntu 26.04 in WSL2 with WSLg, under Xvfb in CI, and (2026-10-06) built, installed and smoke-tested on a bare-metal Ubuntu 26.04 GNOME/Wayland desktop; the hands-on checklist in `docs/handoff-linux-bare-metal-2026-10-06.md` is still to be walked through.
+Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). **Linux** = the `.deb` / tar.gz, tested on Ubuntu 26.04 in WSL2 with WSLg, under Xvfb in CI, and on a bare-metal Ubuntu 26.04 GNOME/Wayland desktop, where the owner walked through the hands-on checklist (2026-10-15 and 2026-10-19) and uses it daily.
 
 ## 1. Application and platforms
 
@@ -158,7 +158,7 @@ Plan and decisions: `junk-cleaner-plan.md`.
 
 | What | Where |
 |---|---|
-| Settings files | `~/.config/OpenOutlook/`: `attached-psts.json`, `view-layout.json`, `options.json`, `shortcuts.json`, `appearance.json`, `folder-order.json`, `read-state.json`, `default-account.json`, `mirror-settings.json`, `junk-cleaner.json`, `junk-cleaner.log` |
+| Settings files | `~/.config/OpenOutlook/`: `attached-psts.json`, `view-layout.json`, `options.json`, `shortcuts.json`, `appearance.json`, `folder-order.json`, `read-state.json`, `default-account.json`, `mirror-settings.json`, `junk-cleaner.json`, `junk-cleaner.log`, `junk-keywords.json`, `junk-lists.json`, `inbox-spam-check.json`, `recent-recipients.json` |
 | Accounts (labels and public ids; no tokens) | `~/.local/share/OpenOutlook/accounts.json` |
 | Log | `~/.local/share/OpenOutlook/logs/openoutlook.log` |
 | Mailbox copies | Windows `%LOCALAPPDATA%\OpenOutlook\Mail`; Linux `~/.local/share/openoutlook/mail`; or the folder chosen in Data Files |
@@ -167,14 +167,14 @@ Plan and decisions: `junk-cleaner-plan.md`.
 
 ## 12. Not built / known gaps
 
-Calendar gaps (multiple calendars at once, overlay, event details, offline access, scheduling tools, and day preview); People/contacts UI, Tasks; signatures and spelling; undo/redo; rules; Automatic Replies; offline sending (Outbox); cross-store full-text search; native print dialog; Gmail draft editing and permanent Gmail delete; folder/label rename and delete from the mailbox copies; Junk Cleaner for Gmail; dark-mode and high-DPI verification; the PST engine writes Unicode-512 files only; `rmarrash_*.pst` fixtures are the owner's private data and are never in the repository.
+Calendar gaps (multiple calendars at once, overlay, recurrence and whole-series editing, offline access, scheduling tools, and day preview); People phases 2-4 (contacts in the mailbox copy, address book across accounts, contact groups, Gmail contacts), Tasks; signatures and spelling; undo/redo; rules; Automatic Replies; offline sending (Outbox); cross-store full-text search; native print dialog; Gmail draft editing and permanent Gmail delete; folder/label rename and delete from the mailbox copies; Junk Cleaner for Gmail; dark-mode and high-DPI verification; the PST engine writes Unicode-512 files only; `rmarrash_*.pst` fixtures are the owner's private data and are never in the repository.
 
 ## 13. Tests
 
-- .NET unit tests `tests/OpenOutlook.Tests`: the focused Graph Calendar tests pass on Windows. Five existing `OfflineMessageCacheTests` depend on Unix file permissions and cannot pass on Windows.
-- Avalonia headless UI tests `tests/OpenOutlook.HeadlessTests`: the focused Calendar tests pass on Windows. The complete suite is exercised by Linux CI.
-- C tests (`native/openpst/tests`: `test_basic`, `test_formats`, `test_write` with 168 checks) and the soak harness `tools/PstSoak`; SCANPST.EXE is the oracle for PST correctness (Windows).
-- Live-account tools: `tools/MailSmoke` (send/receive between the owner's accounts, mirror, Junk Cleaner dry run `junkscan`, timings `timing` / `gmailtiming` / `gmailsync`, `localfolder`, `openpath`, `openeditable`).
+- .NET unit tests `tests/OpenOutlook.Tests`: 748 pass on Windows (2026-10-29); five `OfflineMessageCacheTests` depend on Unix file permissions and cannot pass on Windows (all pass on Linux).
+- Avalonia headless UI tests `tests/OpenOutlook.HeadlessTests`: 80/80 on Windows (2026-10-29); also run by Linux CI. `docs/EDGE_CASES.md` names the test for every deliberate edge case (`scripts/check-edge-cases.py`).
+- C tests (`native/openpst/tests`: `test_basic`, `test_formats`, `test_write` with 188 checks and the clean-file guard) and the soak harness `tools/PstSoak`; SCANPST.EXE is the oracle for PST correctness (Windows).
+- Live-account tools: `tools/MailSmoke` (send/receive between the owner's accounts, mirror, timings `timing` / `gmailtiming` / `gmailsync`, `localfolder`, `openpath`, `openeditable`; read-only junk analysis `junkscan`, `junkheaders`, `junkrules`, `inboxspam`; reader probes `readerprobe`, `imgprobe`).
 - Linux/WSL scripts: `scripts/wsl-*.sh` (tests, package, deb smoke test, placement test, keyring diagnosis).
 
 ## New-mail indicator on the program icon (2026-10-19, 0.1.73-0.1.74)

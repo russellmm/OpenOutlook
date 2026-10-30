@@ -38,15 +38,26 @@ public sealed class HtmlPageView : Canvas
     private readonly Action<string> _report;
 
     private double _scale = 1;
+    private readonly double _pixelScale;
+
+    /// <summary>The tile's size in CSS pixels.</summary>
+    public Avalonia.Size CssSize => new(_bitmap.PixelSize.Width / _pixelScale, _bitmap.PixelSize.Height / _pixelScale);
     private bool _dragging;
     private Granularity _granularity;
     private (int Start, int End) _anchorRange;
     private bool? _overText;
 
+    /// <summary>
+    /// One tile of a rendered message. <paramref name="pixelScale"/> is how many device pixels the tile has per CSS pixel (the window's scale when it was
+    /// taken, <see cref="BrowserHtmlRenderer.RenderedDocument.Scale"/>): the view is laid out in CSS pixels (<see cref="CssSize"/>; links and selection
+    /// are in CSS pixels) and the picture is scaled into it, so a HiDPI screen gets every device pixel. (A bitmap tagged with a higher DPI instead is
+    /// drawn cropped, pixels 1:1, by Avalonia's Image - 0.1.86.)
+    /// </summary>
     public HtmlPageView(Bitmap bitmap, double top, IReadOnlyList<BrowserHtmlRenderer.LinkArea> links,
-        Action<string> report, SnapshotSelection? selection = null)
+        Action<string> report, SnapshotSelection? selection = null, double pixelScale = 1)
     {
         _bitmap = bitmap;
+        _pixelScale = double.IsFinite(pixelScale) && pixelScale > 0 ? pixelScale : 1;
         _top = top;
         _report = report;
         _selection = selection ?? new SnapshotSelection(SnapshotText.Empty);
@@ -58,12 +69,12 @@ public sealed class HtmlPageView : Canvas
         _layer.SetValue(Panel.ZIndexProperty, 10);
         Children.Add(_layer);
 
-        var linksBottom = top + bitmap.PixelSize.Height;
+        var linksBottom = top + CssSize.Height;
         foreach (var link in links)
         {
             var y0 = Math.Max(top, link.Y);
             var y1 = Math.Min(linksBottom, link.Y + link.Height);
-            if (y1 <= y0 || link.X >= bitmap.PixelSize.Width) continue;
+            if (y1 <= y0 || link.X >= CssSize.Width) continue;
             var area = link with { Y = y0 - top, Height = y1 - y0 };
             var button = new Button
             {
@@ -278,8 +289,8 @@ public sealed class HtmlPageView : Canvas
     public void SetScale(double scale)
     {
         _scale = Math.Max(0.01, scale);
-        Width = _bitmap.PixelSize.Width * _scale;
-        Height = _bitmap.PixelSize.Height * _scale;
+        Width = CssSize.Width * _scale;
+        Height = CssSize.Height * _scale;
         _image.Width = Width;
         _image.Height = Height;
         _layer.Width = Width;
@@ -302,7 +313,7 @@ public sealed class HtmlPageView : Canvas
             var selection = owner._selection;
             if (selection.IsEmpty) return;
             var top = owner._top;
-            var bottom = top + owner._bitmap.PixelSize.Height;
+            var bottom = top + owner.CssSize.Height;
             var scale = owner._scale;
             foreach (var rect in selection.Text.Highlights(selection.Start, selection.End, top, bottom))
                 context.FillRectangle(SelectionTint,

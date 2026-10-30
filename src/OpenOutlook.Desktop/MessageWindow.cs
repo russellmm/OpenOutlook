@@ -21,6 +21,7 @@ public sealed class MessageWindow : Window
     private CancellationTokenSource? _renderCancellation;
     private Button? _originalButton;
     private bool _showHtml;
+    private double _renderedScale = 1;
     private bool _showOriginal;
     private double _zoom = 1;
 
@@ -102,6 +103,8 @@ public sealed class MessageWindow : Window
         Content = layout;
         SizeChanged += (_, _) => FitPages();
         Opened += (_, _) => { if (_showHtml) _ = RenderAsync(_showOriginal); };
+        // the window can learn its screen's scale after it opened: the message is taken again at the new scale (owner 2026-10-30, soft popup)
+        ScalingChanged += (_, _) => { if (_showHtml && _bitmaps.Count > 0 && Math.Abs(MainWindow.ScreenScale(this) - _renderedScale) > 0.01) _ = RenderAsync(_showOriginal); };
         Closed += (_, _) =>
         {
             var cancellation = _renderCancellation;
@@ -134,8 +137,9 @@ public sealed class MessageWindow : Window
             var document = trustedOriginal ? _html! : SafeHtmlDocument.Build(_html!, _images);
             var width = (int)Math.Clamp(Bounds.Width - 40, 400, 1200);
             var rendered = await BrowserHtmlRenderer.RenderDocumentAsync(document, width, cancellation.Token,
-                trustedOriginal: trustedOriginal);
+                trustedOriginal: trustedOriginal, screenScale: MainWindow.ScreenScale(this));
             if (cancellation.IsCancellationRequested) return;
+            _renderedScale = rendered.Scale;
             var bitmaps = rendered.Pages.Select(png => new Bitmap(new MemoryStream(png, writable: false))).ToArray();
             _pages.Children.Clear();
             foreach (var bitmap in _bitmaps) bitmap.Dispose();
@@ -145,9 +149,9 @@ public sealed class MessageWindow : Window
             foreach (var bitmap in bitmaps)
             {
                 _bitmaps.Add(bitmap);
-                _pages.Children.Add(new HtmlPageView(bitmap, top, rendered.Links,
-                    message => _status.Text = message, selection));
-                top += bitmap.PixelSize.Height;
+                var tile = new HtmlPageView(bitmap, top, rendered.Links, message => _status.Text = message, selection, rendered.Scale);
+                _pages.Children.Add(tile);
+                top += tile.CssSize.Height;
             }
             FitPages();
             _status.Text = "";
@@ -180,8 +184,8 @@ public sealed class MessageWindow : Window
         var available = Math.Max(200, Bounds.Width - 40);
         for (var i = 0; i < _bitmaps.Count; i++)
         {
-            var bitmap = _bitmaps[i];
-            var scale = Math.Min(1, available / bitmap.PixelSize.Width) * _zoom;
+            var tile = (HtmlPageView)_pages.Children[i];
+            var scale = Math.Min(1, available / tile.CssSize.Width) * _zoom;
             ((HtmlPageView)_pages.Children[i]).SetScale(scale);
         }
     }

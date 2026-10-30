@@ -21,8 +21,20 @@ public static class BrowserHtmlRenderer
     public sealed record TextRun(string Text, double X, double Y, double Height, IReadOnlyList<double> Edges,
         int Block, bool Cell, bool HardBreak, bool SpaceBefore);
 
+    /// <summary>The tiles are PNGs at <paramref name="Scale"/> device pixels per CSS pixel; links and text runs are in CSS pixels.</summary>
     public sealed record RenderedDocument(IReadOnlyList<byte[]> Pages, IReadOnlyList<LinkArea> Links,
-        IReadOnlyList<TextRun> Text);
+        IReadOnlyList<TextRun> Text, double Scale = 1);
+
+    /// <summary>Device pixels of one message rendering at most (about 240 MB decoded): very long mail is drawn at a lower scale, never refused for it.</summary>
+    private const double MaximumDevicePixels = 60_000_000;
+
+    /// <summary>The scale a document of this CSS size is drawn at: the screen's (capped at 3), lowered to stay within <see cref="MaximumDevicePixels"/>.</summary>
+    public static double EffectiveScale(double screenScale, int width, int height)
+    {
+        var scale = double.IsFinite(screenScale) ? Math.Clamp(screenScale, 1, 3) : 1;
+        var budget = Math.Sqrt(MaximumDevicePixels / Math.Max(1d, (double)width * height));
+        return Math.Max(1, Math.Min(scale, budget));
+    }
     public const int MaximumScreenshotBytes = 32 * 1024 * 1024;
     private const int MaximumHeight = 60_000;
     private const int TileHeight = 3_000;
@@ -130,8 +142,12 @@ public static class BrowserHtmlRenderer
         CancellationToken cancellationToken = default, bool trustedOriginal = false)
         => (await RenderDocumentAsync(safeHtml, viewportWidth, cancellationToken, trustedOriginal)).Pages;
 
+    /// <summary>
+    /// Lays the message out at <paramref name="viewportWidth"/> CSS pixels and takes the pictures at <paramref name="screenScale"/> (the window's render
+    /// scaling): a 1x picture stretched to a HiDPI screen made every message soft (owner 2026-10-30, 2.74x on the bare-metal box).
+    /// </summary>
     public static async Task<RenderedDocument> RenderDocumentAsync(string safeHtml, int viewportWidth,
-        CancellationToken cancellationToken = default, bool trustedOriginal = false)
+        CancellationToken cancellationToken = default, bool trustedOriginal = false, double screenScale = 1)
     {
         ArgumentNullException.ThrowIfNull(safeHtml);
         if (safeHtml.Length > 40 * 1024 * 1024 || viewportWidth is < 400 or > 1400)
@@ -200,6 +216,10 @@ public static class BrowserHtmlRenderer
         // the document, which stays off for untrusted mail.
         var textJson = await page.EvaluateFunctionAsync<string>(TextRunScript).ConfigureAwait(false);
         var textRuns = ReadTextRuns(textJson, width, height);
+        var scale = EffectiveScale(screenScale, width, height);
+        if (scale > 1)
+            await page.SetViewportAsync(new ViewPortOptions
+            { Width = width, Height = 200, DeviceScaleFactor = scale }).ConfigureAwait(false);       // the layout stays in CSS pixels
         var pages = new List<byte[]>();
         var totalBytes = 0L;
         for (var y = 0; y < height; y += TileHeight)
@@ -211,16 +231,16 @@ public static class BrowserHtmlRenderer
                 Clip = new PuppeteerSharp.Media.Clip { X = 0, Y = y, Width = width, Height = tileHeight },
                 CaptureBeyondViewport = true
             }).ConfigureAwait(false);
-            var dimensions = ValidateScreenshot(png);
-            if (dimensions.Width != width || dimensions.Height != tileHeight)
+            var dimensions = ValidateScreenshot(png, scale);
+            if (Math.Abs(dimensions.Width - width * scale) > 1.5 || Math.Abs(dimensions.Height - tileHeight * scale) > 1.5)
                 throw new InvalidDataException("Browser returned an incomplete preview page.");
             totalBytes += png.Length;
-            if (totalBytes > 64L * 1024 * 1024)
+            if (totalBytes > 192L * 1024 * 1024)
                 throw new InvalidDataException("HTML preview images exceed the memory limit.");
             pages.Add(png);
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return new RenderedDocument(pages, links, textRuns);
+        return new RenderedDocument(pages, links, textRuns, scale);
     }
 
     private sealed class BrowserLink
@@ -405,7 +425,7 @@ public static class BrowserHtmlRenderer
         return result;
     }
 
-    public static (int Width, int Height) ValidateScreenshot(ReadOnlySpan<byte> png)
+    public static (int Width, int Height) ValidateScreenshot(ReadOnlySpan<byte> png, double scale = 1)
     {
         if (png.Length is < 24 or > MaximumScreenshotBytes ||
             !png[..8].SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }) ||
@@ -413,8 +433,8 @@ public static class BrowserHtmlRenderer
             throw new InvalidDataException("Browser returned an invalid preview image.");
         var width = checked((int)BinaryPrimitives.ReadUInt32BigEndian(png[16..20]));
         var height = checked((int)BinaryPrimitives.ReadUInt32BigEndian(png[20..24]));
-        if (width is < 400 or > 1400 || height is <= 0 or > TileHeight ||
-            (long)width * height > 4_200_000)
+        if (width < 400 || width > 1400 * scale + 2 || height <= 0 || height > TileHeight * scale + 2 ||
+            (long)width * height > 4_200_000 * scale * scale + 10_000)
             throw new InvalidDataException("Browser preview image exceeds the size limit.");
         return (width, height);
     }

@@ -20,6 +20,32 @@ public sealed class BrowserHtmlRendererTests
         Assert.True(pdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8));
     }
 
+    /// <summary>Owner 2026-10-30: every message looked soft on the 2.74x screen because the picture was taken at 1x and stretched. It is now
+    /// taken at the screen's scale; the layout, links and text positions stay in CSS pixels; very long mail gets a lower scale, not a refusal.</summary>
+    [Fact]
+    public async Task PicturesAreTakenAtTheScreensScaleWithTheSameLayout()
+    {
+        if (BrowserHtmlRenderer.FindBrowser() is null) return;
+        var safe = SafeHtmlDocument.Build("<body><p>Sharp <a href='https://example.test/x'>text</a> please</p></body>", new Dictionary<string, byte[]>());
+        var flat = await BrowserHtmlRenderer.RenderDocumentAsync(safe, 640);
+        var sharp = await BrowserHtmlRenderer.RenderDocumentAsync(safe, 640, screenScale: 2.74);
+        Assert.Equal(1, flat.Scale);
+        Assert.Equal(2.74, sharp.Scale, 3);
+        var (w1, h1) = BrowserHtmlRenderer.ValidateScreenshot(flat.Pages[0]);
+        var (w2, h2) = BrowserHtmlRenderer.ValidateScreenshot(sharp.Pages[0], sharp.Scale);
+        Assert.Equal(640, w1);
+        Assert.InRange(w2, 1752, 1755);                                        // 640 x 2.74 device pixels
+        Assert.InRange(h2, h1 * 2.74 - 2, h1 * 2.74 + 2);
+        Assert.Equal(flat.Links.Single(), sharp.Links.Single());               // links and text stay in CSS pixels
+        Assert.Equal(flat.Text.Select(r => (r.Text, r.X, r.Y)), sharp.Text.Select(r => (r.Text, r.X, r.Y)));
+
+        Assert.Equal(2.74, BrowserHtmlRenderer.EffectiveScale(2.74, 800, 5_000), 3);
+        Assert.Equal(1.94, BrowserHtmlRenderer.EffectiveScale(2.74, 800, 20_000), 2);   // a long newsletter stays within the pixel budget
+        Assert.Equal(1, BrowserHtmlRenderer.EffectiveScale(2.74, 1400, 60_000));
+        Assert.Equal(3, BrowserHtmlRenderer.EffectiveScale(4, 600, 1_000));
+        Assert.Equal(1, BrowserHtmlRenderer.EffectiveScale(0.5, 600, 1_000));
+    }
+
     [Fact]
     public async Task MeasuresEveryCharacterForSelection()
     {

@@ -148,7 +148,7 @@ public static partial class HtmlEditorDocument
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'">
         <style>
         html,body{margin:0;min-height:100%;background:#fff}
-        #editor{min-height:100vh;box-sizing:border-box;padding:10px 14px 40px;outline:none;font-family:Aptos,Calibri,Arial,Helvetica,sans-serif;font-size:12pt;color:#000;overflow-wrap:break-word}
+        #editor{min-height:calc(100vh / var(--oo-zoom, 1));box-sizing:border-box;padding:10px 14px 40px;outline:none;font-family:Aptos,Calibri,Arial,Helvetica,sans-serif;font-size:12pt;color:#000;overflow-wrap:break-word}
         #editor img{max-width:100%}
         #editor table{border-collapse:collapse}
         #editor.marks :is(div,p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):not(:has(div,p,li,h1,h2,h3,blockquote,pre,table))::after{content:'\00b6';color:#5b84c9;font-family:Arial}

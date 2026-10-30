@@ -2422,6 +2422,16 @@ public sealed partial class MainWindow : Window
         _inlineImageBytes.Clear();
     }
 
+    /// <summary>The display scale to take message pictures at: the window's render scaling, or its screen's when that is larger (a window that has
+    /// just opened can still report 1).</summary>
+    internal static double ScreenScale(Window window)
+    {
+        var scale = window.RenderScaling;
+        try { if (window.Screens.ScreenFromWindow(window) is { Scaling: > 0 } screen) scale = Math.Max(scale, screen.Scaling); }
+        catch (Exception e) when (e is not OutOfMemoryException) { /* no screen information: the render scaling */ }
+        return scale;
+    }
+
     private async Task RenderBrowserHtmlAsync(long version)
     {
         if (_bodyHtml is not { } html) return;
@@ -2446,7 +2456,7 @@ public sealed partial class MainWindow : Window
             if (cancellation.IsCancellationRequested || version != _messageVersion) return;
             var width = (int)Math.Clamp(ReaderPane.Bounds.Width - 36, 400, 1200);
             var rendered = await BrowserHtmlRenderer.RenderDocumentAsync(document, width, cancellation.Token,
-                trustedOriginal: _showOriginalHtml);
+                trustedOriginal: _showOriginalHtml, screenScale: ScreenScale(this));
             if (cancellation.IsCancellationRequested || version != _messageVersion) return;
             var bitmaps = rendered.Pages.Select(png => new Bitmap(new MemoryStream(png, writable: false))).ToArray();
             HtmlPagesPanel.Children.Clear();
@@ -2458,9 +2468,9 @@ public sealed partial class MainWindow : Window
             var selection = new SnapshotSelection(new SnapshotText(rendered.Text));       // one selection across all tiles
             foreach (var bitmap in bitmaps)
             {
-                HtmlPagesPanel.Children.Add(new HtmlPageView(bitmap, top, rendered.Links,
-                    message => StatusText.Text = message, selection));
-                top += bitmap.PixelSize.Height;
+                var tile = new HtmlPageView(bitmap, top, rendered.Links, message => StatusText.Text = message, selection, rendered.Scale);
+                HtmlPagesPanel.Children.Add(tile);
+                top += tile.CssSize.Height;
             }
             FitHtmlPageImage();
             ShowImageFailureStatus();
@@ -2629,11 +2639,8 @@ public sealed partial class MainWindow : Window
     {
         if (_htmlPageBitmaps.Count == 0) return;
         var availableWidth = Math.Max(200, ReaderPane.Bounds.Width - 36);
-        foreach (var (bitmap, index) in _htmlPageBitmaps.Select((bitmap, index) => (bitmap, index)))
-        {
-            var scale = Math.Min(1, availableWidth / bitmap.PixelSize.Width) * _htmlZoom;
-            ((HtmlPageView)HtmlPagesPanel.Children[index]).SetScale(scale);
-        }
+        foreach (var tile in HtmlPagesPanel.Children.OfType<HtmlPageView>())
+            tile.SetScale(Math.Min(1, availableWidth / tile.CssSize.Width) * _htmlZoom);
     }
 
     private void ZoomInClicked(object? sender, RoutedEventArgs e)

@@ -61,6 +61,7 @@ public partial class MainWindow
         var compose = new ComposeWindow(accounts, initial, seed, draftId) { RecipientLookup = LookupRecipientsAsync, RecentRecipients = RecentRecipients };
         compose.Sent += AddSentRecipientsToSafeSenders;
         compose.DraftStored += address => _ = CatchUpAfterDraftSavedAsync(address);
+        compose.Sent += (address, recipients) => _ = CatchUpAfterSendAsync(address);
         compose.Show(this);
     }
 
@@ -74,6 +75,22 @@ public partial class MainWindow
         }
         catch (Exception e) { AppLog.Error("compose", e, "bringing Drafts up to date after saving a draft failed; the next check will do it"); }
     }
+
+    /// <summary>
+    /// A message was sent: Sent Items (and the counts) are brought up to date shortly after, not at the next scheduled copy sync (owner 2026-10-30:
+    /// "takes too long to show up in Sent Items"). The server files the sent copy a moment after accepting the message, so the account is caught up
+    /// after <see cref="SentCatchUpDelays"/> (a second pass for a slow server).
+    /// </summary>
+    private async Task CatchUpAfterSendAsync(string address)
+    {
+        foreach (var delay in SentCatchUpDelays)
+        {
+            await Task.Delay(delay);
+            await CatchUpAfterDraftSavedAsync(address);
+        }
+    }
+
+    internal static TimeSpan[] SentCatchUpDelays { get; set; } = [TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(12)];
 
     private bool IsSelf(string address, ConnectedAccount account) =>
         address.Contains(account.DisplayAddress, StringComparison.OrdinalIgnoreCase);

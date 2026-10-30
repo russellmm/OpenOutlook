@@ -170,6 +170,7 @@ public sealed class HtmlComposeEditorTests
         {
             Assert.True(jpeg.Length > 100 && jpeg[0] == 0xFF && jpeg[1] == 0xD8);                    // a JPEG of the page
             Assert.Equal((600d, 300d), (w, h));
+            Assert.Equal((1200, 600), JpegSize(jpeg));                                                // full resolution at 2x, not a 1x picture stretched (soft text)
             Interlocked.Increment(ref frames);
         });
         await session.MouseAsync("mousePressed", 40, 20, "left", 1, 1, 0);
@@ -193,6 +194,20 @@ public sealed class HtmlComposeEditorTests
         Assert.True(frames > 0);
         await session.EvaluateAsync(HtmlEditorDocument.Call("html", "<i>pasted</i>"));
         Assert.Contains("<i>pasted</i>", HtmlEditorDocument.ScriptString(await session.EvaluateAsync("window.oo.get()")));
+    }
+
+    /// <summary>Width and height from a JPEG's start-of-frame marker.</summary>
+    private static (int, int) JpegSize(byte[] jpeg)
+    {
+        for (var i = 2; i + 8 < jpeg.Length;)
+        {
+            if (jpeg[i] != 0xFF) { i++; continue; }
+            var marker = jpeg[i + 1];
+            var length = (jpeg[i + 2] << 8) | jpeg[i + 3];
+            if (marker is >= 0xC0 and <= 0xC3) return ((jpeg[i + 7] << 8) | jpeg[i + 8], (jpeg[i + 5] << 8) | jpeg[i + 6]);
+            i += 2 + length;
+        }
+        return (0, 0);
     }
 
     [Fact]

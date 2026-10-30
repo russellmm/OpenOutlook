@@ -2686,4 +2686,43 @@ public sealed class MainWindowHeadlessTests
             Dispatcher.UIThread.RunJobs();
         }
     }
+
+    /// <summary>Owner 2026-10-30 (soft text on a 2.74x screen; 0.1.86 then showed the top-left corner magnified): a reader tile taken at the
+    /// screen's scale is laid out at its CSS size and the whole picture is scaled into it - checked on the rendered frame, not only the sizes.</summary>
+    [AvaloniaFact]
+    public void Reader_tiles_taken_at_the_screen_scale_keep_their_css_size()
+    {
+        using var source = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize(800, 300));
+        using (var dc = source.CreateDrawingContext())
+        {
+            dc.FillRectangle(Avalonia.Media.Brushes.White, new Rect(0, 0, 800, 300));
+            dc.FillRectangle(Avalonia.Media.Brushes.Red, new Rect(600, 0, 200, 300));          // the right quarter of the tile's pixels
+        }
+        using var stream = new MemoryStream();
+        source.Save(stream);
+        using var tile = new Avalonia.Media.Imaging.Bitmap(new MemoryStream(stream.ToArray()));
+        var view = new HtmlPageView(tile, 0, [new BrowserHtmlRenderer.LinkArea("https://example.test/", 350, 10, 40, 12)], _ => { }, pixelScale: 2);
+        Assert.Equal(new Size(400, 150), view.CssSize);
+        view.SetScale(1);
+        Assert.Equal((400d, 150d), (view.Width, view.Height));
+        Assert.Single(view.Children.OfType<Button>());                         // the link at x 350 is inside the 400-wide tile
+        var window = new Window { Width = 500, Height = 200, Content = new Canvas { Children = { view } }, Background = Avalonia.Media.Brushes.White };
+        window.Show();
+        try
+        {
+            Dispatcher.UIThread.RunJobs();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            using var frame = window.CaptureRenderedFrame()!;
+            Shot(window, "20-reader-tile-2x");
+            var pixels = new byte[frame.PixelSize.Width * frame.PixelSize.Height * 4];
+            var pin = System.Runtime.InteropServices.GCHandle.Alloc(pixels, System.Runtime.InteropServices.GCHandleType.Pinned);
+            try { frame.CopyPixels(new PixelRect(frame.PixelSize), pin.AddrOfPinnedObject(), pixels.Length, frame.PixelSize.Width * 4); }
+            finally { pin.Free(); }
+            bool Red(int x, int y) { var i = (y * frame.PixelSize.Width + x) * 4; return Math.Max(pixels[i], pixels[i + 2]) > 200 && Math.Min(pixels[i], pixels[i + 2]) < 60 && pixels[i + 1] < 60; }   // RGBA or BGRA
+            Assert.True(Red(380, 75));                                         // the red quarter is at CSS x 300-400: the whole tile was scaled in
+            Assert.False(Red(250, 75));
+            Assert.False(Red(450, 75));                                        // nothing drawn past the tile
+        }
+        finally { window.Close(); }
+    }
 }

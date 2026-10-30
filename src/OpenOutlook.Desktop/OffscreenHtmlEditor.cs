@@ -16,6 +16,9 @@ namespace OpenOutlook.Desktop;
 /// The editor page (<see cref="HtmlEditorDocument.Shell"/>) in a headless Chromium, for desktops where the embedded web view paints nothing
 /// (Wayland). The page renders off screen; its frames come back as pictures (DevTools screencast) and the input of the compose body goes to it as
 /// DevTools input events. All calls go through one queue, so keys, text and ribbon commands reach the page in the order they were made.
+/// Headless screencast frames come at the page's CSS size whatever the device scale (a 2x page still sends 1x pictures, soft on a HiDPI screen), so
+/// the page gets a viewport in device pixels at scale 1 and zooms itself by the screen's scale (CSS zoom on the root, --oo-zoom for the vh-based
+/// height): frames are then full resolution, and mouse positions are multiplied by the same factor.
 /// </summary>
 internal sealed class OffscreenEditorSession : IAsyncDisposable
 {
@@ -23,12 +26,13 @@ internal sealed class OffscreenEditorSession : IAsyncDisposable
     private readonly IPage _page;
     private readonly SemaphoreSlim _queue = new(1, 1);
     private bool _closed;
+    private double _scale;
 
-    private OffscreenEditorSession(IBrowser browser, IPage page) { _browser = browser; _page = page; }
+    private OffscreenEditorSession(IBrowser browser, IPage page, double scale) { _browser = browser; _page = page; _scale = scale; }
 
     /// <summary>What the page posts ("dirty", "html:...", "state:...").</summary>
     public event Action<string>? Message;
-    /// <summary>A new picture of the page: JPEG bytes and the size in CSS pixels it shows.</summary>
+    /// <summary>A new picture of the page: JPEG bytes (device pixels) and the size in Avalonia units it covers.</summary>
     public event Action<byte[], double, double>? Frame;
 
     public static async Task<OffscreenEditorSession> StartAsync(string executable, int width, int height, double scale,
@@ -38,7 +42,8 @@ internal sealed class OffscreenEditorSession : IAsyncDisposable
         try
         {
             var page = (await browser.PagesAsync().ConfigureAwait(false)).FirstOrDefault() ?? await browser.NewPageAsync().ConfigureAwait(false);
-            var session = new OffscreenEditorSession(browser, page);
+            scale = Scale(scale);
+            var session = new OffscreenEditorSession(browser, page, scale);
             session.Message += message;
             session.Frame += frame;
             await page.SetViewportAsync(Viewport(width, height, scale)).ConfigureAwait(false);
@@ -46,7 +51,8 @@ internal sealed class OffscreenEditorSession : IAsyncDisposable
             await page.ExposeFunctionAsync("ooPost", (string m) => { session.Message?.Invoke(m); return true; }).ConfigureAwait(false);
             page.Client.MessageReceived += session.OnDevToolsMessage;
             await page.SetContentAsync(HtmlEditorDocument.Shell).ConfigureAwait(false);
-            await page.Client.SendAsync("Page.startScreencast", new Dictionary<string, object> { ["format"] = "jpeg", ["quality"] = 92 }).ConfigureAwait(false);
+            await page.EvaluateExpressionAsync(ZoomScript(scale)).ConfigureAwait(false);
+            await page.Client.SendAsync("Page.startScreencast", new Dictionary<string, object> { ["format"] = "jpeg", ["quality"] = 95 }).ConfigureAwait(false);
             return session;
         }
         catch
@@ -56,8 +62,16 @@ internal sealed class OffscreenEditorSession : IAsyncDisposable
         }
     }
 
+    private static double Scale(double scale) => double.IsFinite(scale) ? Math.Clamp(scale, 1, 3) : 1;
+
     private static ViewPortOptions Viewport(int width, int height, double scale) =>
-        new() { Width = Math.Clamp(width, 50, 8000), Height = Math.Clamp(height, 50, 8000), DeviceScaleFactor = Math.Clamp(scale, 1, 3) };
+        new() { Width = (int)Math.Round(Math.Clamp(width, 50, 4000) * scale), Height = (int)Math.Round(Math.Clamp(height, 50, 4000) * scale), DeviceScaleFactor = 1 };
+
+    private static string ZoomScript(double scale)
+    {
+        var z = scale.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        return $"document.documentElement.style.zoom='{z}';document.documentElement.style.setProperty('--oo-zoom','{z}')";
+    }
 
     private async void OnDevToolsMessage(object? sender, MessageEventArgs e)
     {
@@ -67,7 +81,7 @@ internal sealed class OffscreenEditorSession : IAsyncDisposable
             var data = e.MessageData;
             var meta = data.GetProperty("metadata");
             var bytes = Convert.FromBase64String(data.GetProperty("data").GetString() ?? "");
-            Frame?.Invoke(bytes, meta.GetProperty("deviceWidth").GetDouble(), meta.GetProperty("deviceHeight").GetDouble());
+            Frame?.Invoke(bytes, meta.GetProperty("deviceWidth").GetDouble() / _scale, meta.GetProperty("deviceHeight").GetDouble() / _scale);
             await _page.Client.SendAsync("Page.screencastFrameAck", new Dictionary<string, object> { ["sessionId"] = data.GetProperty("sessionId").GetInt32() }).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { if (!_closed) AppLog.Note("compose", "editor frame failed: " + ex.Message); }
@@ -87,7 +101,13 @@ internal sealed class OffscreenEditorSession : IAsyncDisposable
     /// <summary>Runs a script in the page; the result comes back as JSON text (what <see cref="HtmlEditorDocument.ScriptString"/> reads), null on failure.</summary>
     public Task<string?> EvaluateAsync(string script) => Queued(() => _page.EvaluateExpressionAsync<string?>("JSON.stringify((" + script + "))"));
 
-    public Task ResizeAsync(int width, int height, double scale) => Queued(async () => { await _page.SetViewportAsync(Viewport(width, height, scale)).ConfigureAwait(false); return true; });
+    public Task ResizeAsync(int width, int height, double scale) => Queued(async () =>
+    {
+        scale = Scale(scale);
+        await _page.SetViewportAsync(Viewport(width, height, scale)).ConfigureAwait(false);
+        if (Math.Abs(scale - _scale) > 0.001) { _scale = scale; await _page.EvaluateExpressionAsync(ZoomScript(scale)).ConfigureAwait(false); }       // window moved to another screen
+        return true;
+    });
 
     public Task InsertTextAsync(string text) => Send("Input.insertText", new() { ["text"] = text });
 
@@ -108,14 +128,14 @@ internal sealed class OffscreenEditorSession : IAsyncDisposable
         return true;
     });
 
-    /// <summary>A mouse event in CSS pixels of the page (type mousePressed, mouseReleased, mouseMoved or mouseWheel).</summary>
+    /// <summary>A mouse event in Avalonia units of the body (type mousePressed, mouseReleased, mouseMoved or mouseWheel).</summary>
     public Task MouseAsync(string type, double x, double y, string button, int buttons, int clickCount, int modifiers, double deltaX = 0, double deltaY = 0)
     {
         var args = new Dictionary<string, object>
         {
-            ["type"] = type, ["x"] = x, ["y"] = y, ["button"] = button, ["buttons"] = buttons, ["clickCount"] = clickCount, ["modifiers"] = modifiers,
+            ["type"] = type, ["x"] = x * _scale, ["y"] = y * _scale, ["button"] = button, ["buttons"] = buttons, ["clickCount"] = clickCount, ["modifiers"] = modifiers,
         };
-        if (type == "mouseWheel") { args["deltaX"] = deltaX; args["deltaY"] = deltaY; }
+        if (type == "mouseWheel") { args["deltaX"] = deltaX * _scale; args["deltaY"] = deltaY * _scale; }
         return Send("Input.dispatchMouseEvent", args);
     }
 

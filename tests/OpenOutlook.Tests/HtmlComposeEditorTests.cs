@@ -157,4 +157,55 @@ public sealed class HtmlComposeEditorTests
         Assert.False(state.Bold);
         Assert.Equal(("Georgia", 14d), (state.Font, state.Size));
     }
+
+    /// <summary>Wayland (owner 2026-10-30): the editor page runs in the headless browser and is typed into in place; keys, text and the mouse
+    /// reach it as DevTools input, pictures of it come back, and it reports its HTML as the embedded editor does.</summary>
+    [Fact]
+    public async Task The_offscreen_editor_is_typed_into_in_place_and_reports_its_html()
+    {
+        if (BrowserHtmlRenderer.FindBrowser() is not { } exe) return;
+        var messages = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var frames = 0;
+        await using var session = await OffscreenEditorSession.StartAsync(exe, 600, 300, 2, messages.Enqueue, (jpeg, w, h) =>
+        {
+            Assert.True(jpeg.Length > 100 && jpeg[0] == 0xFF && jpeg[1] == 0xD8);                    // a JPEG of the page
+            Assert.Equal((600d, 300d), (w, h));
+            Interlocked.Increment(ref frames);
+        });
+        await session.MouseAsync("mousePressed", 40, 20, "left", 1, 1, 0);
+        await session.MouseAsync("mouseReleased", 40, 20, "left", 0, 1, 0);
+        foreach (var c in "Hello") await session.InsertTextAsync(c.ToString());
+        var ctrl = OffscreenKey.Modifiers(Avalonia.Input.KeyModifiers.Control);
+        await session.KeyAsync(OffscreenKey.From(Avalonia.Input.Key.A, Avalonia.Input.KeyModifiers.Control)!, ctrl);
+        await session.KeyAsync(OffscreenKey.From(Avalonia.Input.Key.B, Avalonia.Input.KeyModifiers.Control)!, ctrl);
+        await session.KeyAsync(OffscreenKey.From(Avalonia.Input.Key.End, Avalonia.Input.KeyModifiers.None)!, 0);
+        await session.KeyAsync(OffscreenKey.From(Avalonia.Input.Key.Back, Avalonia.Input.KeyModifiers.None)!, 0);
+        await session.KeyAsync(OffscreenKey.From(Avalonia.Input.Key.Enter, Avalonia.Input.KeyModifiers.None)!, 0);
+        await session.InsertTextAsync("second");
+        var html = HtmlEditorDocument.ScriptString(await session.EvaluateAsync("window.oo.get()"))!;
+        Assert.Matches("^(<b>Hell</b>|<div><b>Hell</b></div>)<div><b>second</b></div>$", html.Replace("<span style=\"font-weight: bold;\">", "<b>").Replace("</span>", "</b>"));
+        await session.EvaluateAsync(HtmlEditorDocument.Call("selectAll", null));
+        Assert.Contains("second", HtmlEditorDocument.ScriptString(await session.EvaluateAsync("window.oo.selHtml()")));
+        for (var i = 0; i < 50 && !messages.Any(m => m.StartsWith("html:", StringComparison.Ordinal) && m.Contains("second")); i++) await Task.Delay(20);
+        Assert.Contains("dirty", messages);
+        Assert.Contains(messages, m => m.StartsWith("state:{", StringComparison.Ordinal));
+        Assert.Contains(messages, m => m.StartsWith("html:", StringComparison.Ordinal) && m.Contains("second"));
+        Assert.True(frames > 0);
+        await session.EvaluateAsync(HtmlEditorDocument.Call("html", "<i>pasted</i>"));
+        Assert.Contains("<i>pasted</i>", HtmlEditorDocument.ScriptString(await session.EvaluateAsync("window.oo.get()")));
+    }
+
+    [Fact]
+    public void Offscreen_keys_leave_text_tab_and_the_clipboard_to_the_app()
+    {
+        Assert.Equal(("Enter", 13, "\r"), (OffscreenKey.From(Avalonia.Input.Key.Enter, default)!.Name, OffscreenKey.From(Avalonia.Input.Key.Enter, default)!.VirtualKey, OffscreenKey.From(Avalonia.Input.Key.Enter, default)!.Text));
+        Assert.Equal(("B", "KeyB", 66), (OffscreenKey.From(Avalonia.Input.Key.B, Avalonia.Input.KeyModifiers.Control | Avalonia.Input.KeyModifiers.Shift)!.Name,
+            OffscreenKey.From(Avalonia.Input.Key.B, Avalonia.Input.KeyModifiers.Control)!.Code, OffscreenKey.From(Avalonia.Input.Key.B, Avalonia.Input.KeyModifiers.Control)!.VirtualKey));
+        Assert.Null(OffscreenKey.From(Avalonia.Input.Key.B, default));                                  // plain letters come as text
+        Assert.Null(OffscreenKey.From(Avalonia.Input.Key.Tab, default));
+        Assert.Null(OffscreenKey.From(Avalonia.Input.Key.V, Avalonia.Input.KeyModifiers.Control));
+        Assert.Equal(10, OffscreenKey.Modifiers(Avalonia.Input.KeyModifiers.Control | Avalonia.Input.KeyModifiers.Shift));
+        Assert.Equal("<b>é</b>", OffscreenHtmlEditor.ClipboardText(System.Text.Encoding.UTF8.GetBytes("<b>é</b>\0")));
+        Assert.Equal("<b>x</b>", OffscreenHtmlEditor.ClipboardText(new byte[] { 0xFF, 0xFE }.Concat(System.Text.Encoding.Unicode.GetBytes("<b>x</b>")).ToArray()));
+    }
 }

@@ -492,7 +492,7 @@ public sealed class MainWindowHeadlessTests
         try
         {
             var list = window.FindControl<DataGrid>("MessageList")!;
-            Assert.Equal(7, list.Columns.Count);
+            Assert.Equal(8, list.Columns.Count);                                                // seven named columns + the Inbox spam check boxes (0.1.82)
             Assert.False(list.Columns[5].IsVisible);                                            // Importance and Flag are choices, not defaults
             Assert.False(list.Columns[6].IsVisible);
             window.SetColumnVisible(5, true);
@@ -2624,5 +2624,66 @@ public sealed class MainWindowHeadlessTests
             Assert.DoesNotContain(Call<IReadOnlyList<DataFileRow>>(window, "BuildDataFileRows"), r => r.Path == missing);
         }
         finally { window.Close(); attached.Save([]); }
+    }
+
+    /// <summary>Wayland (owner 2026-10-30): no "Edit message..." window any more. The body is the editor page in the headless browser, drawn
+    /// into the compose window; clicking and typing in the body, keyboard shortcuts and the ribbon all edit it in place.</summary>
+    [AvaloniaFact]
+    public async Task Compose_body_is_edited_in_place_through_the_offscreen_browser()
+    {
+        if (BrowserHtmlRenderer.FindBrowser() is null) return;
+        var backend = new RecordingBackend("me@hotmail.test", "Microsoft");
+        var accounts = new List<ComposeAccount> { new("me@hotmail.test", "Microsoft", null, () => backend) };
+        ComposeWindow.EditorFactory = w => new OffscreenHtmlEditor(() => w, _ => { });
+        var window = new ComposeWindow(accounts, accounts[0], new ComposeSeed(To: "friend@example.org", Subject: "In place", Html: true)) { Width = 1400, Height = 760 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var editor = Assert.IsType<OffscreenHtmlEditor>(window.Editor);
+            await WaitUntil(() => editor.IsReady);
+            Assert.True(editor.IsReady && editor.EditsInPlace);
+            Assert.DoesNotContain(window.GetVisualDescendants().OfType<Button>(), b => b.Content?.ToString()?.StartsWith("Edit message", StringComparison.Ordinal) == true);
+            var view = window.GetVisualDescendants().OfType<OffscreenEditorView>().Single();
+            var at = view.TranslatePoint(new Point(60, 20), window)!.Value;
+            window.MouseDown(at, MouseButton.Left);
+            window.MouseUp(at, MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(view.IsFocused);
+
+            window.KeyTextInput("Hello from Wayland");
+            window.KeyPress(Key.A, RawInputModifiers.Control, PhysicalKey.A, "a");             // select all, then the ribbon's Bold
+            await Task.Delay(100);
+            var bold = window.GetVisualDescendants().OfType<Button>().First(b => ToolTip.GetTip(b)?.ToString()?.StartsWith("Bold", StringComparison.Ordinal) == true);
+            bold.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntil(() => bold.Background is Avalonia.Media.ISolidColorBrush { Color.R: 0xCC }, 5000);   // the page reports the cursor's state back
+            Assert.True(bold.Background is Avalonia.Media.ISolidColorBrush { Color.R: 0xCC });
+            window.KeyPress(Key.End, RawInputModifiers.None, PhysicalKey.End, null);
+            window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+            window.KeyTextInput("second line");
+            window.KeyPress(Key.Back, RawInputModifiers.None, PhysicalKey.Backspace, null);
+
+            string? html = null;
+            for (var i = 0; i < 100 && html?.Contains("second lin<", StringComparison.Ordinal) != true; i++)
+            {
+                var read = editor.ReadHtmlAsync();
+                await WaitUntil(() => read.IsCompleted, 2000);
+                html = read.IsCompleted ? read.Result : null;
+                await Task.Delay(30);
+            }
+            Assert.NotNull(html);
+            Assert.Contains("Hello from Wayland", html);
+            Assert.Contains("second lin<", html);
+            Assert.Matches("<b>Hello from Wayland</b>|font-weight: bold", html);
+            Assert.True(window.GetType().GetField("_dirty", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window) is true);
+            await Task.Delay(300);
+            Shot(window, "19-compose-in-place-offscreen");
+        }
+        finally
+        {
+            ComposeWindow.EditorFactory = null;
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
     }
 }

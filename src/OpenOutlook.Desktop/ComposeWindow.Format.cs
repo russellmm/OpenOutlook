@@ -49,7 +49,10 @@ public sealed partial class ComposeWindow
         if (_editor is not null) return _editor;
         var headless = PlatformImpl?.GetType().Assembly.GetName().Name?.Contains("Headless", StringComparison.OrdinalIgnoreCase) == true;
         _editor = EditorFactory?.Invoke(this)
-                  ?? (!headless && WebHtmlEditor.Supported() ? new WebHtmlEditor() : new PreviewHtmlEditor(() => this, text => _status.Text = text));
+                  ?? (headless ? new PreviewHtmlEditor(() => this, text => _status.Text = text)
+                      : WebHtmlEditor.Supported() ? new WebHtmlEditor()
+                      : BrowserHtmlRenderer.FindBrowser() is not null ? new OffscreenHtmlEditor(() => this, text => _status.Text = text)  // Wayland: edited in place all the same
+                      : new PreviewHtmlEditor(() => this, text => _status.Text = text));
         _editor.Edited += () => { if (!_loadingDraft) { _dirty = true; _bodyEdited = true; } };
         _editor.HtmlChanged += html => { _htmlBody = html; _bodyEdited = true; if (!_loadingDraft) _dirty = true; };
         _editor.StateChanged += ApplyEditorState;

@@ -14,8 +14,9 @@ public sealed record HtmlEditorState(bool Bold = false, bool Italic = false, boo
 
 /// <summary>
 /// The HTML body of the compose window. The real one (<see cref="WebHtmlEditor"/>) is an editable page in the embedded web view, edited in place
-/// like Outlook's message body; the ribbon drives it through <see cref="Run"/>. Where the embedded view cannot draw (Wayland, no WebKitGTK, the
-/// headless test host) <see cref="PreviewHtmlEditor"/> shows a read-only preview and edits in a separate window.
+/// like Outlook's message body; the ribbon drives it through <see cref="Run"/>. Where the embedded view cannot draw (Wayland) the same page runs in
+/// a headless Chromium and is drawn into the body (<see cref="OffscreenHtmlEditor"/>). Only without any browser, and in the headless test host,
+/// <see cref="PreviewHtmlEditor"/> shows a read-only preview and edits in a separate window.
 /// </summary>
 internal interface IHtmlEditorHost
 {
@@ -139,7 +140,7 @@ public static partial class HtmlEditorDocument
     /// fontSize (points), grow, shrink, foreColor (#rrggbb or "auto"), hiliteColor (#rrggbb or "none"), justifyLeft / Center / Right / Full,
     /// bullets / numbering (optional list-style-type; "none" ends the list), indent, outdent, clear, changeCase (sentence, lower, upper,
     /// capitalize, toggle), lineSpacing (1, 1.15, 1.5, 2, 2.5, 3), shading (#rrggbb or "none"), style (normal, h1, h2, h3, title, quote, code),
-    /// link (url, with the text to show after a newline), unlink, table ("rows,columns"), line, image (a data: picture), insertText, delete, selectAll, undo, redo, zoom (factor), marks.
+    /// link (url, with the text to show after a newline), unlink, table ("rows,columns"), line, image (a data: picture), insertText, html (sanitized HTML, a paste), delete, selectAll, undo, redo, zoom (factor), marks.
     /// The page posts "dirty" at once and "html:" + its body a moment after every change, and "state:" + JSON when the cursor moves.
     /// </summary>
     public const string Shell = """
@@ -161,7 +162,7 @@ public static partial class HtmlEditorDocument
           h3:'font-size:14pt;font-weight:normal;color:#0F4761;margin:8pt 0 4pt',title:'font-size:28pt;font-weight:normal;margin:0 0 4pt',
           quote:'font-style:italic;color:#404040;margin:10pt 43pt;text-align:center',code:'font-family:Consolas,Courier New,monospace;font-size:10.5pt;margin:0'};
         let saved=null,stateTimer=0,htmlTimer=0,pendingPt=null;
-        function post(m){try{if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.postAvWebViewMessage)window.webkit.messageHandlers.postAvWebViewMessage.postMessage(m);
+        function post(m){try{if(typeof window.ooPost==='function')window.ooPost(m);else if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.postAvWebViewMessage)window.webkit.messageHandlers.postAvWebViewMessage.postMessage(m);
           else if(typeof window.invokeCSharpAction==='function')window.invokeCSharpAction(m);else if(window.chrome&&window.chrome.webview)window.chrome.webview.postMessage(m);}catch(e){}}
         function inEd(n){return !!n&&(n===ed||ed.contains(n));}
         try{document.execCommand('defaultParagraphSeparator',false,'div');}catch(e){}
@@ -226,6 +227,7 @@ public static partial class HtmlEditorDocument
             case 'table':table(v);break;
             case 'line':ex('insertHorizontalRule');break;
             case 'insertText':ex('insertText',String(v||''));break;
+            case 'html':ex('insertHTML',String(v||''));break;
             case 'image':if(/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(String(v)))ex('insertImage',v);break;
             case 'delete':ex('delete');break;
             case 'selectAll':{const r=document.createRange();r.selectNodeContents(ed);const s=getSelection();s.removeAllRanges();s.addRange(r);break;}
@@ -243,6 +245,7 @@ public static partial class HtmlEditorDocument
         ed.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('a'))e.preventDefault();});
         window.oo={run:run,get:()=>ed.innerHTML,set:h=>{ed.innerHTML=h;saved=null;queueState();},state:state,
           find:t=>{restore();return window.find(String(t),false,false,true,false,false,false);},focus:()=>{restore();},
+          selHtml:()=>{const s=getSelection();if(!s.rangeCount||s.isCollapsed||!inEd(s.anchorNode))return '';const d=document.createElement('div');d.appendChild(s.getRangeAt(0).cloneContents());return d.innerHTML;},
           selText:()=>{const s=getSelection();return s.rangeCount&&inEd(s.anchorNode)&&!s.isCollapsed?s.toString():(saved?saved.toString():'');}};
         })();
         </script></body></html>

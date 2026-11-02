@@ -134,13 +134,20 @@ public sealed class MessageWindow : Window
         try
         {
             _status.Text = trustedOriginal ? "Loading original message and external content…" : "Laying out message…";
-            var document = trustedOriginal ? _html! : SafeHtmlDocument.Build(_html!, _images);
-            var width = (int)Math.Clamp(Bounds.Width - 40, 400, 1200);
-            var rendered = await BrowserHtmlRenderer.RenderDocumentAsync(document, width, cancellation.Token,
-                trustedOriginal: trustedOriginal, screenScale: MainWindow.ScreenScale(this));
+            var images = new Dictionary<string, byte[]>(_images, StringComparer.Ordinal);
+            var document = trustedOriginal ? new SnapshotDocument(_html!, []) : await Task.Run(() => SafeHtmlDocument.BuildSnapshot(_html!, images));
             if (cancellation.IsCancellationRequested) return;
+            var width = (int)Math.Clamp(Bounds.Width - 40, 400, 1200);
+            var rendered = await BrowserHtmlRenderer.RenderDocumentAsync(document.Html, width, cancellation.Token,
+                trustedOriginal: trustedOriginal, screenScale: MainWindow.ScreenScale(this), pictures: document.Pictures);
+            if (cancellation.IsCancellationRequested) return;
+            var bitmaps = await Task.Run(() => rendered.Pages.Select(png => new Bitmap(new MemoryStream(png, writable: false))).ToArray());
+            if (cancellation.IsCancellationRequested)
+            {
+                foreach (var stale in bitmaps) stale.Dispose();
+                return;
+            }
             _renderedScale = rendered.Scale;
-            var bitmaps = rendered.Pages.Select(png => new Bitmap(new MemoryStream(png, writable: false))).ToArray();
             _pages.Children.Clear();
             foreach (var bitmap in _bitmaps) bitmap.Dispose();
             _bitmaps.Clear();

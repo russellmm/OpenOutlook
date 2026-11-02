@@ -2432,6 +2432,27 @@ public sealed partial class MainWindow : Window
         return scale;
     }
 
+    /// <summary>Puts snapshot tiles in the reading pane in place of the ones shown before (the bitmaps are owned by the pane from now on).</summary>
+    private void ShowSnapshotTiles(BrowserHtmlRenderer.RenderedDocument rendered, IReadOnlyList<Bitmap> bitmaps)
+    {
+        HtmlPagesPanel.Children.Clear();
+        foreach (var bitmap in _htmlPageBitmaps) bitmap.Dispose();
+        _htmlPageBitmaps.Clear();
+        _htmlPageBitmaps.AddRange(bitmaps);
+        _htmlPagePngs = rendered.Pages;
+        double top = 0;
+        var selection = new SnapshotSelection(new SnapshotText(rendered.Text));       // one selection across all tiles
+        foreach (var bitmap in bitmaps)
+        {
+            var tile = new HtmlPageView(bitmap, top, rendered.Links, message => StatusText.Text = message, selection, rendered.Scale);
+            HtmlPagesPanel.Children.Add(tile);
+            top += tile.CssSize.Height;
+        }
+        FitHtmlPageImage();
+        ShowImageFailureStatus();
+        ShowMessageBody();
+    }
+
     private async Task RenderBrowserHtmlAsync(long version)
     {
         if (_bodyHtml is not { } html) return;
@@ -2452,29 +2473,38 @@ public sealed partial class MainWindow : Window
                 if (await TryShowEmbeddedHtmlAsync(interactive, version, cancellation.Token)) return;
             }
             cancellation.Token.ThrowIfCancellationRequested();
-            var document = showOriginal ? html : await Task.Run(() => SafeHtmlDocument.Build(html, pictures), cancellation.Token);
+            var snapshot = showOriginal ? new SnapshotDocument(html, []) :
+                await Task.Run(() => SafeHtmlDocument.BuildSnapshot(html, pictures), cancellation.Token);
             if (cancellation.IsCancellationRequested || version != _messageVersion) return;
             var width = (int)Math.Clamp(ReaderPane.Bounds.Width - 36, 400, 1200);
-            var rendered = await BrowserHtmlRenderer.RenderDocumentAsync(document, width, cancellation.Token,
-                trustedOriginal: _showOriginalHtml, screenScale: ScreenScale(this));
-            if (cancellation.IsCancellationRequested || version != _messageVersion) return;
-            var bitmaps = rendered.Pages.Select(png => new Bitmap(new MemoryStream(png, writable: false))).ToArray();
-            HtmlPagesPanel.Children.Clear();
-            foreach (var bitmap in _htmlPageBitmaps) bitmap.Dispose();
-            _htmlPageBitmaps.Clear();
-            _htmlPageBitmaps.AddRange(bitmaps);
-            _htmlPagePngs = rendered.Pages;
-            double top = 0;
-            var selection = new SnapshotSelection(new SnapshotText(rendered.Text));       // one selection across all tiles
-            foreach (var bitmap in bitmaps)
+            var firstScreenShown = 0;                  // 1 once the first screen is up, -1 once the whole message is (a late first screen is then dropped)
+            void ShowFirstScreen(BrowserHtmlRenderer.RenderedDocument first)
             {
-                var tile = new HtmlPageView(bitmap, top, rendered.Links, message => StatusText.Text = message, selection, rendered.Scale);
-                HtmlPagesPanel.Children.Add(tile);
-                top += tile.CssSize.Height;
+                Bitmap? bitmap;
+                try { bitmap = new Bitmap(new MemoryStream(first.Pages[0], writable: false)); }
+                catch (Exception) { return; }
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (cancellation.IsCancellationRequested || version != _messageVersion ||
+                        _htmlPageBitmaps.Count > 0 && ReaderScrollViewer.Offset.Y > 0 ||       // scrolled in an earlier layout: wait for the whole message
+                        Interlocked.CompareExchange(ref firstScreenShown, 1, 0) != 0) { bitmap.Dispose(); return; }
+                    ShowSnapshotTiles(first, [bitmap]);
+                });
             }
-            FitHtmlPageImage();
-            ShowImageFailureStatus();
-            ShowMessageBody();
+            var rendered = await BrowserHtmlRenderer.RenderDocumentAsync(snapshot.Html, width, cancellation.Token,
+                trustedOriginal: _showOriginalHtml, screenScale: ScreenScale(this), pictures: snapshot.Pictures,
+                firstScreenHeight: (int)Math.Max(ReaderScrollViewer.Bounds.Height, 600), firstScreen: ShowFirstScreen);
+            if (cancellation.IsCancellationRequested || version != _messageVersion) return;
+            // Decoding tens of megapixels of tiles took ~0.5 s on the UI thread on a HiDPI screen.
+            var bitmaps = await Task.Run(() => rendered.Pages.Select(png => new Bitmap(new MemoryStream(png, writable: false))).ToArray());
+            if (cancellation.IsCancellationRequested || version != _messageVersion)
+            {
+                foreach (var stale in bitmaps) stale.Dispose();
+                return;
+            }
+            Interlocked.Exchange(ref firstScreenShown, -1);
+            AppLog.Note("reader", $"snapshot laid out: {rendered.Timings}");
+            ShowSnapshotTiles(rendered, bitmaps);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)

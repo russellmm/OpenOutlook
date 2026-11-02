@@ -6,6 +6,12 @@ using Ganss.Xss;
 
 namespace OpenOutlook.Desktop;
 
+/// <summary>A picture the snapshot renderer hands Chrome when the page asks for <see cref="SafeHtmlDocument.SnapshotPictureUrl"/> + its index.</summary>
+public sealed record SnapshotPicture(string MimeType, byte[] Bytes);
+
+/// <summary>A safe document whose pictures are fetched from the renderer (see <see cref="SafeHtmlDocument.BuildSnapshot"/>).</summary>
+public sealed record SnapshotDocument(string Html, IReadOnlyList<SnapshotPicture> Pictures);
+
 public sealed record HtmlImageSource(string Key, string Value, bool ContactsExternalSite)
 {
     /// <summary>Where the message referenced it (an img element, a style sheet, a style attribute ...), for the log.</summary>
@@ -21,6 +27,12 @@ public static partial class SafeHtmlDocument
     public const int MaximumHtmlLength = 512 * 1024;
     public const int MaximumImageSources = 64;
     private const string Csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; " +
+        "font-src 'none'; connect-src 'none'; media-src 'none'; object-src 'none'; " +
+        "frame-src 'none'; form-action 'none'; base-uri 'none'; script-src 'none'";
+
+    /// <summary>Where a snapshot document's pictures come from: a name that cannot resolve, answered only by the renderer's request interception.</summary>
+    public const string SnapshotPictureUrl = "https://pictures.openoutlook.invalid/";
+    private const string SnapshotCsp = "default-src 'none'; img-src data: " + SnapshotPictureUrl + "; style-src 'unsafe-inline'; " +
         "font-src 'none'; connect-src 'none'; media-src 'none'; object-src 'none'; " +
         "frame-src 'none'; form-action 'none'; base-uri 'none'; script-src 'none'";
 
@@ -181,12 +193,42 @@ public static partial class SafeHtmlDocument
         return cssPictures.Fill(document);
     }
 
+    /// <summary>
+    /// The same safe document for the snapshot reader, but each picture is a short <see cref="SnapshotPictureUrl"/> link (one per distinct picture)
+    /// instead of its base64: a mailing with many or repeated big pictures (Ulta Lab Tests, 2026-11-02) made a document past the renderer's 40 MB
+    /// limit, and every byte of it had to cross the DevTools pipe and be parsed again.
+    /// </summary>
+    public static SnapshotDocument BuildSnapshot(string html, IReadOnlyDictionary<string, byte[]> images)
+    {
+        var pictures = new PictureTable();
+        var (document, cssPictures) = BuildWithCssMarkers(html, images, pictures);
+        return new SnapshotDocument(cssPictures.Fill(document), pictures.Pictures);
+    }
+
+    /// <summary>Gives each distinct picture of a snapshot document one index.</summary>
+    private sealed class PictureTable
+    {
+        private readonly Dictionary<string, int> _byKey = new(StringComparer.Ordinal);
+        public List<SnapshotPicture> Pictures { get; } = [];
+
+        public string Url(string key, byte[] bytes)
+        {
+            if (!_byKey.TryGetValue(key, out var index))
+            {
+                Pictures.Add(new SnapshotPicture(SafeInlineImage.MimeType(bytes), bytes));
+                index = _byKey[key] = Pictures.Count - 1;
+            }
+            return SnapshotPictureUrl + index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+    }
+
     /// <summary>The safe document with every CSS picture still a short placeholder (see <see cref="CssPictureMarkers"/>); Fill puts the data in.</summary>
-    private static (string Document, CssPictureMarkers CssPictures) BuildWithCssMarkers(string html, IReadOnlyDictionary<string, byte[]> images)
+    private static (string Document, CssPictureMarkers CssPictures) BuildWithCssMarkers(string html, IReadOnlyDictionary<string, byte[]> images,
+        PictureTable? table = null)
     {
         ArgumentNullException.ThrowIfNull(images);
         var document = Parse(html);
-        var cssPictures = new CssPictureMarkers(images);
+        var cssPictures = new CssPictureMarkers(images, table);
         var approvedImageData = new Dictionary<string, (string Source, string? OriginalTitle)>(StringComparer.Ordinal);
         var approvedLinks = new Dictionary<string, string>(StringComparer.Ordinal);
         var imageMarkerPrefix = "openoutlook-image-" + Guid.NewGuid().ToString("N") + "-";
@@ -210,7 +252,7 @@ public static partial class SafeHtmlDocument
             }
             if (element.LocalName == "img")
             {
-                var source = DataUri(element.GetAttribute("src"), images);
+                var source = DataUri(element.GetAttribute("src"), images, table);
                 element.RemoveAttribute("src");
                 if (source is not null)
                 {
@@ -263,7 +305,7 @@ public static partial class SafeHtmlDocument
         foreach (var link in safe.QuerySelectorAll("link,base,meta[http-equiv]")) link.Remove();
         var meta = safe.CreateElement("meta");
         meta.SetAttribute("http-equiv", "Content-Security-Policy");
-        meta.SetAttribute("content", Csp);
+        meta.SetAttribute("content", table is null ? Csp : SnapshotCsp);
         safe.Head!.Prepend(meta);
         // Mail is designed for a white page (Outlook always paints one): without a base colour a transparent snapshot shows the app
         // theme through it, which makes dark text unreadable in dark mode. Prepended so the message's own styles still win.
@@ -353,7 +395,7 @@ public static partial class SafeHtmlDocument
     /// per build on the UI thread, and the reader builds twice per message. The placeholder is a valid data URI, so the sanitizer
     /// treats it exactly as it would the real one; its random part cannot be guessed by the message.
     /// </summary>
-    private sealed class CssPictureMarkers(IReadOnlyDictionary<string, byte[]> images)
+    private sealed class CssPictureMarkers(IReadOnlyDictionary<string, byte[]> images, PictureTable? table)
     {
         private readonly string _prefix = "data:image/png;base64,OOcss" + Guid.NewGuid().ToString("N") + "z";
         private readonly List<string> _data = [];
@@ -364,7 +406,7 @@ public static partial class SafeHtmlDocument
             if (!TrySource(source, out var parsed)) return null;
             if (!_byKey.TryGetValue(parsed.Key, out var index))
             {
-                if (DataUri(source, images) is not { } data) return null;
+                if (DataUri(source, images, table) is not { } data) return null;
                 _data.Add(data);
                 index = _byKey[parsed.Key] = _data.Count - 1;
             }
@@ -397,11 +439,13 @@ public static partial class SafeHtmlDocument
         }
     }
 
-    private static string? DataUri(string? source, IReadOnlyDictionary<string, byte[]> images)
+    /// <summary>The approved picture as a data URI, or as its snapshot link when a <paramref name="table"/> collects them.</summary>
+    private static string? DataUri(string? source, IReadOnlyDictionary<string, byte[]> images, PictureTable? table = null)
     {
         if (!TrySource(source, out var parsed) || !images.TryGetValue(parsed.Key, out var bytes)) return null;
         try { SafeInlineImage.Validate(bytes); }
         catch (Exception ex) when (ex is InvalidDataException or OverflowException) { return null; }
+        if (table is not null) return table.Url(parsed.Key, bytes);
         var mime = SafeInlineImage.MimeType(bytes);
         return "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
     }

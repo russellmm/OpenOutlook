@@ -78,4 +78,60 @@ public sealed class BrowserHtmlRendererTests
         var (s, e) = text.WordAt(caret);
         Assert.Equal("bold", text.Text[s..e]);
     }
+
+    private static byte[] RedPng(int size)
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(size, size);
+        bitmap.Erase(SkiaSharp.SKColors.Red);
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+        return image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100).ToArray();
+    }
+
+    /// <summary>Owner 2026-11-02 (Ulta Lab Tests): pictures were written into the document as base64, once per img element, and a picture-heavy mailing
+    /// passed the renderer's 40 MB limit ("Full HTML layout is unavailable"). The snapshot document now links each distinct picture once and the renderer
+    /// answers those links from memory; every other request is still refused.</summary>
+    [Fact]
+    public void SnapshotDocumentLinksEachPictureOnceInsteadOfItsBase64()
+    {
+        var png = RedPng(40);
+        var html = string.Concat(Enumerable.Repeat("<img src='cid:logo' width='40' height='40'>", 30)) +
+            "<div style=\"background-image:url('cid:logo')\">x</div><table background='cid:logo'><tr><td>y</td></tr></table>" +
+            "<img src='https://tracker.example.test/open.gif'>";
+        var snapshot = SafeHtmlDocument.BuildSnapshot(html, new Dictionary<string, byte[]> { ["cid:logo"] = png });
+        var picture = Assert.Single(snapshot.Pictures);
+        Assert.Equal("image/png", picture.MimeType);
+        Assert.DoesNotContain("base64", snapshot.Html);
+        Assert.DoesNotContain("tracker.example.test", snapshot.Html);
+        Assert.Equal(32, snapshot.Html.Split(SafeHtmlDocument.SnapshotPictureUrl + "0").Length - 1);   // 30 img + style + table background
+        Assert.Contains("img-src data: " + SafeHtmlDocument.SnapshotPictureUrl + ";", snapshot.Html);
+        Assert.Same(picture, BrowserHtmlRenderer.SnapshotPictureFor(SafeHtmlDocument.SnapshotPictureUrl + "0", snapshot.Pictures));
+        Assert.Null(BrowserHtmlRenderer.SnapshotPictureFor(SafeHtmlDocument.SnapshotPictureUrl + "1", snapshot.Pictures));
+        Assert.Null(BrowserHtmlRenderer.SnapshotPictureFor(SafeHtmlDocument.SnapshotPictureUrl + "-1", snapshot.Pictures));
+        Assert.Null(BrowserHtmlRenderer.SnapshotPictureFor("https://pictures.openoutlook.invalid.example.test/0", snapshot.Pictures));
+        Assert.Null(BrowserHtmlRenderer.SnapshotPictureFor(SafeHtmlDocument.SnapshotPictureUrl + "0", null));
+    }
+
+    [Fact]
+    public async Task SnapshotPicturesAreDrawnAndTheFirstScreenComesFirst()
+    {
+        if (BrowserHtmlRenderer.FindBrowser() is null) return;
+        var html = "<body style='margin:0'><img src='cid:logo' width='100' height='100' style='display:block'>" +
+            "<div style='height:5000px'>long</div><img src='https://tracker.example.test/open.gif'></body>";
+        var snapshot = SafeHtmlDocument.BuildSnapshot(html, new Dictionary<string, byte[]> { ["cid:logo"] = RedPng(100) });
+        BrowserHtmlRenderer.RenderedDocument? first = null;
+        var rendered = await BrowserHtmlRenderer.RenderDocumentAsync(snapshot.Html, 640, screenScale: 2, pictures: snapshot.Pictures,
+            firstScreenHeight: 700, firstScreen: document => first = document);
+        Assert.NotNull(first);
+        Assert.Single(first!.Pages);
+        Assert.Equal(first.Pages[0], rendered.Pages[0]);
+        Assert.Equal(1400, BrowserHtmlRenderer.ValidateScreenshot(rendered.Pages[0], 2).Height);       // 700 CSS pixels at 2x
+        Assert.Equal(3, rendered.Pages.Count);                                                        // 700 + 3000 + the rest of ~5120
+        Assert.InRange(rendered.Pages.Sum(p => BrowserHtmlRenderer.ValidateScreenshot(p, 2).Height), 10_200, 10_300);   // 5100 px + the alt text line
+        using var tile = SkiaSharp.SKBitmap.Decode(rendered.Pages[0]);
+        Assert.Equal(SkiaSharp.SKColors.Red, tile.GetPixel(100, 100));                               // the picture came from memory
+
+        var again = await BrowserHtmlRenderer.RenderDocumentAsync(snapshot.Html, 640, pictures: snapshot.Pictures);   // the shared browser is reused
+        Assert.Equal(2, again.Pages.Count);
+        Assert.Contains("start", again.Timings);
+    }
 }

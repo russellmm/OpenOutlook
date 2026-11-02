@@ -23,7 +23,7 @@ public static class BrowserHtmlRenderer
 
     /// <summary>The tiles are PNGs at <paramref name="Scale"/> device pixels per CSS pixel; links and text runs are in CSS pixels.</summary>
     public sealed record RenderedDocument(IReadOnlyList<byte[]> Pages, IReadOnlyList<LinkArea> Links,
-        IReadOnlyList<TextRun> Text, double Scale = 1);
+        IReadOnlyList<TextRun> Text, double Scale = 1, string Timings = "");
 
     /// <summary>Device pixels of one message rendering at most (about 240 MB decoded): very long mail is drawn at a lower scale, never refused for it.</summary>
     private const double MaximumDevicePixels = 60_000_000;
@@ -145,17 +145,25 @@ public static class BrowserHtmlRenderer
     /// <summary>
     /// Lays the message out at <paramref name="viewportWidth"/> CSS pixels and takes the pictures at <paramref name="screenScale"/> (the window's render
     /// scaling): a 1x picture stretched to a HiDPI screen made every message soft (owner 2026-10-30, 2.74x on the bare-metal box).
+    /// <paramref name="pictures"/> answer a <see cref="SafeHtmlDocument.BuildSnapshot"/> document's picture links. When the message needs more than one
+    /// tile, the first <paramref name="firstScreenHeight"/> CSS pixels are taken first and handed to <paramref name="firstScreen"/> (on a worker thread),
+    /// so the reader can show what is on screen while the rest is still being taken.
     /// </summary>
     public static async Task<RenderedDocument> RenderDocumentAsync(string safeHtml, int viewportWidth,
-        CancellationToken cancellationToken = default, bool trustedOriginal = false, double screenScale = 1)
+        CancellationToken cancellationToken = default, bool trustedOriginal = false, double screenScale = 1,
+        IReadOnlyList<SnapshotPicture>? pictures = null, int firstScreenHeight = 0, Action<RenderedDocument>? firstScreen = null)
     {
         ArgumentNullException.ThrowIfNull(safeHtml);
         if (safeHtml.Length > 40 * 1024 * 1024 || viewportWidth is < 400 or > 1400)
             throw new InvalidDataException("HTML preview exceeds the renderer limit.");
         var executable = FindBrowser() ?? throw new NotSupportedException("Chrome or Chromium is required for HTML layout.");
         cancellationToken.ThrowIfCancellationRequested();
-        await using var browser = await BrowserProcessTracker.LaunchAsync(executable).ConfigureAwait(false);
-        await using var page = await browser.NewPageAsync().ConfigureAwait(false);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var timings = new System.Text.StringBuilder();
+        void Lap(string stage) { timings.Append(timings.Length == 0 ? "" : ", ").Append(stage).Append(' ').Append(clock.ElapsedMilliseconds).Append(" ms"); clock.Restart(); }
+        await using var lease = await SharedBrowser.OpenPageAsync(executable).ConfigureAwait(false);
+        var page = lease.Page;
+        Lap("start");
         page.DefaultTimeout = 10_000;
         await page.SetViewportAsync(new ViewPortOptions
         { Width = viewportWidth, Height = 200, DeviceScaleFactor = 1 }).ConfigureAwait(false);
@@ -165,13 +173,24 @@ public static class BrowserHtmlRenderer
             await page.SetRequestInterceptionAsync(true).ConfigureAwait(false);
             page.Request += async (_, request) =>
             {
-                try { await request.Request.AbortAsync().ConfigureAwait(false); }
-                catch { /* The page can close while a blocked request is in flight. */ }
+                try
+                {
+                    if (SnapshotPictureFor(request.Request.Url, pictures) is { } picture)
+                        await request.Request.RespondAsync(new ResponseData
+                        {
+                            Status = System.Net.HttpStatusCode.OK, ContentType = picture.MimeType, BodyData = picture.Bytes,
+                            Headers = new Dictionary<string, object> { ["Cache-Control"] = "no-store" }
+                        }).ConfigureAwait(false);
+                    else await request.Request.AbortAsync().ConfigureAwait(false);
+                }
+                catch { /* The page can close while a request is in flight. */ }
             };
         }
+        // Pictures served by the interception arrive after DOMContentLoaded (data URIs were there at once): wait for the load event so they are drawn.
         await page.SetContentAsync(safeHtml, new SetContentOptions
         {
-            WaitUntil = [WaitUntilNavigation.DOMContentLoaded], Timeout = trustedOriginal ? 20_000 : 10_000
+            WaitUntil = [pictures is { Count: > 0 } && !trustedOriginal ? WaitUntilNavigation.Load : WaitUntilNavigation.DOMContentLoaded],
+            Timeout = trustedOriginal ? 20_000 : 10_000
         }).ConfigureAwait(false);
         if (trustedOriginal)
         {
@@ -186,6 +205,7 @@ public static class BrowserHtmlRenderer
             }
         }
         cancellationToken.ThrowIfCancellationRequested();
+        Lap("content");
         var contentWidth = await page.EvaluateFunctionAsync<int>(
             "() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)")
             .ConfigureAwait(false);
@@ -199,7 +219,7 @@ public static class BrowserHtmlRenderer
             .ConfigureAwait(false);
         var width = Math.Max(viewportWidth, contentWidth);
         if (height is <= 0 or > MaximumHeight ||
-            (long)height * width > 72_000_000 || (height + TileHeight - 1) / TileHeight > MaximumTiles)
+            (long)height * width > 72_000_000 || (height + TileHeight - 1) / TileHeight + 1 > MaximumTiles)
             throw new InvalidDataException("HTML layout exceeds the preview size limit.");
         var linkJson = await page.EvaluateFunctionAsync<string>(
             "() => JSON.stringify(Array.from(document.querySelectorAll('a')).slice(0,500).flatMap(a => " +
@@ -216,20 +236,23 @@ public static class BrowserHtmlRenderer
         // the document, which stays off for untrusted mail.
         var textJson = await page.EvaluateFunctionAsync<string>(TextRunScript).ConfigureAwait(false);
         var textRuns = ReadTextRuns(textJson, width, height);
+        Lap("text");
         var scale = EffectiveScale(screenScale, width, height);
         if (scale > 1)
             await page.SetViewportAsync(new ViewPortOptions
             { Width = width, Height = 200, DeviceScaleFactor = scale }).ConfigureAwait(false);       // the layout stays in CSS pixels
         var pages = new List<byte[]>();
         var totalBytes = 0L;
-        for (var y = 0; y < height; y += TileHeight)
+        var firstTile = firstScreenHeight > 0 ? Math.Clamp(firstScreenHeight, 400, TileHeight) : TileHeight;
+        for (var y = 0; y < height; y += pages.Count == 1 ? firstTile : TileHeight)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var tileHeight = Math.Min(TileHeight, height - y);
+            var tileHeight = Math.Min(pages.Count == 0 ? firstTile : TileHeight, height - y);
             var png = await page.ScreenshotDataAsync(new ScreenshotOptions
             {
                 Clip = new PuppeteerSharp.Media.Clip { X = 0, Y = y, Width = width, Height = tileHeight },
-                CaptureBeyondViewport = true
+                CaptureBeyondViewport = true,
+                OptimizeForSpeed = true                 // fast zlib: still lossless, ~3.5x quicker on 2.5-2.7x tiles (5.1 s -> 1.5 s for a 4-tile newsletter)
             }).ConfigureAwait(false);
             var dimensions = ValidateScreenshot(png, scale);
             if (Math.Abs(dimensions.Width - width * scale) > 1.5 || Math.Abs(dimensions.Height - tileHeight * scale) > 1.5)
@@ -238,9 +261,117 @@ public static class BrowserHtmlRenderer
             if (totalBytes > 192L * 1024 * 1024)
                 throw new InvalidDataException("HTML preview images exceed the memory limit.");
             pages.Add(png);
+            if (pages.Count == 1 && tileHeight < height && firstScreen is not null)
+                firstScreen(new RenderedDocument([png], links, textRuns, scale));
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return new RenderedDocument(pages, links, textRuns, scale);
+        Lap($"pictures ({pages.Count} at {scale:0.##}x, {totalBytes / 1024:N0} KB)");
+        return new RenderedDocument(pages, links, textRuns, scale, timings.ToString());
+    }
+
+    /// <summary>The picture a snapshot document asks for (<see cref="SafeHtmlDocument.SnapshotPictureUrl"/> + index), or null for anything else.</summary>
+    internal static SnapshotPicture? SnapshotPictureFor(string? url, IReadOnlyList<SnapshotPicture>? pictures)
+    {
+        if (pictures is null || url is null || !url.StartsWith(SafeHtmlDocument.SnapshotPictureUrl, StringComparison.Ordinal)) return null;
+        var rest = url.AsSpan(SafeHtmlDocument.SnapshotPictureUrl.Length);
+        return rest.Length is > 0 and <= 6 && int.TryParse(rest, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var index) && index < pictures.Count ? pictures[index] : null;
+    }
+
+    /// <summary>
+    /// One headless browser kept for the reader instead of one started per layout (a message is laid out two or three times: text first, then with its
+    /// pictures). Every layout gets its own private browser context (no shared cookies, cache or storage) that is closed with it. The browser is closed
+    /// after <see cref="IdleTime"/> without layouts, and started again when it crashed or was closed.
+    /// </summary>
+    internal static class SharedBrowser
+    {
+        internal static TimeSpan IdleTime = TimeSpan.FromMinutes(3);
+        private static readonly SemaphoreSlim Gate = new(1, 1);
+        private static IBrowser? _browser;
+        private static int _inUse;
+        private static Timer? _idle;
+        private static bool _exitHooked;
+
+        public sealed class Lease(IBrowserContext context, IPage page) : IAsyncDisposable
+        {
+            public IPage Page { get; } = page;
+            private int _disposed;
+
+            public async ValueTask DisposeAsync()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+                try { await context.CloseAsync().ConfigureAwait(false); }
+                catch (Exception) { /* the browser went away with it */ }
+                if (Interlocked.Decrement(ref _inUse) == 0) _idle?.Change(IdleTime, Timeout.InfiniteTimeSpan);
+            }
+        }
+
+        public static async Task<Lease> OpenPageAsync(string executable)
+        {
+            for (var attempt = 0; ; attempt++)
+            {
+                var browser = await BrowserAsync(executable).ConfigureAwait(false);         // counted in use: the idle close leaves it alone
+                try
+                {
+                    var context = await browser.CreateBrowserContextAsync().ConfigureAwait(false);
+                    try { return new Lease(context, await context.NewPageAsync().ConfigureAwait(false)); }
+                    catch { await context.CloseAsync().ConfigureAwait(false); throw; }
+                }
+                catch (Exception e) when (attempt == 0 && e is PuppeteerException or ObjectDisposedException or InvalidOperationException)
+                {
+                    Interlocked.Decrement(ref _inUse);
+                    await ForgetAsync(browser).ConfigureAwait(false);         // a crashed browser: start a new one once
+                }
+                catch { Interlocked.Decrement(ref _inUse); throw; }
+            }
+        }
+
+        private static async Task<IBrowser> BrowserAsync(string executable)
+        {
+            await Gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _idle?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                if (_browser is { IsConnected: true, IsClosed: false } live) { Interlocked.Increment(ref _inUse); return live; }
+                if (_browser is { } dead) { _browser = null; try { await dead.DisposeAsync().ConfigureAwait(false); } catch (Exception) { } }
+                _browser = await BrowserProcessTracker.LaunchAsync(executable).ConfigureAwait(false);
+                _idle ??= new Timer(_ => _ = CloseIfIdleAsync());
+                if (!_exitHooked)
+                {
+                    _exitHooked = true;
+                    AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+                    {
+                        try { _browser?.Process?.Kill(entireProcessTree: true); }
+                        catch (Exception) { /* already gone; the next start cleans up leftovers */ }
+                    };
+                }
+                Interlocked.Increment(ref _inUse);
+                return _browser;
+            }
+            finally { Gate.Release(); }
+        }
+
+        private static async Task ForgetAsync(IBrowser browser)
+        {
+            await Gate.WaitAsync().ConfigureAwait(false);
+            try { if (ReferenceEquals(_browser, browser)) _browser = null; }
+            finally { Gate.Release(); }
+            try { await browser.DisposeAsync().ConfigureAwait(false); } catch (Exception) { }
+        }
+
+        private static async Task CloseIfIdleAsync()
+        {
+            await Gate.WaitAsync().ConfigureAwait(false);
+            IBrowser? closing = null;
+            try
+            {
+                if (Volatile.Read(ref _inUse) != 0) return;
+                closing = _browser;
+                _browser = null;
+            }
+            finally { Gate.Release(); }
+            if (closing is not null) try { await closing.DisposeAsync().ConfigureAwait(false); } catch (Exception) { }
+        }
     }
 
     private sealed class BrowserLink

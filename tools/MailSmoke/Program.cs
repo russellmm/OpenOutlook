@@ -432,7 +432,7 @@ if (step == "imgprobe")
 
 if (step == "readerprobe")
 {
-    // Offline apart from fetching the pictures. Times every stage the snapshot reader runs for one message: readerprobe <copy of a pst> <subject or sender part>
+    // Offline apart from fetching the pictures. Times every stage the snapshot reader runs for one message: readerprobe <copy of a pst> <subject or sender part> [screen scale]
     using var e = OpenOutlook.PstNative.PstEngineFactory.Open(Path.GetFullPath(args[1]));
     var hit = e.AllFolders().SelectMany(f => e.GetMessages(f)).FirstOrDefault(m => m.Subject.Contains(args[2], StringComparison.OrdinalIgnoreCase) || m.From.Contains(args[2], StringComparison.OrdinalIgnoreCase));
     if (hit is null) { Console.WriteLine("no such message"); return 1; }
@@ -450,10 +450,16 @@ if (step == "readerprobe")
     foreach (var (pass, pics) in new[] { ("no pictures", new Dictionary<string, byte[]>()), ("all pictures", bytes) })
     {
         w.Restart();
-        var doc = SafeHtmlDocument.Build(html, pics);
-        Console.WriteLine($"[{pass}] build {w.ElapsedMilliseconds} ms ({doc.Length:N0} chars)"); w.Restart();
-        var r = await BrowserHtmlRenderer.RenderDocumentAsync(doc, 800, CancellationToken.None, trustedOriginal: false);
-        Console.WriteLine($"[{pass}] render {w.ElapsedMilliseconds} ms, {r.Pages.Count} tiles ({r.Pages.Sum(p => p.Length):N0} PNG bytes), {r.Text.Count} runs, {r.Links.Count} links"); w.Restart();
+        var doc = SafeHtmlDocument.BuildSnapshot(html, pics);
+        Console.WriteLine($"[{pass}] build {w.ElapsedMilliseconds} ms ({doc.Html.Length:N0} chars, {doc.Pictures.Count} distinct pictures)"); w.Restart();
+        var scale = args.Length > 3 ? double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 1;
+        long firstAt = -1;
+        var r = await BrowserHtmlRenderer.RenderDocumentAsync(doc.Html, 800, CancellationToken.None, trustedOriginal: false, screenScale: scale,
+            pictures: doc.Pictures, firstScreenHeight: 900, firstScreen: _ => firstAt = w.ElapsedMilliseconds);
+        if (firstAt >= 0) Console.WriteLine($"[{pass}] first screen after {firstAt} ms");
+        Console.WriteLine($"[{pass}] render {w.ElapsedMilliseconds} ms ({r.Timings}), {r.Pages.Count} tiles ({r.Pages.Sum(p => p.Length):N0} picture bytes), {r.Text.Count} runs, {r.Links.Count} links"); w.Restart();
+        foreach (var page in r.Pages) SkiaSharp.SKBitmap.Decode(page)?.Dispose();
+        Console.WriteLine($"[{pass}] decode {w.ElapsedMilliseconds} ms"); w.Restart();
         var text = new SnapshotText(r.Text);
         Console.WriteLine($"[{pass}] snapshot text {w.ElapsedMilliseconds} ms ({text.Text.Length} chars)");
         for (var i = 0; i < r.Pages.Count; i++) File.WriteAllBytes(Path.ChangeExtension(args[1], $".{pass.Replace(' ', '_')}.{i}.png"), r.Pages[i]);

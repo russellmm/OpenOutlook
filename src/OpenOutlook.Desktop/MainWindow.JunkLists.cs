@@ -177,7 +177,8 @@ public sealed partial class MainWindow
                 item.IsEnabled = item.Tag switch
                 {
                     "notJunk" => microsoft && InJunkEmailFolder,
-                    "options" or "clean" or "spamCheck" or "spamRules" => _activeMicrosoftFolder is not null || JunkListAccounts().Count > 0,
+                    "options" or "clean" or "spamCheck" => _activeMicrosoftFolder is not null || JunkListAccounts().Count > 0,
+                    "junkSettings" => true,
                     "phishing" => false,
                     null => true,
                     _ => microsoft,

@@ -21,7 +21,12 @@ public partial class MainWindow
 
     private void ShowAccountSettings(bool dataFiles = false, bool junk = false)
     {
-        if (_accountSettings is { } open) { open.Activate(); return; }
+        if (_accountSettings is { } open)
+        {
+            if (junk) open.ShowTab(AccountSettingsWindow.JunkTab);
+            open.Activate();
+            return;
+        }
         var window = new AccountSettingsWindow(new AccountSettingsHost(this), dataFiles, junk);
         window.Closed += (_, _) => _accountSettings = null;
         _accountSettings = window;
@@ -336,5 +341,7 @@ public partial class MainWindow
         public Task<string?> ImportJunkConfigAsync(string accountId, Window owner) => w.ImportJunkConfigAsync(accountId, owner);
         public Task<string?> ExportJunkConfigAsync(string accountId, Window owner) => w.ExportJunkConfigAsync(accountId, owner);
         public IReadOnlyList<string> JunkLog() => w._junkLog.Recent();
+        public OpenOutlook.JunkCleaner.InboxSpamCheckAccount InboxSpamSettings(string accountId) => w._spamStore.For(accountId);
+        public string? SaveInboxSpamSettings(OpenOutlook.JunkCleaner.InboxSpamCheckAccount settings) => w.SaveSpamSettings(settings);
     }
 }

@@ -30,6 +30,7 @@ public readonly record struct JunkRuleOptions(
     bool DeleteBulk = false,
     bool DeleteFreeMail = false,
     bool DeleteRandomCode = false,
+    bool DeleteRandomMailer = false,  // 2026-11-02 survey: X-Mailer named after the sender's random domain
     int CrowdSize = 0,                 // 0 = JunkSignals.DefaultCrowdSize (a default(JunkRuleOptions) has zeros, not these defaults)
     int BulkLevel = 0)                 // 0 = JunkSignals.DefaultBulkLevel
 {

@@ -66,6 +66,7 @@ internal sealed class LegacyJunkCleanerDto
     public bool? DeleteBulk { get; set; }
     public bool? DeleteFreeMail { get; set; }
     public bool? DeleteRandomCode { get; set; }
+    public bool? DeleteRandomMailer { get; set; }  // 2026-11-02 and later exports
     public int? CrowdSize { get; set; }
     public int? BulkLevel { get; set; }
     public List<string>? Brands { get; set; }

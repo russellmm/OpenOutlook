@@ -110,6 +110,23 @@ public sealed class JunkSignalsTests
     }
 
     [Fact]
+    public void A_mailer_named_after_the_senders_random_domain_matches_and_real_mail_programs_do_not()
+    {
+        // Shaped like the 2026-11-02 survey: 32 of 39 Junk messages, each with its own random domain and the same word in X-Mailer.
+        Assert.True(JunkSignals.HasRandomMailer(Headers(("X-Mailer", "iJwgieZGOD Mailer")), "info@-----mail.iJwgieZGOD.com"));
+        Assert.True(JunkSignals.HasRandomMailer(Headers(("X-Mailer", "nedoCOIWj7 Mailer")), "info@mail.nedocoiwj7.com"));          // even with a real-looking domain
+        Assert.False(JunkSignals.HasRandomMailer(Headers(("X-Mailer", "iJwgieZGOD Mailer")), "info@-----mail.RshaLDKnRG.com"));     // another domain's word
+        Assert.False(JunkSignals.HasRandomMailer(Headers(("X-Mailer", "Mailchimp Mailer - **CID86fe6663f1e3fec1724c**")), "x@5695906.mailchimpapp.com"));
+        Assert.False(JunkSignals.HasRandomMailer(Headers(("X-Mailer", "Acmecorp Mailer")), "news@acmecorp.com"));                   // a plain company word
+        Assert.False(JunkSignals.HasRandomMailer(Headers(("X-Mailer", "BME Mailer - **BME1982823")), "contact@bryanforjustice.com"));
+        Assert.False(JunkSignals.HasRandomMailer([], "info@-----mail.iJwgieZGOD.com"));                                                // no header: unknown
+        Assert.False(JunkSignals.HasRandomMailer(Headers(("X-Mailer", "iJwgieZGOD Mailer")), null));
+        var facts = Facts(from: "info@-----mail.iJwgieZGOD.com", headers: Headers(("X-Mailer", "iJwgieZGOD Mailer")));
+        Assert.Equal(["Mailer named after a random domain"], JunkSignals.Reasons(facts, new JunkRuleOptions(DeleteRandomMailer: true)));
+        Assert.Empty(JunkSignals.Reasons(facts, new JunkRuleOptions()));
+    }
+
+    [Fact]
     public void Rules_that_are_off_never_match()
     {
         var spam = Facts("🎰 K-#0BL9C5G1BC2_LE4PIUUBZ7 rmarrash 周末窝在沙发", "x@gmail.com", "\"McAfee\" <x@gmail.com>",
@@ -120,7 +137,7 @@ public sealed class JunkSignalsTests
 
     private static readonly JunkRuleOptions AllOn = new(DeleteUnauthenticated: true, DeleteFakeSenderAddress: true, DeleteImpersonation: true,
         DeleteHiddenText: true, DeleteInvitations: true, DeleteCrowd: true, DeleteForeignScript: true, DeleteUsernameInSubject: true,
-        DeleteEmojiSubject: true, DeleteBulk: true, DeleteFreeMail: true, DeleteRandomCode: true);
+        DeleteEmojiSubject: true, DeleteBulk: true, DeleteFreeMail: true, DeleteRandomCode: true, DeleteRandomMailer: true);
 
     [Fact]
     public void The_preview_applies_the_new_rules_to_graph_messages_with_the_accounts_company_list()

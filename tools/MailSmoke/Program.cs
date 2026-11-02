@@ -932,7 +932,7 @@ if (step == "inboxspam" && mAcc is not null)
     var allRules = OpenOutlook.Desktop.JunkRulesWindow.Rules.Aggregate(new OpenOutlook.JunkCleaner.JunkRuleOptions(), (o, r) => OpenOutlook.Desktop.JunkRulesWindow.With(o, r.Key, true));
     var runner = new MicrosoftJunkCleanerRunner(reader, new GraphMailWriter(graphHttp, mAcc.AccountId), ct => mSession!.GetAccessTokenAsync(ct), mAcc.AccountId, ownAddress: mAcc.DisplayAddress);
     var lists = new OpenOutlook.JunkCleaner.JunkListsStore(cfgDir).Load(mAcc.AccountId).Effective;
-    foreach (var (name, rules) in new[] { ("app's Inbox rules", spam.Rules), ("all 18 rules", allRules) })
+    foreach (var (name, rules) in new[] { ("app's Inbox rules", spam.Rules), ($"all {OpenOutlook.Desktop.JunkRulesWindow.Rules.Count} rules", allRules) })
     {
         var cfg = new OpenOutlook.JunkCleaner.JunkCleanerAccountSettings { AccountId = mAcc.AccountId, Keywords = keywords, Rules = rules };
         var scan = await runner.ScanInboxAsync(cfg, 200, default, lists);

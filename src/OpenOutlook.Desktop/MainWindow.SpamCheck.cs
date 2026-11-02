@@ -329,17 +329,31 @@ public partial class MainWindow
 
     internal void SetSpamCheckEnabled(ConnectedAccount account, bool enabled)
     {
-        try { _spamStore.Save(_spamStore.For(account.AccountId) with { Enabled = enabled }); }
-        catch (Exception x) when (x is IOException or UnauthorizedAccessException) { StatusText.Text = "Could not save the setting: " + x.Message; return; }
-        if (!enabled)
-        {
-            _spamScans.Remove(account.AccountId);
-            if (SpamTarget is { Junk: false }) foreach (var row in _graphRows ?? []) row.SetSpam(null, false);
-        }
+        if (SaveSpamSettings(_spamStore.For(account.AccountId) with { Enabled = enabled }) is { } problem) { StatusText.Text = problem; return; }
         StatusText.Text = enabled ? $"The Inbox spam check is on for {account.DisplayAddress}." : $"The Inbox spam check is off for {account.DisplayAddress}. Turn it on again from Home > Junk.";
-        AppLog.Note("spam-check", $"Inbox spam check {(enabled ? "on" : "off")} for {account.DisplayAddress}");
-        if (enabled && SpamTarget is { Junk: false } t && t.Account.AccountId == account.AccountId) _ = RunSpamCheckAsync(account, force: true);
+    }
+
+    /// <summary>
+    /// Saves an account's Inbox spam check settings (the menu tick, the bar, Account Settings > Inbox Cleaner) and checks its open Inbox again,
+    /// or clears the marks when the check was turned off. Returns a problem to show, or null.
+    /// </summary>
+    internal string? SaveSpamSettings(InboxSpamCheckAccount settings)
+    {
+        var before = _spamStore.For(settings.AccountId);
+        try { _spamStore.Save(settings); }
+        catch (Exception x) when (x is IOException or UnauthorizedAccessException) { return "Could not save the setting: " + x.Message; }
+        var address = JunkAccounts().FirstOrDefault(a => a.AccountId == settings.AccountId)?.DisplayAddress ?? settings.AccountId;
+        if (before.Enabled != settings.Enabled) AppLog.Note("spam-check", $"Inbox spam check {(settings.Enabled ? "on" : "off")} for {address}");
+        if (before.Rules != settings.Rules || before.UseKeywords != settings.UseKeywords)
+            AppLog.Note("spam-check", $"Inbox spam rules for {address}: {JunkRulesWindow.Summary(settings.Rules)}{(settings.UseKeywords ? " + keywords" : "")}");
+        _spamScans.Remove(settings.AccountId);
+        if (SpamTarget is { Junk: false } t && t.Account.AccountId == settings.AccountId)
+        {
+            if (settings.Enabled) _ = RunSpamCheckAsync(t.Account, force: true);
+            else foreach (var row in _graphRows ?? []) row.SetSpam(null, false);
+        }
         UpdateSpamMarks();
+        return null;
     }
 
     /// <summary>The Inbox spam rules in the Junk Cleaner's rules window; the company list is the one the Junk Cleaner uses.</summary>
@@ -350,12 +364,8 @@ public partial class MainWindow
         var window = new JunkRulesWindow(account.DisplayAddress, settings.Rules, junk.Brands, "Inbox spam rules");
         await window.ShowDialog(this);
         if (window.Result is not { } result) return;
-        try { _spamStore.Save(settings with { Rules = result.Rules }); }
-        catch (Exception x) when (x is IOException or UnauthorizedAccessException) { StatusText.Text = "Could not save the rules: " + x.Message; return; }
         if (!(result.Brands ?? []).SequenceEqual(junk.Brands ?? [])) SaveJunkSettings(junk with { Brands = result.Brands });
-        AppLog.Note("spam-check", $"Inbox spam rules for {account.DisplayAddress}: {JunkRulesWindow.Summary(result.Rules)}");
-        _spamScans.Remove(account.AccountId);
-        _ = RunSpamCheckAsync(account, force: true);
+        if (SaveSpamSettings(settings with { Rules = result.Rules }) is { } problem) StatusText.Text = problem;
     }
 
     /// <summary>The Junk Cleaner's own rules (the Other rules... window of Account Settings), from the bar in Junk Email.</summary>
@@ -370,23 +380,25 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Home > Junk / right-click Junk: the check's on/off switch and its rules, reachable while no message is marked. The right-click menu is
-    /// built once, so the account (the open folder's, else the first Microsoft account) is looked up when the items show and when clicked.
+    /// Home > Junk / right-click Junk: the check's on/off switch, and Junk Settings... (Account Settings on the Junk Cleaner tab, next to the
+    /// Inbox Cleaner tab: both rule sets in one place, owner 2026-11-02). The right-click menu is built once, so the account (the open folder's,
+    /// else the first Microsoft account) is looked up when the items show and when clicked.
     /// </summary>
     private IEnumerable<Control> SpamCheckMenuItems()
     {
         ConnectedAccount? Account() => _activeMicrosoftFolder?.Account ?? JunkListAccounts().FirstOrDefault();
         var tick = new CheckBox { IsHitTestVisible = false, MinWidth = 0, Padding = new Avalonia.Thickness(0) };
         var on = new MenuItem { Header = "Check the Inbox for _Spam", Tag = "spamCheck", Icon = tick };
-        var rules = new MenuItem { Header = "Inbox Spam _Rules...", Tag = "spamRules" };
+        var settings = new MenuItem { Header = "Junk _Settings...", Tag = "junkSettings" };
+        ToolTip.SetTip(settings, "Account Settings: the Junk Cleaner and Inbox Cleaner tabs (keywords, rules, schedule)");
         on.AttachedToVisualTree += (_, _) =>
         {
             var account = Account();
             tick.IsChecked = account is not null && _spamStore.For(account.AccountId).Enabled;
-            on.IsEnabled = rules.IsEnabled = account is not null;
+            on.IsEnabled = account is not null;
         };
         on.Click += (_, _) => { if (Account() is { } a) SetSpamCheckEnabled(a, !_spamStore.For(a.AccountId).Enabled); };
-        rules.Click += (_, _) => { if (Account() is { } a) _ = EditSpamRulesAsync(a); };
-        return [on, rules];
+        settings.Click += (_, _) => ShowAccountSettings(junk: true);
+        return [on, settings];
     }
 }

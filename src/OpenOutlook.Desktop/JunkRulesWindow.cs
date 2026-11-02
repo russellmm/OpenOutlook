@@ -27,6 +27,9 @@ public sealed class JunkRulesWindow : Window
             "The sending address differs from the author shown in From.", o => o.DeleteOnBehalfOf),
         new("free", "Sender", "Sender uses a free email service (Gmail, Yahoo, Outlook.com, AOL, iCloud...)", "Free email address",
             "Businesses do not send from free mail services; invoice and payment scams do. Friends do too: add them to Safe Senders.", o => o.DeleteFreeMail),
+        new("mailer", "Sender", "Sender's mail program is named after its random domain (X-Mailer: iJwgieZGOD Mailer)", "Random mailer name",
+            "The X-Mailer header is \"<word> Mailer\" where the word is a random-looking part of the sender's domain (info@-----mail.iJwgieZGOD.com). " +
+            "Catches that operation even if it fixes its fake addresses; real mail programs (Mailchimp Mailer, Outlook) are not matched.", o => o.DeleteRandomMailer),
         new("noto", "Recipients", "No To address", "No To address", "The To line is empty.", o => o.DeleteMissingTo),
         new("nottome", "Recipients", "Not addressed to me (my address is not on the To line)", "Not addressed to me",
             "Junk that lists other people, or nobody, on its To line instead of this account's address. Cc and Bcc do not count. " +
@@ -57,7 +60,8 @@ public sealed class JunkRulesWindow : Window
     {
         "unauth" => o with { DeleteUnauthenticated = on }, "fake" => o with { DeleteFakeSenderAddress = on },
         "brand" => o with { DeleteImpersonation = on }, "behalf" => o with { DeleteOnBehalfOf = on },
-        "free" => o with { DeleteFreeMail = on }, "noto" => o with { DeleteMissingTo = on },
+        "free" => o with { DeleteFreeMail = on }, "mailer" => o with { DeleteRandomMailer = on },
+        "noto" => o with { DeleteMissingTo = on },
         "nottome" => o with { DeleteNotToMe = on }, "bcc" => o with { DeleteWithBcc = on },
         "crowd" => o with { DeleteCrowd = on }, "hidden" => o with { DeleteHiddenText = on },
         "script" => o with { DeleteForeignScript = on }, "username" => o with { DeleteUsernameInSubject = on },
@@ -67,7 +71,7 @@ public sealed class JunkRulesWindow : Window
         _ => throw new ArgumentOutOfRangeException(nameof(key))
     };
 
-    /// <summary>"3 of 18 rules on: Sender not verified, Fake sender address, Emoji subject" for the Junk Cleaner tab.</summary>
+    /// <summary>"3 of 19 rules on: Sender not verified, Fake sender address, Emoji subject" for the Junk Cleaner tab.</summary>
     internal static string Summary(JunkRuleOptions o)
     {
         var on = Rules.Where(r => r.Get(o)).Select(r => r.Short).ToList();

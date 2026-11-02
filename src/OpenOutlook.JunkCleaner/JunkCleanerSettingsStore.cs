@@ -79,6 +79,7 @@ public sealed class JunkCleanerSettingsStore
             ["deleteBulk"] = settings.Rules.DeleteBulk,
             ["deleteFreeMail"] = settings.Rules.DeleteFreeMail,
             ["deleteRandomCode"] = settings.Rules.DeleteRandomCode,
+            ["deleteRandomMailer"] = settings.Rules.DeleteRandomMailer,
             ["crowdSize"] = settings.Rules.CrowdSize,
             ["bulkLevel"] = settings.Rules.BulkLevel,
             ["brands"] = settings.Brands is { Count: > 0 } b ? NormalizeKeywords(b) : null
@@ -107,6 +108,7 @@ public sealed class JunkCleanerSettingsStore
                 DeleteForeignScript: source.DeleteForeignScript == true, DeleteUsernameInSubject: source.DeleteUsernameInSubject == true,
                 DeleteEmojiSubject: source.DeleteEmojiSubject == true, DeleteBulk: source.DeleteBulk == true,
                 DeleteFreeMail: source.DeleteFreeMail == true, DeleteRandomCode: source.DeleteRandomCode == true,
+                DeleteRandomMailer: source.DeleteRandomMailer == true,
                 CrowdSize: Math.Clamp(source.CrowdSize ?? 0, 0, 1000), BulkLevel: Math.Clamp(source.BulkLevel ?? 0, 0, 9)),
             DeleteFlagged = source.DeleteFlagged,
             Brands = source.Brands is { Count: > 0 } ? NormalizeKeywords(source.Brands) : null

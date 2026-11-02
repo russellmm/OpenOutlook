@@ -41,6 +41,9 @@ public interface IAccountSettingsHost
     Task<string?> ImportJunkConfigAsync(string accountId, Window owner);
     Task<string?> ExportJunkConfigAsync(string accountId, Window owner);
     IReadOnlyList<string> JunkLog();
+    // The Inbox spam check (Inbox Cleaner tab, 2026-11-02); Save returns a problem to show, or null.
+    InboxSpamCheckAccount InboxSpamSettings(string accountId);
+    string? SaveInboxSpamSettings(InboxSpamCheckAccount settings);
 }
 
 /// <summary>Theme-aware lookups for the dialogs that are built in code (the XAML windows use DynamicResource; here the current theme's value is read when the control is made).</summary>
@@ -61,6 +64,7 @@ internal static class Themed
 public sealed partial class AccountSettingsWindow : Window
 {
     private readonly IAccountSettingsHost _host;
+    internal const int JunkTab = 2, InboxTab = 3;
     private readonly ListBox _emailList = new() { SelectionMode = SelectionMode.Single, Classes = { "olList" }, BorderThickness = new Thickness(0) };
     private readonly ListBox _fileList = new() { SelectionMode = SelectionMode.Single, Classes = { "olList" }, BorderThickness = new Thickness(0) };
     private readonly TextBlock _note = new() { TextWrapping = TextWrapping.Wrap, FontSize = 13, MinHeight = 22 };
@@ -68,7 +72,7 @@ public sealed partial class AccountSettingsWindow : Window
     private IReadOnlyList<ConnectedAccount> _accounts = [];
     private IReadOnlyList<DataFileRow> _files = [];
 
-    public AccountSettingsWindow(IAccountSettingsHost host, bool startOnDataFiles = false, bool startOnJunk = false)
+    public AccountSettingsWindow(IAccountSettingsHost host, bool startOnDataFiles = false, bool startOnJunk = false, bool startOnInbox = false)
     {
         _host = host;
         Title = "Account Settings";
@@ -92,7 +96,8 @@ public sealed partial class AccountSettingsWindow : Window
         _tabs.Items.Add(new TabItem { Header = "Email", Content = BuildEmailTab() });
         _tabs.Items.Add(new TabItem { Header = "Data Files", Content = BuildDataFilesTab() });
         _tabs.Items.Add(new TabItem { Header = "Junk Cleaner", Content = BuildJunkTab() });
-        _tabs.SelectedIndex = startOnJunk ? 2 : startOnDataFiles ? 1 : 0;
+        _tabs.Items.Add(new TabItem { Header = "Inbox Cleaner", Content = BuildInboxTab() });
+        _tabs.SelectedIndex = startOnInbox ? InboxTab : startOnJunk ? JunkTab : startOnDataFiles ? 1 : 0;
 
         var bottom = new Border
         {
@@ -310,9 +315,13 @@ public sealed partial class AccountSettingsWindow : Window
     // ---- refresh ----------------------------------------------------------------------------------------------------------------------------------
 
     /// <summary>Reloads both lists from the application (after a sign-in, a removal, a sync or a relocation).</summary>
+    /// <summary>Brings a tab to the front (Junk Settings... while the window is already open).</summary>
+    internal void ShowTab(int index) => _tabs.SelectedIndex = index;
+
     public void Refresh()
     {
         RefreshJunkAccounts();
+        RefreshInboxAccounts();
         var selectedAccount = SelectedAccount()?.AccountId;
         var selectedFile = SelectedFile()?.Path;
         _accounts = _host.Accounts();

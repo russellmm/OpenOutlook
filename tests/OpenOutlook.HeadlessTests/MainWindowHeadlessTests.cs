@@ -1495,6 +1495,44 @@ public sealed class MainWindowHeadlessTests
         public List<IReadOnlyList<string>> KeywordsSaved = [];
         public string SaveJunkKeywords(IReadOnlyList<string> keywords) { KeywordsSaved.Add(keywords); JunkSaved.Add(JunkSettings("acc1") with { Keywords = keywords }); return "Saved " + keywords.Count; }
         public IReadOnlyList<string> JunkLog() => ["2026-10-05 10:00  me@hotmail.test  moved \"win\" from promo@temu.example [From keyword]"];
+        public List<OpenOutlook.JunkCleaner.InboxSpamCheckAccount> InboxSaved = [];
+        public OpenOutlook.JunkCleaner.InboxSpamCheckAccount InboxSpamSettings(string accountId) =>
+            InboxSaved.LastOrDefault(s => s.AccountId == accountId) ?? new OpenOutlook.JunkCleaner.InboxSpamCheckAccount { AccountId = accountId };
+        public string? SaveInboxSpamSettings(OpenOutlook.JunkCleaner.InboxSpamCheckAccount settings) { InboxSaved.Add(settings); return null; }
+    }
+
+    [AvaloniaFact]
+    public async Task The_inbox_cleaner_tab_sits_next_to_the_junk_cleaner_and_saves_the_inbox_check_and_its_own_rules()
+    {
+        var host = new FakeHost();
+        var window = new AccountSettingsWindow(host, startOnInbox: true);
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var tabs = window.GetVisualDescendants().OfType<TabControl>().Single();
+            Assert.Equal(["Email", "Data Files", "Junk Cleaner", "Inbox Cleaner"], tabs.Items.OfType<TabItem>().Select(t => t.Header?.ToString()));
+            Assert.Equal(AccountSettingsWindow.InboxTab, tabs.SelectedIndex);
+            Assert.Single(window.GetVisualDescendants().OfType<ComboBox>().First().Items);                                         // Microsoft accounts only
+            Assert.StartsWith("8 of 19 rules on: Sender not verified", window.InboxRulesSummaryText);                                  // the Inbox defaults
+            var check = window.GetVisualDescendants().OfType<CheckBox>().First(c => c.Content?.ToString()!.StartsWith("Check the Inbox") == true);
+            Assert.True(check.IsChecked);
+            check.IsChecked = false;
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(host.InboxSaved.Last().Enabled);
+            Assert.Equal(OpenOutlook.JunkCleaner.InboxSpamCheckStore.DefaultRules, host.InboxSaved.Last().Rules);                    // the switch keeps the rules
+            window.JunkRulesDialogOverride = w =>
+            {
+                Assert.Contains("Inbox spam rules", w.Title);
+                w.Boxes["mailer"].IsChecked = true; w.Accept(); return Task.CompletedTask;
+            };
+            await window.EditInboxRulesAsync();
+            Assert.True(host.InboxSaved.Last().Rules.DeleteRandomMailer);
+            Assert.False(host.InboxSaved.Last().Enabled);                                                                              // the rules keep the switch
+            Assert.Contains("Random mailer name", window.InboxRulesSummaryText);
+            Assert.Empty(host.JunkSaved);                                                                                              // the Junk Cleaner's rules are untouched
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]
@@ -1511,7 +1549,7 @@ public sealed class MainWindowHeadlessTests
             Assert.Empty(host.JunkSaved);                                                                      // Cancel saves nothing
             settings.JunkRulesDialogOverride = w =>
             {
-                Assert.Equal(18, w.Boxes.Count);                                                               // the six old rules plus the twelve new ones
+                Assert.Equal(19, w.Boxes.Count);                                                               // the six old rules plus the thirteen newer ones
                 Assert.Equal(10, (int)w.Crowd.Value!); Assert.Equal(5, (int)w.Bulk.Value!);
                 Assert.StartsWith("Amazon, Apple", w.Brands.Text);                                             // the built-in company list
                 w.SetAll(true); w.Crowd.Value = 25; w.Bulk.Value = 7;
@@ -1522,7 +1560,7 @@ public sealed class MainWindowHeadlessTests
             Assert.All(JunkRulesWindow.Rules, r => Assert.True(r.Get(saved.Rules), r.Key));
             Assert.Equal(25, saved.Rules.CrowdSize); Assert.Equal(7, saved.Rules.BulkLevel);
             Assert.Null(saved.Brands);                                                                         // the built-in list is stored as "none"
-            Assert.StartsWith("18 of 18 rules on: Sender not verified", settings.JunkRulesSummaryText);
+            Assert.StartsWith("19 of 19 rules on: Sender not verified", settings.JunkRulesSummaryText);
             settings.JunkRulesDialogOverride = w => { w.Boxes["emoji"].IsChecked = false; w.Brands.Text = "McAfee, Norton,, Acme Bank"; w.Accept(); return Task.CompletedTask; };
             await settings.EditJunkRulesAsync();
             saved = host.JunkSaved.Last();
@@ -1560,11 +1598,11 @@ public sealed class MainWindowHeadlessTests
             enable.IsChecked = true;
             Dispatcher.UIThread.RunJobs();
             Assert.True(host.JunkSaved.Last().Enabled);
-            Assert.Equal("No other rules are on (0 of 18).", window.JunkRulesSummaryText);
+            Assert.Equal("No other rules are on (0 of 19).", window.JunkRulesSummaryText);
             window.JunkRulesDialogOverride = w => { w.Boxes["noto"].IsChecked = true; w.Accept(); return Task.CompletedTask; };
             window.GetVisualDescendants().OfType<Button>().First(b => Cap(b) == "Other rules…").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
-            Assert.Equal("1 of 18 rules on: No To address.", window.JunkRulesSummaryText);
+            Assert.Equal("1 of 19 rules on: No To address.", window.JunkRulesSummaryText);
             Assert.Equal(["temu"], host.JunkSaved.Last().Keywords);                              // saving a rule keeps the keywords as they are in the file
             keywords.Text = "temu, Shein ,, free spins" + (char)10 + "temu";
             Dispatcher.UIThread.RunJobs();
@@ -1858,7 +1896,7 @@ public sealed class MainWindowHeadlessTests
         {
             Shot(window, "11-account-settings-email");
             var tabs = window.GetVisualDescendants().OfType<TabControl>().Single();
-            Assert.Equal(["Email", "Data Files", "Junk Cleaner"], tabs.Items.OfType<TabItem>().Select(t => t.Header?.ToString()).ToArray());
+            Assert.Equal(["Email", "Data Files", "Junk Cleaner", "Inbox Cleaner"], tabs.Items.OfType<TabItem>().Select(t => t.Header?.ToString()).ToArray());
             var buttons = window.GetVisualDescendants().OfType<Button>().ToList();
             string TipOf(string caption) => ToolTip.GetTip(buttons.First(b => Cap(b) == caption))?.ToString() ?? "";
             Assert.Equal("To be implemented", TipOf("Change…"));
@@ -2128,7 +2166,7 @@ public sealed class MainWindowHeadlessTests
             CallVoid(window, "InitMessageContextMenu");
             var junkMenu = ((MenuFlyout)list.ContextFlyout!).Items.OfType<MenuItem>().Single(i => (string?)i.Header == "Junk");
             Assert.Equal(["_Block Sender", "_Never Block Sender", "Never Block Sender's _Domain", "Never Block this Group or _Mailing List", "N_ot Junk", "Junk E-mail _Options...",
-                "Report _Phishing", "_Clean Junk Folder...", "Check the Inbox for _Spam", "Inbox Spam _Rules..."], junkMenu.Items.OfType<MenuItem>().Select(i => (string)i.Header!));
+                "Report _Phishing", "_Clean Junk Folder...", "Check the Inbox for _Spam", "Junk _Settings..."], junkMenu.Items.OfType<MenuItem>().Select(i => (string)i.Header!));
             Assert.Equal([true, false, false, false, true, true, true, true, true, false], junkMenu.Items.OfType<MenuItem>().Select(i => i.Icon is not null));   // Outlook's icons (the spam check's is its tick)
             Assert.Null(window.FindControl<Button>("CleanJunkButton"));                                // the separate Junk ribbon group is gone
 

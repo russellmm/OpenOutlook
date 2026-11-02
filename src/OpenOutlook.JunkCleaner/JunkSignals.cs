@@ -16,7 +16,8 @@ public sealed record JunkMessageFacts(
 /// <summary>
 /// The header and subject rules added after the owner's Junk folder survey (2026-10-25, 63 messages the first six rules missed): unauthenticated
 /// senders, impossible sender domains, company names in the display name, hidden subject characters, calendar invitations, crowds of recipients,
-/// other alphabets, the mailbox name in the subject, emoji subjects, Microsoft's bulk rating, free mail services and random codes.
+/// other alphabets, the mailbox name in the subject, emoji subjects, Microsoft's bulk rating, free mail services and random codes; and (2026-11-02,
+/// 32 of 39 Junk messages from one operation) a mail program named after the sender's random domain.
 /// Mail from Safe Senders (and trusted contacts) never reaches these rules: the runner drops it first.
 /// </summary>
 public static class JunkSignals
@@ -63,6 +64,7 @@ public static class JunkSignals
         if (o.DeleteBulk && BulkLevel(m.Headers) is { } bcl && bcl >= o.EffectiveBulkLevel) reasons.Add($"Bulk rating {bcl}");
         if (o.DeleteFreeMail && IsFreeMail(m.FromAddress)) reasons.Add("Free email address");
         if (o.DeleteRandomCode && HasRandomCode(m.Subject)) reasons.Add("Random code in subject");
+        if (o.DeleteRandomMailer && HasRandomMailer(m.Headers, m.FromAddress)) reasons.Add("Mailer named after a random domain");
         return reasons;
     }
 
@@ -201,6 +203,24 @@ public static class JunkSignals
     }
 
     /// <summary>A run of 16+ letters, digits, "_", "#" or "-" with at least 4 letters and 4 digits (tracking numbers are mostly digits and pass).</summary>
+    /// <summary>
+    /// X-Mailer is "&lt;word&gt; Mailer" and the word is one of the sender domain's labels and looks random (6+ characters with a digit or a capital
+    /// after the first letter): "iJwgieZGOD Mailer" from info@-----mail.iJwgieZGOD.com. "Mailchimp Mailer - **CID..." and "Acme Mailer" pass.
+    /// </summary>
+    public static bool HasRandomMailer(IReadOnlyList<KeyValuePair<string, string>> headers, string? fromAddress)
+    {
+        var at = fromAddress?.LastIndexOf('@') ?? -1;
+        if (at < 0) return false;
+        var labels = fromAddress![(at + 1)..].Trim().Split('.');
+        return Values(headers, "X-Mailer").Any(v =>
+        {
+            var match = Regex.Match(v.Trim(), @"^(\S{6,}) Mailer$", RegexOptions.CultureInvariant);
+            if (!match.Success) return false;
+            var word = match.Groups[1].Value;
+            return (word.Any(char.IsDigit) || word.Skip(1).Any(char.IsUpper)) && labels.Contains(word, StringComparer.OrdinalIgnoreCase);
+        });
+    }
+
     public static bool HasRandomCode(string? subject) =>
         subject is not null && RandomCode.Matches(subject).Any(m => m.Value.Count(char.IsDigit) >= 4 && m.Value.Count(char.IsLetter) >= 4 &&
                                                                     m.Value.Any(char.IsUpper) && !m.Value.All(c => char.IsLetter(c)));

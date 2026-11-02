@@ -1,6 +1,6 @@
 # OpenOutlook build status
 
-Status date: **2026-11-02**, build **0.1.92** (`COMMIT`). OpenOutlook is a working personal mail client for **Windows 11** and **Linux** (Ubuntu 26.04 on a bare-metal GNOME / Wayland desktop, plus WSL2/WSLg and CI), used daily by its owner on both. It is still not a release candidate: the first-release gates in `PRODUCT_REQUIREMENTS.md` are not all met (see the list at the end).
+Status date: **2026-11-02**, build **0.1.92** (`1f1e0e9`). OpenOutlook is a working personal mail client for **Windows 11** and **Linux** (Ubuntu 26.04 on a bare-metal GNOME / Wayland desktop, plus WSL2/WSLg and CI), used daily by its owner on both. It is still not a release candidate: the first-release gates in `PRODUCT_REQUIREMENTS.md` are not all met (see the list at the end).
 
 What exists, per platform and per feature, is in **`docs/FEATURES.md`**. How it is built is in `DESIGN_SPEC.md` (sections 1-10 are the original baseline, section 11 onwards the design as built). The chronological working log is `docs/session-handoff-2026-10.md`; older history is in `docs/history/` (the state through 2026-10-02, when the app was Linux-only and read-only for PSTs, is in `docs/history/BUILD_STATUS-through-2026-10-02.md`).
 

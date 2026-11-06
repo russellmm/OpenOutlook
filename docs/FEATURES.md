@@ -15,7 +15,7 @@ Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). *
 | Application icon (blue rounded square, envelope, open amber ring) | Yes (exe + main window) | Yes (`.deb` icons, window) | `scripts/generate_icon.py` draws `Assets/openoutlook.ico/.png/-512.png`. Compose and dialog windows do not set it yet. |
 | Log viewer (File > Account > View log): newest first, search, only problems, copy, open the log folder | Yes | Yes | `LogViewerWindow`; the log is `~/.local/share/OpenOutlook/logs/openoutlook.log` (rotated to `.1`). |
 | Packaging | published folder `F:\Claude\OpenOutlook_win` (exe, `openpst.dll`, `openoutlook-oauth.json`, `chromium\`) | `.deb` (installs to `/opt/openoutlook`, `openoutlook` command, desktop entry, icons, AppArmor profile for the bundled browser) and portable tar.gz | `scripts/wsl-package.sh [version]` builds the Linux packages in WSL; on bare metal `scripts/package-linux-x64.sh <version>` then `scripts/build-deb.sh <version>`. The version and commit are stamped into the program and shown in File > Account > About. |
-| Continuous integration | n/a | Yes | `.github/workflows/linux.yml`: native build + tests, unit tests, headless UI tests, packages, smoke start of the `.deb`, artifacts. Private PST fixtures are not in the repository, so tests needing one skip themselves in CI. |
+| Continuous integration | n/a | No | Removed 2026-11-05 at the owner's request (the former `.github/workflows/linux.yml` is in git history). |
 | Logging | Yes | Yes | Rotating 2 MB `openoutlook.log` (`AppLog`); unhandled UI exceptions are survived and shown in a notice (`CrashNotice`). |
 
 ## 2. PST files (Outlook data files)

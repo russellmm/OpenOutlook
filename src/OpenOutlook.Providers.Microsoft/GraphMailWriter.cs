@@ -145,6 +145,131 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         return RequiredId(result.RootElement);
     }
 
+    /// <summary>What a many-message action did: old id → id after the action (a move gives a new id; a change keeps it), and why the rest failed.</summary>
+    public sealed record BatchResult(IReadOnlyDictionary<string, string> Done, IReadOnlyDictionary<string, GraphMailException> Failed);
+
+    /// <summary>Graph takes at most 20 requests in one $batch call.</summary>
+    public const int BatchSize = 20;
+    private const int BatchResponseLimit = 64 * 1024 * 1024;     // a move answers with the whole message, body included
+    private const int BatchAttempts = 6;
+
+    /// <summary>Moves many messages with Graph JSON batching (20 per call instead of one call each). Throttled ones are retried after the delay
+    /// Microsoft asks for; one failure never stops the rest. <paramref name="progress"/> gets the number finished so far.</summary>
+    public Task<BatchResult> MoveManyAsync(string token, IReadOnlyList<string> messageIds, string destinationId,
+        Action<int>? progress = null, CancellationToken ct = default)
+    {
+        ValidateId(destinationId);
+        return RunManyAsync(token, messageIds, id => new BatchPart("POST", "/me/messages/" + Uri.EscapeDataString(id) + "/move",
+            new { destinationId }), HttpStatusCode.Created, newIdFromBody: true, progress, ct);
+    }
+
+    public Task<BatchResult> SetReadManyAsync(string token, IReadOnlyList<string> messageIds, bool isRead,
+        Action<int>? progress = null, CancellationToken ct = default) =>
+        RunManyAsync(token, messageIds, id => new BatchPart("PATCH", "/me/messages/" + Uri.EscapeDataString(id), new { isRead }),
+            HttpStatusCode.OK, newIdFromBody: false, progress, ct);
+
+    public Task<BatchResult> SetFlagManyAsync(string token, IReadOnlyList<string> messageIds, bool flagged,
+        Action<int>? progress = null, CancellationToken ct = default) =>
+        RunManyAsync(token, messageIds, id => new BatchPart("PATCH", "/me/messages/" + Uri.EscapeDataString(id),
+            new { flag = new { flagStatus = flagged ? "flagged" : "notFlagged" } }), HttpStatusCode.OK, newIdFromBody: false, progress, ct);
+
+    private sealed record BatchPart(string Method, string Url, object Body);
+    private sealed record BatchAnswer(int Status, JsonElement? Body, TimeSpan? RetryAfter);
+
+    private async Task<BatchResult> RunManyAsync(string token, IReadOnlyList<string> messageIds, Func<string, BatchPart> make,
+        HttpStatusCode expected, bool newIdFromBody, Action<int>? progress, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(messageIds);
+        var ids = messageIds.Distinct(StringComparer.Ordinal).ToList();
+        foreach (var id in ids) ValidateId(id);
+        var done = new Dictionary<string, string>(StringComparer.Ordinal);
+        var failed = new Dictionary<string, GraphMailException>(StringComparer.Ordinal);
+        if (ids.Count == 0) return new BatchResult(done, failed);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        for (var start = 0; start < ids.Count; start += BatchSize)
+        {
+            var pending = ids.Skip(start).Take(BatchSize).ToList();
+            for (var attempt = 1; pending.Count > 0; attempt++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var last = attempt >= BatchAttempts;
+                Dictionary<string, BatchAnswer> answers;
+                try { answers = await BatchAsync(token, pending, make, ct).ConfigureAwait(false); }
+                catch (GraphMailException e) when (!last && IsRetryable((int?)e.StatusCode ?? 0))
+                {
+                    await Task.Delay(e.RetryAfter ?? Backoff(attempt), ct).ConfigureAwait(false);
+                    continue;
+                }
+                var retry = new List<string>();
+                var wait = TimeSpan.Zero;
+                foreach (var id in pending)
+                {
+                    var answer = answers.TryGetValue(id, out var a) ? a : new BatchAnswer(0, null, null);
+                    if (answer.Status == (int)expected)
+                        done[id] = newIdFromBody && answer.Body is { ValueKind: JsonValueKind.Object } body &&
+                            body.TryGetProperty("id", out var newId) && newId.ValueKind == JsonValueKind.String &&
+                            newId.GetString() is { Length: > 0 and <= 2048 } s ? s : id;
+                    else if (!last && IsRetryable(answer.Status))
+                    {
+                        retry.Add(id);
+                        var delay = answer.RetryAfter ?? Backoff(attempt);
+                        if (delay > wait) wait = delay;
+                    }
+                    else failed[id] = new GraphMailException(answer.Status == 0 ? "Graph did not answer for this message."
+                        : $"Mail action failed with HTTP {answer.Status}.", answer.Status == 0 ? null : (HttpStatusCode)answer.Status, answer.RetryAfter);
+                }
+                progress?.Invoke(done.Count + failed.Count);
+                if (retry.Count > 0) await Task.Delay(wait, ct).ConfigureAwait(false);
+                pending = retry;
+            }
+            if (failed.Values.Any(e => e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden))
+            {                                                                       // every further call would be refused the same way
+                var refusal = failed.Values.First(e => e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
+                foreach (var id in ids.Skip(start + BatchSize)) failed[id] = refusal;
+                progress?.Invoke(done.Count + failed.Count);
+                break;
+            }
+        }
+        return new BatchResult(done, failed);
+    }
+
+    private static bool IsRetryable(int status) => status is 429 or 503 or 504;
+
+    private static TimeSpan Backoff(int attempt) => TimeSpan.FromSeconds(Math.Min(30, 1 << Math.Min(attempt, 5)));
+
+    /// <summary>One $batch call. Request ids are "1".."n" (message ids are too long and varied to use); the answers are mapped back to message ids.</summary>
+    private async Task<Dictionary<string, BatchAnswer>> BatchAsync(string token, IReadOnlyList<string> ids, Func<string, BatchPart> make, CancellationToken ct)
+    {
+        var requests = ids.Select((id, i) =>
+        {
+            var part = make(id);
+            return new Dictionary<string, object>
+            {
+                ["id"] = (i + 1).ToString(CultureInfo.InvariantCulture), ["method"] = part.Method, ["url"] = part.Url,
+                ["headers"] = new Dictionary<string, string> { ["Content-Type"] = "application/json" }, ["body"] = part.Body,
+            };
+        }).ToArray();
+        using var response = await SendAsync(HttpMethod.Post, Origin + "/$batch", token, new { requests }, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        using var json = await ReadBoundedJsonAsync(response, ct, BatchResponseLimit).ConfigureAwait(false);
+        if (!json.RootElement.TryGetProperty("responses", out var responses) || responses.ValueKind != JsonValueKind.Array)
+            throw new GraphMailException("Graph returned an invalid batch answer.");
+        var answers = new Dictionary<string, BatchAnswer>(StringComparer.Ordinal);
+        foreach (var item in responses.EnumerateArray())
+        {
+            if (!item.TryGetProperty("id", out var key) || key.ValueKind != JsonValueKind.String ||
+                !int.TryParse(key.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out var index) || index < 1 || index > ids.Count ||
+                !item.TryGetProperty("status", out var status) || !status.TryGetInt32(out var code)) continue;
+            TimeSpan? retryAfter = null;
+            if (item.TryGetProperty("headers", out var headers) && headers.ValueKind == JsonValueKind.Object)
+                foreach (var header in headers.EnumerateObject())
+                    if (header.Name.Equals("Retry-After", StringComparison.OrdinalIgnoreCase) && header.Value.ValueKind == JsonValueKind.String &&
+                        int.TryParse(header.Value.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out var seconds))
+                        retryAfter = TimeSpan.FromSeconds(Math.Clamp(seconds, 1, 60));
+            answers[ids[index - 1]] = new BatchAnswer(code, item.TryGetProperty("body", out var body) ? body.Clone() : null, retryAfter);
+        }
+        return answers;
+    }
+
     public async Task CopyAsync(string token, string messageId, string destinationId, CancellationToken ct = default)
     {
         ValidateId(destinationId);

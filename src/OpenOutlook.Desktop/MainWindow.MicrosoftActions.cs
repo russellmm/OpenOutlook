@@ -16,7 +16,7 @@ public partial class MainWindow
         action is "read" or "unread" or "flag" or "unflag" or "archive" ||
         (action == "delete" && !folder.Name.Equals("Deleted Items", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Applies the action to the list now, then sends it (one request at a time, in order). A refusal puts the list back and says why.</summary>
+    /// <summary>Applies the action to the list now, then sends it (batched, 20 messages per request). A refusal puts those messages back and says why.</summary>
     private void ActAtOnce(ConnectedAccount account, MicrosoftFolderSelection folder, string action, IReadOnlyList<GraphInboxMessage> messages)
     {
         foreach (var message in messages) ApplyCompletedMailAction(message, action);
@@ -33,34 +33,56 @@ public partial class MainWindow
     {
         await _msActionGate.WaitAsync();
         var writer = new GraphMailWriter(_graphHttp, account.AccountId);
-        var done = 0;
+        var started = DateTime.UtcNow;
+        string[] failed = [];
+        Exception? error = null;
         try
         {
-            foreach (var id in ids)
+            var token = await GetMicrosoftSession(account).GetAccessTokenAsync();
+            Action<int>? progress = ids.Length > GraphMailWriter.BatchSize
+                ? n => Dispatcher.UIThread.Post(() => StatusText.Text = $"Sending to Microsoft… {n} of {ids.Length}") : null;
+            var result = action switch
             {
-                var token = await GetMicrosoftSession(account).GetAccessTokenAsync();
-                switch (action)
-                {
-                    case "delete": await writer.MoveAsync(token, id, "deleteditems"); break;
-                    case "archive": await writer.MoveAsync(token, id, "archive"); break;
-                    case "read": await writer.SetReadAsync(token, id, true); break;
-                    case "unread": await writer.SetReadAsync(token, id, false); break;
-                    case "flag": await writer.SetFlagAsync(token, id, true); break;
-                    case "unflag": await writer.SetFlagAsync(token, id, false); break;
-                }
-                done++;
-            }
-            if (action is not ("flag" or "unflag")) _ = RefreshMicrosoftFolderCountsAsync(account, CancellationToken.None, force: true);
+                "delete" => await writer.MoveManyAsync(token, ids, "deleteditems", progress),
+                "archive" => await writer.MoveManyAsync(token, ids, "archive", progress),
+                "read" or "unread" => await writer.SetReadManyAsync(token, ids, action == "read", progress),
+                _ => await writer.SetFlagManyAsync(token, ids, action == "flag", progress),
+            };
+            failed = [.. result.Failed.Keys];
+            error = result.Failed.Values.FirstOrDefault();
+            AppLog.Note("mail-action", $"{action} of {ids.Length} message(s) sent to Microsoft in {(DateTime.UtcNow - started).TotalSeconds:0.0} s" +
+                (failed.Length > 0 ? $"; {failed.Length} not accepted ({error!.Message})" : ""));
         }
-        catch (Exception error) when (error is GraphMailException or HttpRequestException or ArgumentException or OperationCanceledException)
+        catch (Exception e) when (e is GraphMailException or HttpRequestException or ArgumentException or OperationCanceledException)
         {
-            var failed = ids.Skip(done).ToArray();
-            UndoLocalChange(account, failed);
-            foreach (var id in failed) _readOverrides.Remove(GraphMessageKey(account.AccountId, id));
-            StatusText.Text = error is GraphMailException { StatusCode: System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized }
-                ? "Microsoft declined mail access. Use Account setup to sign in again, then retry."
-                : error is GraphMailException or ArgumentException ? "Microsoft did not accept the change: " + error.Message : "Mail action failed. Check the connection and retry.";
-            if (_activeMicrosoftFolder == folder) await RefreshMicrosoftFolderAsync();           // the list shows what Microsoft really has
+            failed = ids;                                                                   // nothing was confirmed; the refresh below shows what Microsoft has
+            error = e;
+        }
+        try
+        {
+            if (failed.Length > 0)
+            {
+                UndoLocalChange(account, failed);
+                foreach (var id in failed) _readOverrides.Remove(GraphMessageKey(account.AccountId, id));
+                var lead = failed.Length < ids.Length ? $"{ids.Length - failed.Length} of {ids.Length} done; " : "";
+                StatusText.Text = lead + (error is GraphMailException { StatusCode: System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized }
+                    ? "Microsoft declined mail access. Use Account setup to sign in again, then retry."
+                    : error is GraphMailException or ArgumentException ? "Microsoft did not accept the change: " + error.Message : "Mail action failed. Check the connection and retry.");
+                if (_activeMicrosoftFolder == folder) await RefreshMicrosoftFolderAsync();       // the list shows what Microsoft really has
+            }
+            else if (ids.Length > GraphMailWriter.BatchSize) StatusText.Text = action switch
+            {
+                "delete" => $"{ids.Length} messages deleted.",
+                "archive" => $"{ids.Length} messages archived.",
+                _ => "Mail action completed.",
+            };
+            if (action is not ("flag" or "unflag") && failed.Length < ids.Length)
+            {
+                _ = RefreshMicrosoftFolderCountsAsync(account, CancellationToken.None, force: true);
+                // Bring the mailbox copy up to date now rather than at the next new-mail check, so the copy matches the server straight away.
+                if (Environment.GetEnvironmentVariable("OPENOUTLOOK_NO_MIRROR") != "1" && _mirrorSettings.Load().For(account.AccountId).Enabled)
+                    _ = SyncMirrorWhenIdleAsync(account, manual: false);
+            }
         }
         finally { _msActionGate.Release(); }
     }

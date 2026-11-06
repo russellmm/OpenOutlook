@@ -32,6 +32,20 @@ public sealed class MicrosoftJunkCleanerRunnerTests
         var client = new HttpClient(new Handler(request =>
         {
             var url = request.RequestUri!.AbsoluteUri;
+            if (request.Method == HttpMethod.Post && url.EndsWith("/$batch", StringComparison.Ordinal))      // moves arrive batched
+            {
+                using var batch = System.Text.Json.JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                var answers = new List<string>();
+                foreach (var part in batch.RootElement.GetProperty("requests").EnumerateArray())
+                {
+                    var key = part.GetProperty("id").GetString();
+                    var id = part.GetProperty("url").GetString()!.Split("/messages/")[1].Split('/')[0];
+                    if (id == failId) { answers.Add("{\"id\":\"" + key + "\",\"status\":500,\"body\":{}}"); continue; }
+                    moves.Add(id);
+                    answers.Add("{\"id\":\"" + key + "\",\"status\":201,\"body\":{\"id\":\"new-" + id + "\"}}");
+                }
+                return Json("{\"responses\":[" + string.Join(",", answers) + "]}");
+            }
             if (request.Method == HttpMethod.Post && url.Contains("/move", StringComparison.Ordinal))
             {
                 var id = url.Split("/messages/")[1].Split('/')[0];

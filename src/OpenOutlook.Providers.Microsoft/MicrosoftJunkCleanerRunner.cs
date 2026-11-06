@@ -68,22 +68,29 @@ public sealed class MicrosoftJunkCleanerRunner(GraphJunkMailReader reader, Graph
         var chosen = (only ?? scan.Matched).Take(maxMoves).ToList();
         var moved = new List<JunkCleanerHit>();
         var failures = new List<string>();
-        foreach (var hit in chosen)
+        if (chosen.Count == 0) return scan with { Moved = moved, Failures = failures, CapReached = scan.Matched.Count > maxMoves };
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            try
+            var result = await writer.MoveManyAsync(await accessToken(ct).ConfigureAwait(false),
+                chosen.Select(h => h.MessageId).ToList(), "deleteditems", ct: ct).ConfigureAwait(false);
+            foreach (var hit in chosen.DistinctBy(h => h.MessageId))
             {
-                await writer.MoveAsync(await accessToken(ct).ConfigureAwait(false), hit.MessageId, "deleteditems", ct).ConfigureAwait(false);
-                moved.Add(hit);
+                if (result.Done.ContainsKey(hit.MessageId)) moved.Add(hit);
+                else if (result.Failed.TryGetValue(hit.MessageId, out var e))
+                {
+                    if (e.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                    {
+                        const string declined = "Microsoft declined mail access; sign in again from Account Settings.";
+                        if (!failures.Contains(declined)) failures.Add(declined);
+                    }
+                    else failures.Add($"\"{hit.Subject}\": {e.Message}");
+                }
             }
-            catch (GraphMailException e) when (e.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-            {
-                failures.Add("Microsoft declined mail access; sign in again from Account Settings.");
-                break;                                                              // every further move would fail the same way
-            }
-            catch (Exception e) when (e is GraphMailException or HttpRequestException or ArgumentException)
-            { failures.Add($"\"{hit.Subject}\": {e.Message}"); }
         }
+        catch (GraphMailException e) when (e.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        { failures.Add("Microsoft declined mail access; sign in again from Account Settings."); }
+        catch (Exception e) when (e is GraphMailException or HttpRequestException or ArgumentException)
+        { failures.Add(e.Message); }
         return scan with { Moved = moved, Failures = failures, CapReached = scan.Matched.Count > maxMoves };
     }
 

@@ -42,6 +42,32 @@ public sealed class GraphInboxReaderTests
     }
 
     [Fact]
+    public async Task ListAsksForTheMessageSizeAsAnExtendedPropertyAndShowsIt()
+    {
+        string? query = null;
+        using var http = new HttpClient(new Handler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/v1.0/me/mailFolders/inbox/messages") query = Uri.UnescapeDataString(request.RequestUri.Query);
+            return request.RequestUri.AbsolutePath switch
+            {
+                "/v1.0/me" => Json("""{"id":"verified-id"}"""),
+                "/v1.0/me/mailFolders/inbox" => Json("""{"id":"inbox-id","displayName":"Inbox","totalItemCount":3,"unreadItemCount":0}"""),
+                "/v1.0/me/mailFolders/inbox/messages" => Json("""
+                    {"value":[
+                      {"id":"m1","subject":"a","isRead":true,"hasAttachments":false,"singleValueExtendedProperties":[{"id":"Integer 0xe08","value":"48213"}]},
+                      {"id":"m2","subject":"b","isRead":true,"hasAttachments":false,"singleValueExtendedProperties":[{"id":"Integer 0x0E08","value":"900"}]},
+                      {"id":"m3","subject":"c","isRead":true,"hasAttachments":false}
+                    ]}
+                    """),
+                _ => throw new Exception("Unexpected Graph path")
+            };
+        }));
+        var page = await new GraphInboxReader(http, "verified-id").GetInboxAsync("fake-access");
+        Assert.Contains("$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x0E08')", query);
+        Assert.Equal([48213, 900, null], page.Messages.Select(m => m.SizeBytes));
+    }
+
+    [Fact]
     public async Task DownloadsTheRawMimeMessageForTheVerifiedAccountOnly()
     {
         var paths = new List<string>();

@@ -516,7 +516,7 @@ if (step == "openeditable")
 // Everything below signs in to the owner's real accounts, and the end of the file SENDS MAIL between them. It runs only for a step named
 // explicitly ("sendtest" for the send / reply / forward test). An unknown or missing step used to fall through to that test: a typo, or an
 // old build that did not have a new step yet, sent real messages (it happened four times on 2026-10-15).
-var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rendergmail", "renderlive", "livegmail", "livepush", "scanlocal", "launchtest", "render", "localfolder", "mirror", "gmailtiming", "openpath", "gmailsync", "timing", "junkscan", "junkheaders", "junkrules", "inboxspam", "attach", "reportnotjunk" };
+var liveSteps = new HashSet<string>(StringComparer.Ordinal) { "sendtest", "rendergmail", "renderlive", "livegmail", "livepush", "scanlocal", "launchtest", "render", "localfolder", "mirror", "gmailtiming", "openpath", "gmailsync", "timing", "sizes", "junkscan", "junkheaders", "junkrules", "inboxspam", "attach", "reportnotjunk" };
 if (!liveSteps.Contains(step))
 {
     Console.Error.WriteLine(step.Length == 0 ? "MailSmoke: name a step." : $"MailSmoke: unknown step '{step}'.");
@@ -862,6 +862,15 @@ if (step == "gmailsync" && gBox is not null)
         var res = await OpenOutlook.Mirror.MirrorSyncEngine.SyncAsync(src, pst, st, new OpenOutlook.Mirror.MirrorSyncOptions(opt.KeepMonths, opt.MaxAttachmentBytes), null, CancellationToken.None);
         Console.WriteLine($"sync pass {pass}: {swm.Elapsed.TotalSeconds:0.0} s, {res}");
     }
+    return 0;
+}
+
+if (step == "sizes" && mAcc is not null)
+{
+    // read-only: the newest Inbox page as the list first shows it, with the sizes Graph sent (PR_MESSAGE_SIZE)
+    var page = await new GraphInboxReader(graphHttp, mAcc.AccountId).GetInboxAsync(await mSession!.GetAccessTokenAsync());
+    Console.WriteLine($"{page.Messages.Count(m => m.SizeBytes is not null)} of {page.Messages.Count} Inbox messages have a size");
+    foreach (var m in page.Messages.Take(5)) Console.WriteLine($"  {m.Received:g}  {(m.SizeBytes is { } b ? $"{(b + 1023) / 1024:N0} KB" : "(none)"),9}");
     return 0;
 }
 

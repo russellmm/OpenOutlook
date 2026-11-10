@@ -38,6 +38,27 @@ public sealed class GraphInboxReader
     public Task<GraphInboxPage> GetInboxAsync(string accessToken, CancellationToken cancellationToken = default) =>
         GetFolderCoreAsync(accessToken, "inbox", null, cancellationToken);
 
+    /// <summary>Graph has no size field on a message; the MAPI property PR_MESSAGE_SIZE (0x0E08) gives it, so the Size column fills at once
+    /// instead of only after the mailbox copy has synced.</summary>
+    private const string SizeExpand = "$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x0E08')";
+
+    /// <summary>The message size from the expanded PR_MESSAGE_SIZE, or null when Graph did not send it.</summary>
+    internal static int? MessageSize(JsonElement item)
+    {
+        if (!item.TryGetProperty("singleValueExtendedProperties", out var props) || props.ValueKind != JsonValueKind.Array) return null;
+        foreach (var prop in props.EnumerateArray())
+        {
+            if (prop.ValueKind != JsonValueKind.Object || !prop.TryGetProperty("id", out var pid) || pid.ValueKind != JsonValueKind.String ||
+                pid.GetString() is not { } name || !(name.Equals("Integer 0xe08", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("Integer 0x0e08", StringComparison.OrdinalIgnoreCase)) ||
+                !prop.TryGetProperty("value", out var v)) continue;
+            if (v.ValueKind == JsonValueKind.String && int.TryParse(v.GetString(), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var size)) return size;
+            if (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out size) && size >= 0) return size;
+        }
+        return null;
+    }
+
     public Task<GraphInboxPage> GetFolderAsync(string accessToken, string folderId,
         CancellationToken cancellationToken = default)
     {
@@ -55,7 +76,8 @@ public sealed class GraphInboxReader
             "?$select=id,displayName,totalItemCount,unreadItemCount"),
             accessToken, cancellationToken);
         var pageTask = GetJsonAsync(new Uri(Origin + "/me/mailFolders/" + pathId + "/messages?$top=50&$orderby=receivedDateTime%20desc&" +
-            "$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview,flag,isDraft,importance"),
+            "$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview,flag,isDraft,importance&" +
+            SizeExpand),
             accessToken, cancellationToken);
         try { await Task.WhenAll(folderTask, pageTask).ConfigureAwait(false); }
         catch
@@ -94,7 +116,7 @@ public sealed class GraphInboxReader
                 received = parsed;
             }
             messages.Add(new GraphInboxMessage(id, OptionalString(item, "subject", 4096) ?? "(no subject)",
-                address, to, received, null,
+                address, to, received, MessageSize(item),
                 Boolean(item, "hasAttachments"), Boolean(item, "isRead"),
                 OptionalString(item, "bodyPreview", 4096) ?? "", IsFlagged(item), OptionalBoolean(item, "isDraft"),
                 OptionalString(item, "importance", 16)?.ToLowerInvariant() switch { "high" => 2, "low" => 0, _ => 1 }, FromAddressOf(item)));

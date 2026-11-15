@@ -119,6 +119,7 @@ public partial class MainWindow
             _activeMicrosoftAccount = null; _activeMicrosoftFolder = null; _activeGmailFolder = null;
             _activePath = null; _activeFolder = null;
             HideSpamBar();
+            ResetMoreOnServer();
             MessageList.ItemsSource = null; RefreshItemCount();
             ClearReader();
         }

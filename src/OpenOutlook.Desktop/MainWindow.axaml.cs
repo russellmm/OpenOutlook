@@ -329,8 +329,9 @@ public sealed partial class MainWindow : Window
             }
             if (action == "delete")
             {
-                await DeleteSelectedMessagesAsync(writer, Token, selectedForDelete.Length > 0
-                    ? selectedForDelete : [selected], actionFolder);
+                IReadOnlyList<GraphInboxMessage> chosen = selectedForDelete.Length > 0 ? selectedForDelete : [selected];
+                if (actionFolder is not null && IsDeletedItems(actionFolder)) await DeletePermanentlyAtOnceAsync(account, actionFolder, chosen);
+                else await DeleteSelectedMessagesAsync(writer, Token, chosen, actionFolder);
                 return;
             }
             switch (action)
@@ -404,6 +405,7 @@ public sealed partial class MainWindow : Window
         if ((_activeGmailFolder?.Account ?? _activeMicrosoftAccount) is { } changedAccount) NoteLocalChange(changedAccount, selected.Id, action);
         if (action is "delete" or "archive")
         {
+            _serverExtras.Remove(selected.Id);
             NoteRowLeaving(row);
             if (ReferenceEquals(MessageList.SelectedItem, row))
             {
@@ -645,6 +647,7 @@ public sealed partial class MainWindow : Window
         _searchCancellation?.Cancel();
         _onlineCancellation?.Cancel();
         EndSearchResults();
+        ResetMoreOnServer();
         _folderRefreshCancellation?.Cancel();
         _activeMicrosoftAccount = null;
         _activeMicrosoftFolder = null;
@@ -909,13 +912,15 @@ public sealed partial class MainWindow : Window
             if (await ReadLocalFolderAsync(account, selection.Id) is { } local)             // the local copy answers without a network request
             {
                 if (version != _folderVersion || cancellationToken.IsCancellationRequested) return;
-                _currentGraphMessages = local.Messages;
-                if (_graphRows is null) ShowGraphMessages(local.Messages);
-                else ReconcileGraphMessages(local.Messages);
+                var shownLocal = WithServerExtras(selection, local.Messages);
+                _currentGraphMessages = shownLocal;
+                if (_graphRows is null) ShowGraphMessages(shownLocal);
+                else ReconcileGraphMessages(shownLocal);
                 StatusText.Text = $"{local.Messages.Count} newest of {local.TotalCount:N0} {local.FolderName} items · {local.UnreadCount:N0} unread · {account.DisplayAddress} · local copy";
                 ApplyFolderCounts(account, new Dictionary<string, int> { [selection.Id] = local.UnreadCount });
                 if (!_mirrorLastSync.TryGetValue(account.AccountId, out var lastSync) || DateTime.UtcNow - lastSync > TimeSpan.FromSeconds(90))
                     RequestMirrorSyncSoon(account);                                          // new mail on the server appears once the copy is refreshed
+                _ = UpdateMoreOnServerAsync(selection, version, cancellationToken);
                 return;
             }
             if (_graphRows is null && _graphPageCache.TryGetValue(cacheKey, out var cached))      // a folder seen before shows at once; the fresh list replaces it below
@@ -932,13 +937,15 @@ public sealed partial class MainWindow : Window
             if (version != _folderVersion || cancellationToken.IsCancellationRequested) return;
             if (_graphPageCache.Count > 40) _graphPageCache.Clear();
             _graphPageCache[cacheKey] = page;
-            _currentGraphMessages = page.Messages;
-            if (_graphRows is null) ShowGraphMessages(page.Messages);
-            else ReconcileGraphMessages(page.Messages);
+            var shownPage = WithServerExtras(selection, page.Messages);
+            _currentGraphMessages = shownPage;
+            if (_graphRows is null) ShowGraphMessages(shownPage);
+            else ReconcileGraphMessages(shownPage);
             StatusText.Text = $"{page.Messages.Count} newest of {page.TotalCount:N0} {page.FolderName} items · " +
                 $"{page.UnreadCount:N0} unread · {account.DisplayAddress}";
             ApplyFolderCounts(account, new Dictionary<string, int> { [selection.Id] = page.UnreadCount });      // the page already says how many are unread
             _ = RefreshMicrosoftFolderCountsAsync(account, cancellationToken);
+            _ = UpdateMoreOnServerAsync(selection, version, cancellationToken);
         }
         catch (OperationCanceledException) { }
         catch (GraphMailException error)

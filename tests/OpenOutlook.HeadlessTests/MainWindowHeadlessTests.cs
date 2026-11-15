@@ -195,6 +195,18 @@ public sealed class MainWindowHeadlessTests
             string json;
             var status = HttpStatusCode.OK;
             if (path == "/v1.0/me") json = """{"id":"headless-delete"}""";
+            else if (path == "/v1.0/$batch")                                     // deletes are sent as $batch calls since 0.1.93
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+                var answers = new List<string>();
+                foreach (var part in doc.RootElement.GetProperty("requests").EnumerateArray())
+                {
+                    var id = Uri.UnescapeDataString(part.GetProperty("url").GetString()!.Split('/')[3]);
+                    Moved.Enqueue(id);
+                    answers.Add("{\"id\":\"" + part.GetProperty("id").GetString() + "\",\"status\":201,\"body\":{\"id\":\"moved-" + id + "\"}}");
+                }
+                json = "{\"responses\":[" + string.Join(",", answers) + "]}";
+            }
             else if (path.StartsWith("/v1.0/me/messages/", StringComparison.Ordinal) && path.EndsWith("/move", StringComparison.Ordinal))
             {
                 var id = path.Split('/')[4];
@@ -2301,7 +2313,7 @@ public sealed class MainWindowHeadlessTests
             typeof(MainWindow).GetMethod("ShowGraphMessages", flags)!.Invoke(window,
                 [new List<OpenOutlook.Providers.Microsoft.GraphInboxMessage> { Message("m1", ""), Message("m2", "pal@friend.example"), Message("m3", "boss@work.example") }]);
             var bar = window.FindControl<Border>("SpamBar")!;
-            var column = window.FindControl<DataGrid>("MessageList")!.Columns[^1];
+            var column = window.FindControl<DataGrid>("MessageList")!.Columns[7];                                  // the spam check column (the one after it, In Folder, is search-only)
             await WaitUntil(() => column.IsVisible);
             var rows = (System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow>)typeof(MainWindow).GetField("_graphRows", flags)!.GetValue(window)!;
             Assert.True(bar.IsVisible);
@@ -2396,7 +2408,7 @@ public sealed class MainWindowHeadlessTests
                 new(id, "Subject " + id, "Shop", "person@hotmail.test", DateTimeOffset.UtcNow, 100, false, true, "", FromAddress: from);
             typeof(MainWindow).GetMethod("ShowGraphMessages", flags)!.Invoke(window,
                 [new List<OpenOutlook.Providers.Microsoft.GraphInboxMessage> { Message("j1", "win@casino.example"), Message("j2", "news@shop.example"), Message("j3", "x@y.example") }]);
-            var column = window.FindControl<DataGrid>("MessageList")!.Columns[^1];
+            var column = window.FindControl<DataGrid>("MessageList")!.Columns[7];                                  // the spam check column (the one after it, In Folder, is search-only)
             await WaitUntil(() => column.IsVisible);
             var rows = (System.Collections.ObjectModel.ObservableCollection<GraphMessageListRow>)typeof(MainWindow).GetField("_graphRows", flags)!.GetValue(window)!;
             Assert.Equal([true, true, false], rows.Select(r => r.IsSpamTicked));
@@ -2444,6 +2456,18 @@ public sealed class MainWindowHeadlessTests
                 using var body = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
                 lock (moves) moves.Add((id, body.RootElement.GetProperty("destinationId").GetString()!));
                 return Json("{\"id\":\"moved-" + id + "\"}", HttpStatusCode.Created);
+            }
+            if (request.Method == HttpMethod.Post && url.EndsWith("/$batch", StringComparison.Ordinal))      // moves are sent as $batch calls since 0.1.93
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+                var answers = new List<string>();
+                foreach (var part in doc.RootElement.GetProperty("requests").EnumerateArray())
+                {
+                    var id = Uri.UnescapeDataString(part.GetProperty("url").GetString()!.Split('/')[3]);
+                    lock (moves) moves.Add((id, part.GetProperty("body").GetProperty("destinationId").GetString()!));
+                    answers.Add("{\"id\":\"" + part.GetProperty("id").GetString() + "\",\"status\":201,\"body\":{\"id\":\"moved-" + id + "\"}}");
+                }
+                return Json("{\"responses\":[" + string.Join(",", answers) + "]}");
             }
             return Json("{\"value\":[]}");
         }

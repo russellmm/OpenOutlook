@@ -452,6 +452,15 @@
                   <TextBlock Name="SpamBarText" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource OlText}" />
                 </DockPanel>
               </Border>
+              <!-- Microsoft folders (MainWindow.MoreOnServer.cs): the copy holds only the newest part of a large folder -->
+              <Border DockPanel.Dock="Bottom" Name="MoreOnServerBar" IsVisible="False" Padding="10,12" BorderBrush="{DynamicResource OlHairline}" BorderThickness="0,1,0,0">
+                <StackPanel Spacing="8" HorizontalAlignment="Center">
+                  <TextBlock Text="There are more items in this folder on the server" FontWeight="SemiBold" Foreground="{DynamicResource OlTextSecondary}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                  <Button Name="MoreOnServerButton" Click="MoreOnServerClicked" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand" HorizontalAlignment="Center">
+                    <TextBlock Text="Click here to view more on Microsoft Exchange" FontWeight="SemiBold" TextDecorations="Underline" Foreground="{DynamicResource OlAccent}" TextWrapping="Wrap" TextAlignment="Center" />
+                  </Button>
+                </StackPanel>
+              </Border>
               <DataGrid Name="MessageList" Classes="olList" SelectionMode="Extended" SelectionChanged="MessageSelected" Sorting="MessageListSorting"
                         LoadingRowGroup="MessageListLoadingRowGroup" AutoGenerateColumns="False"
                         IsReadOnly="True" CanUserSortColumns="True" CanUserReorderColumns="True"

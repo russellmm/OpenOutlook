@@ -173,7 +173,7 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         RunManyAsync(token, messageIds, id => new BatchPart("PATCH", "/me/messages/" + Uri.EscapeDataString(id),
             new { flag = new { flagStatus = flagged ? "flagged" : "notFlagged" } }), HttpStatusCode.OK, newIdFromBody: false, progress, ct);
 
-    private sealed record BatchPart(string Method, string Url, object Body);
+    private sealed record BatchPart(string Method, string Url, object? Body);
     private sealed record BatchAnswer(int Status, JsonElement? Body, TimeSpan? RetryAfter);
 
     private async Task<BatchResult> RunManyAsync(string token, IReadOnlyList<string> messageIds, Func<string, BatchPart> make,
@@ -243,11 +243,16 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
         var requests = ids.Select((id, i) =>
         {
             var part = make(id);
-            return new Dictionary<string, object>
+            var request = new Dictionary<string, object>
             {
                 ["id"] = (i + 1).ToString(CultureInfo.InvariantCulture), ["method"] = part.Method, ["url"] = part.Url,
-                ["headers"] = new Dictionary<string, string> { ["Content-Type"] = "application/json" }, ["body"] = part.Body,
             };
+            if (part.Body is not null)                                           // a GET has no body
+            {
+                request["headers"] = new Dictionary<string, string> { ["Content-Type"] = "application/json" };
+                request["body"] = part.Body;
+            }
+            return request;
         }).ToArray();
         using var response = await SendAsync(HttpMethod.Post, Origin + "/$batch", token, new { requests }, HttpStatusCode.OK, ct).ConfigureAwait(false);
         using var json = await ReadBoundedJsonAsync(response, ct, BatchResponseLimit).ConfigureAwait(false);
@@ -352,6 +357,51 @@ public sealed class GraphMailWriter(HttpClient http, string expectedAccountId)
             }
         }
         throw new GraphMailException("Deleted Items did not empty; stopped after the safety limit.");
+    }
+
+    /// <summary>
+    /// Permanently deletes many messages from Deleted Items with JSON batching (20 per call). Every message is first checked to be in Deleted Items
+    /// (one batched read per 20), so a message that was moved out since the list was shown is never deleted: it comes back as failed.
+    /// A message that is already gone counts as done. <paramref name="progress"/> gets the number finished so far.
+    /// </summary>
+    public async Task<BatchResult> DeletePermanentlyManyAsync(string token, IReadOnlyList<string> messageIds, Action<int>? progress = null, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(messageIds);
+        var ids = messageIds.Distinct(StringComparer.Ordinal).ToList();
+        foreach (var id in ids) ValidateId(id);
+        var done = new Dictionary<string, string>(StringComparer.Ordinal);
+        var failed = new Dictionary<string, GraphMailException>(StringComparer.Ordinal);
+        if (ids.Count == 0) return new BatchResult(done, failed);
+        await VerifyAsync(token, ct).ConfigureAwait(false);
+        using var trash = await RequestJsonAsync(HttpMethod.Get, Origin + "/me/mailFolders/deleteditems?$select=id", token, null, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        var trashId = RequiredId(trash.RootElement);
+        var inTrash = new List<string>();
+        for (var start = 0; start < ids.Count; start += BatchSize)
+        {
+            ct.ThrowIfCancellationRequested();
+            var chunk = ids.Skip(start).Take(BatchSize).ToList();
+            var answers = await BatchAsync(token, chunk, id => new BatchPart("GET", "/me/messages/" + Uri.EscapeDataString(id) + "?$select=id,parentFolderId", null), ct).ConfigureAwait(false);
+            foreach (var id in chunk)
+            {
+                var answer = answers.TryGetValue(id, out var a) ? a : new BatchAnswer(0, null, null);
+                if (answer.Status == (int)HttpStatusCode.NotFound) done[id] = id;                    // already gone
+                else if (answer.Status == (int)HttpStatusCode.OK && answer.Body is { ValueKind: JsonValueKind.Object } body &&
+                         body.TryGetProperty("parentFolderId", out var parent) && parent.ValueKind == JsonValueKind.String)
+                {
+                    if (string.Equals(parent.GetString(), trashId, StringComparison.Ordinal)) inTrash.Add(id);
+                    else failed[id] = new GraphMailException("Permanent deletion is allowed only in Deleted Items.");
+                }
+                else failed[id] = new GraphMailException(answer.Status == 0 ? "Graph did not answer for this message."
+                    : $"Mail action failed with HTTP {answer.Status}.", answer.Status == 0 ? null : (HttpStatusCode)answer.Status, answer.RetryAfter);
+            }
+        }
+        progress?.Invoke(done.Count + failed.Count);
+        var baseCount = done.Count + failed.Count;
+        var result = await RunManyAsync(token, inTrash, id => new BatchPart("POST", "/me/messages/" + Uri.EscapeDataString(id) + "/permanentDelete", new { }),
+            HttpStatusCode.NoContent, newIdFromBody: false, n => progress?.Invoke(baseCount + n), ct).ConfigureAwait(false);
+        foreach (var d in result.Done) done[d.Key] = d.Value;
+        foreach (var f in result.Failed) failed[f.Key] = f.Value;
+        return new BatchResult(done, failed);
     }
 
     public async Task DeletePermanentlyAsync(string token, string messageId, CancellationToken ct = default)

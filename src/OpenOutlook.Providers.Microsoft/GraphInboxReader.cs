@@ -97,6 +97,13 @@ public sealed class GraphInboxReader
         if (!page.RootElement.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Array ||
             value.GetArrayLength() > 50)
             throw new GraphMailException("Graph returned an invalid inbox page.");
+        var messages = ParseMessages(value);
+        var hasMore = page.RootElement.TryGetProperty("@odata.nextLink", out var next) && next.ValueKind == JsonValueKind.String;
+        return new GraphInboxPage(folderName, total, unread, messages, hasMore);
+    }
+
+    private static List<GraphInboxMessage> ParseMessages(JsonElement value)
+    {
         var messages = new List<GraphInboxMessage>(value.GetArrayLength());
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in value.EnumerateArray())
@@ -121,8 +128,42 @@ public sealed class GraphInboxReader
                 OptionalString(item, "bodyPreview", 4096) ?? "", IsFlagged(item), OptionalBoolean(item, "isDraft"),
                 OptionalString(item, "importance", 16)?.ToLowerInvariant() switch { "high" => 2, "low" => 0, _ => 1 }, FromAddressOf(item)));
         }
-        var hasMore = page.RootElement.TryGetProperty("@odata.nextLink", out var next) && next.ValueKind == JsonValueKind.String;
-        return new GraphInboxPage(folderName, total, unread, messages, hasMore);
+        return messages;
+    }
+
+    private const int MaxMore = 100;
+
+    /// <summary>The folder's real item counts on the server (the local mailbox copy keeps only part of a large folder).</summary>
+    public async Task<(int Total, int Unread)> GetFolderCountsAsync(string accessToken, string folderId, CancellationToken cancellationToken = default)
+    {
+        var pathId = PathId(folderId);
+        await VerifyAccountAsync(accessToken, cancellationToken).ConfigureAwait(false);
+        using var folder = await GetJsonAsync(new Uri(Origin + "/me/mailFolders/" + pathId + "?$select=id,totalItemCount,unreadItemCount"),
+            accessToken, cancellationToken).ConfigureAwait(false);
+        return (NonnegativeInt(folder.RootElement, "totalItemCount"), NonnegativeInt(folder.RootElement, "unreadItemCount"));
+    }
+
+    /// <summary>The next messages of a folder, newest first, after the first <paramref name="skip"/> (for "view more on the server").</summary>
+    public async Task<IReadOnlyList<GraphInboxMessage>> GetMoreMessagesAsync(string accessToken, string folderId, int skip, int top = MaxMore,
+        CancellationToken cancellationToken = default)
+    {
+        if (skip < 0 || skip > 1_000_000 || top is < 1 or > MaxMore) throw new ArgumentOutOfRangeException(nameof(skip));
+        var pathId = PathId(folderId);
+        await VerifyAccountAsync(accessToken, cancellationToken).ConfigureAwait(false);
+        using var page = await GetJsonAsync(new Uri(Origin + "/me/mailFolders/" + pathId + "/messages?$top=" + top + "&$skip=" + skip +
+            "&$orderby=receivedDateTime%20desc&" +
+            "$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview,flag,isDraft,importance&" + SizeExpand),
+            accessToken, cancellationToken).ConfigureAwait(false);
+        if (!page.RootElement.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Array || value.GetArrayLength() > top)
+            throw new GraphMailException("Graph returned an invalid message page.");
+        return ParseMessages(value);
+    }
+
+    private static string PathId(string folderId)
+    {
+        if (string.IsNullOrWhiteSpace(folderId) || folderId.Length > 2048 || folderId.Any(char.IsControl))
+            throw new ArgumentException("Invalid folder ID.", nameof(folderId));
+        return folderId == "inbox" ? "inbox" : Uri.EscapeDataString(folderId);
     }
 
     public async Task<string?> GetPlainTextBodyAsync(string accessToken, string messageId,

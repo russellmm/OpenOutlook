@@ -29,6 +29,19 @@ public partial class MainWindow
         _ = SendMicrosoftActionAsync(account, folder, action, messages.Select(m => m.Id).ToArray());
     }
 
+    private static bool IsDeletedItems(MicrosoftFolderSelection folder) => folder.Name.Equals("Deleted Items", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Delete inside Deleted Items: the warning comes up at once (nothing is asked of Microsoft first), the messages leave the list when it is confirmed,
+    /// and Microsoft is told in the background in batches. A message that is no longer in Deleted Items is refused there, put back, and reported.</summary>
+    private async Task DeletePermanentlyAtOnceAsync(ConnectedAccount account, MicrosoftFolderSelection folder, IReadOnlyList<GraphInboxMessage> messages)
+    {
+        if (!await ConfirmPermanentDeleteAsync(messages.Count)) { StatusText.Text = "Deletion canceled."; return; }
+        if (_activeMicrosoftFolder != folder) { StatusText.Text = "The folder changed while asking; nothing was deleted."; return; }
+        foreach (var message in messages) ApplyCompletedMailAction(message, "delete");
+        StatusText.Text = messages.Count == 1 ? "Deleting the message…" : $"Deleting {messages.Count} messages…";
+        _ = SendMicrosoftActionAsync(account, folder, "deletePermanent", messages.Select(m => m.Id).ToArray());
+    }
+
     private async Task SendMicrosoftActionAsync(ConnectedAccount account, MicrosoftFolderSelection folder, string action, string[] ids)
     {
         await _msActionGate.WaitAsync();
@@ -45,6 +58,7 @@ public partial class MainWindow
             {
                 "delete" => await writer.MoveManyAsync(token, ids, "deleteditems", progress),
                 "archive" => await writer.MoveManyAsync(token, ids, "archive", progress),
+                "deletePermanent" => await writer.DeletePermanentlyManyAsync(token, ids, progress),
                 "read" or "unread" => await writer.SetReadManyAsync(token, ids, action == "read", progress),
                 _ => await writer.SetFlagManyAsync(token, ids, action == "flag", progress),
             };
@@ -70,6 +84,8 @@ public partial class MainWindow
                     : error is GraphMailException or ArgumentException ? "Microsoft did not accept the change: " + error.Message : "Mail action failed. Check the connection and retry.");
                 if (_activeMicrosoftFolder == folder) await RefreshMicrosoftFolderAsync();       // the list shows what Microsoft really has
             }
+            else if (action == "deletePermanent")
+                StatusText.Text = ids.Length == 1 ? "Message permanently deleted." : $"{ids.Length} messages permanently deleted.";
             else if (ids.Length > GraphMailWriter.BatchSize) StatusText.Text = action switch
             {
                 "delete" => $"{ids.Length} messages deleted.",

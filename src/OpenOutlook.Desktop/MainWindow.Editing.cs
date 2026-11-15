@@ -61,6 +61,12 @@ public partial class MainWindow
     /// same gate/version discipline as a fresh folder selection.</summary>
     private async Task RefreshActivePstFolderAsync(string archivePath, int selectAfter = -1)
     {
+        if (_searchSummaries is not null)                                    // a search result list: run the search again instead of showing the folder
+        {
+            await ExecuteSearchAsync(quiet: true);
+            SelectDisplayedRow(selectAfter);
+            return;
+        }
         if (_activePath != archivePath || _activeFolder is not { } folder) return;
         if (!_stores.TryGetValue(archivePath, out var store)) return;
         var version = Interlocked.Increment(ref _folderVersion);
@@ -95,7 +101,7 @@ public partial class MainWindow
     {
         if (action is not ("read" or "unread" or "flag" or "unflag")) return false;
         if (MessageList.SelectedItem is not MessageListRow row) return false;
-        if (_activePath is not { } path) return false;
+        if ((row.StorePath ?? _activePath) is not { } path) return false;
 
         bool read = action is "read" or "unread";
         bool on = action is "read" or "flag";
@@ -146,7 +152,12 @@ public partial class MainWindow
             .Distinct().ToList();
         if (rows.Count == 0) return false;
         var nextIndex = FirstDisplayedIndexOf(rows);                                // where the highlight goes once these are gone
-        if (_activePath is not { } path)
+        if (rows.Select(r => r.StorePath ?? _activePath).Distinct().Count() > 1)
+        {
+            StatusText.Text = "The selected messages are in different data files. Select messages from one data file to delete them.";
+            return true;
+        }
+        if ((rows[0].StorePath ?? _activePath) is not { } path)
         {
             StatusText.Text = "The archive for this selection is no longer open.";
             return true;
@@ -155,8 +166,9 @@ public partial class MainWindow
         if (store is null) return true;
         // Classic Outlook semantics: Delete moves to Deleted Items; Shift+Delete (or deleting from
         // inside Deleted Items) removes for real. Both paths confirm first.
-        var inDeletedItems = _activeFolder is not null &&
-            string.Equals(_activeFolder.Name, "Deleted Items", StringComparison.OrdinalIgnoreCase);
+        var inDeletedItems = _searchSummaries is not null
+            ? rows.All(r => store.FindFolder(r.Summary.FolderNid) is { Name: var n } && string.Equals(n, "Deleted Items", StringComparison.OrdinalIgnoreCase))
+            : _activeFolder is not null && string.Equals(_activeFolder.Name, "Deleted Items", StringComparison.OrdinalIgnoreCase);
         if (!permanent && !inDeletedItems)
         {
             var trash = store.AllFolders().FirstOrDefault(f =>

@@ -35,7 +35,7 @@ Platforms: **Windows** = the published `OpenOutlook.Desktop.exe` (Windows 11). *
 | Create a new empty PST (`opst_create`) | Yes | Yes | SCANPST-clean; used for the mailbox copies. |
 | Check and Repair (fixer rules R1-R13; format rules 1-43) | Yes | Yes | Window in the app; SCANPST.EXE is the oracle (Windows only). |
 | Export message / folder tree to EML, save attachments | Yes | Yes | New files only, never overwrites. |
-| Selected-folder header search (sender, recipients, subject; max 500) | Yes | Yes | There is no cross-store full-text index. |
+| Search box (title bar) with a scope picker: All data and mailboxes / Current mailbox / Current folder | Yes | Untested (shared code) | Uses the PST engine search: subject, sender, recipients and message text; words, "exact phrase", -word, from:, to:, subject:, body:, has:attachment, is:unread. Covers every folder including Deleted Items; newest 500 hits; an In Folder column shows where each hit is. Hotmail and Gmail are searched in their local mailbox copies (only what the copy keeps, 12 months by default), so no network wait. Hits open, flag and delete in their own data file; Reply/Forward are not offered for hits from a mailbox copy. Headless test `SearchHeadlessTests`.
 
 Details and the file-format rules: `native-engine-status.md`, `OpenOutlook_Design_Document.md`, `pst-editing-design.md`, `Ctools.MD`.
 

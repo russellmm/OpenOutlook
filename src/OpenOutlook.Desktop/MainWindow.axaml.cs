@@ -644,6 +644,7 @@ public sealed partial class MainWindow : Window
         Interlocked.Increment(ref _messageVersion);
         _searchCancellation?.Cancel();
         _onlineCancellation?.Cancel();
+        EndSearchResults();
         _folderRefreshCancellation?.Cancel();
         _activeMicrosoftAccount = null;
         _activeMicrosoftFolder = null;
@@ -1035,64 +1036,20 @@ public sealed partial class MainWindow : Window
         { StatusText.Text = "Could not preview the selected configuration file."; }
     }
 
-    private async void SearchClicked(object? sender, RoutedEventArgs e)
-    {
-        if (_activePath is null || _activeFolder is null ||
-            !_stores.TryGetValue(_activePath, out var store))
-        {
-            StatusText.Text = "Select an archive folder before searching.";
-            return;
-        }
-        var query = ArchiveSearchBox.Text?.Trim() ?? "";
-        if (query.Length == 0 || query.Length > 100)
-        {
-            StatusText.Text = "Enter 1–100 characters to search this folder's message headers.";
-            return;
-        }
-        _searchCancellation?.Cancel();
-        _searchCancellation = new CancellationTokenSource();
-        var ct = _searchCancellation.Token;
-        var path = _activePath;
-        var folder = _activeFolder;
-        _folderCache.TryGetValue((path, folder.Nid), out var source);
-        var version = Interlocked.Increment(ref _folderVersion);
-        Interlocked.Increment(ref _messageVersion);
-        _currentMessages = null;
-        MessageList.ItemsSource = null; RefreshItemCount();
-        ClearReader();
-        StatusText.Text = "Searching subject, sender and recipient in selected folder…";
-        try
-        {
-            await _readerGate.WaitAsync(ct);
-            IReadOnlyList<MailSummary> results;
-            try
-            {
-                if (!_stores.TryGetValue(path, out var current) || !ReferenceEquals(store, current)) return;
-                results = await Task.Run(() => (source ?? store.GetMessages(folder))
-                    .Where(m => m.Subject.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                                m.From.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                                m.To.Contains(query, StringComparison.OrdinalIgnoreCase))
-                    .Take(500).ToArray(), ct);
-            }
-            finally { _readerGate.Release(); }
-            if (ct.IsCancellationRequested || version != _folderVersion) return;
-            ShowMessages(results);
-            StatusText.Text = $"{results.Count} header matches (max 500) · {store.DisplayName} · read-only";
-        }
-        catch (OperationCanceledException) { /* New selection superseded this search. */ }
-        catch (Exception ex) { if (version == _folderVersion) StatusText.Text = $"Search failed: {ex.Message}"; }
-    }
-
     private void ShowMessages(IReadOnlyList<MailSummary> messages)
     {
         AttachmentLauncher.CleanUp();                            // copies opened in earlier runs
         InitMessageDrag();
         _currentMessages = messages;
-        if (_activePath is { } archivePath)
-            foreach (var message in messages)
-                if (OverrideFor(PstMessageKey(archivePath, message.Nid)) is { } forced)
-                    message.IsRead = forced;
-        var rows = messages.Select(message => new MessageListRow(message)).ToArray();
+        var hits = ReferenceEquals(messages, _searchSummaries) ? _searchHits : null;       // search results come from several data files
+        foreach (var message in messages)
+            if ((hits is not null && hits.TryGetValue(message, out var hit) ? hit.Path : _activePath) is { } archivePath &&
+                OverrideFor(PstMessageKey(archivePath, message.Nid)) is { } forced)
+                message.IsRead = forced;
+        var rows = messages.Select(message => hits is not null && hits.TryGetValue(message, out var hit)
+            ? new MessageListRow(message) { StorePath = hit.Path, FolderDisplay = hit.StoreName + " › " + hit.FolderName }
+            : new MessageListRow(message)).ToArray();
+        SearchFolderColumn.IsVisible = hits is not null;
         var view = new DataGridCollectionView(rows);
         if (GroupByDateCheck.IsChecked == true)
             view.GroupDescriptions.Add(new DataGridPathGroupDescription(nameof(MessageListRow.DateGroup)));
@@ -1185,6 +1142,7 @@ public sealed partial class MainWindow : Window
         _currentGraphAttachments = null;
         ExportAttachmentButton.IsEnabled = false;
         ExportMessageButton.IsEnabled = false;
+        if (MessageList.SelectedItem is MessageListRow { StorePath: not null } hitRow) EnterSearchRow(hitRow);
         if (MessageList.SelectedItem is GraphMessageListRow { Message: var gmailMessage } && _activeGmailFolder is { } gmailFolder)
         {
             await OpenGmailMessageAsync(gmailFolder, gmailMessage, version);

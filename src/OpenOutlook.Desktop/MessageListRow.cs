@@ -8,6 +8,9 @@ public sealed class MessageListRow(MailSummary summary) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
     public MailSummary Summary { get; } = summary;
+    /// <summary>Search results only: the data file the message is in, and where ("data file › folder") for the In Folder column.</summary>
+    public string? StorePath { get; init; }
+    public string FolderDisplay { get; init; } = "";
     public bool HasAttachment => Summary.HasAttachment;
     public string FromSort => Summary.From;
 

@@ -83,7 +83,7 @@ public sealed class PaneSplitterHeadlessTests
             Drag(window, Grip(window, grid, 1), -120);
             var shown = list.Columns.First(c => c.IsVisible);
             shown.IsVisible = false;
-            list.Columns.Last().DisplayIndex = 0;
+            list.Columns[7].DisplayIndex = 0;                    // the spam check column (the one after it, In Folder, is search-only)
             Dispatcher.UIThread.RunJobs();
             Assert.NotEqual(Panes() * 2 / 11, grid.ColumnDefinitions[0].ActualWidth, 1.0);
 

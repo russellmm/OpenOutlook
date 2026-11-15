@@ -32,8 +32,14 @@
           </Button>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="6" VerticalAlignment="Center">
-          <TextBox Name="ArchiveSearchBox" Classes="olSearch" Width="430" Watermark="Search" KeyDown="SearchBoxKeyDown" />
-          <Button Name="ArchiveSearchButton" Classes="olRail" Width="30" Height="30" Click="SearchClicked" ToolTip.Tip="Search the selected folder (Enter also works)">
+          <TextBox Name="ArchiveSearchBox" Classes="olSearch" Width="400" Watermark="Search" KeyDown="SearchBoxKeyDown"
+                   ToolTip.Tip="Words, &quot;exact phrase&quot;, -word, from:, to:, subject:, body:, has:attachment, is:unread" />
+          <ComboBox Name="SearchScopeBox" Width="170" Height="30" SelectedIndex="0" SelectionChanged="SearchScopeChanged" ToolTip.Tip="Where to search">
+            <ComboBoxItem Content="All data and mailboxes" />
+            <ComboBoxItem Content="Current mailbox" />
+            <ComboBoxItem Content="Current folder" />
+          </ComboBox>
+          <Button Name="ArchiveSearchButton" Classes="olRail" Width="30" Height="30" Click="SearchClicked" ToolTip.Tip="Search every data file and mailbox, Deleted Items included (Enter also works)">
             <Viewbox Width="22" Height="22"><ContentControl Template="{StaticResource OlIconSearch}" Width="32" Height="32" /></Viewbox>
           </Button>
         </StackPanel>
@@ -512,6 +518,8 @@
                       </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                   </DataGridTemplateColumn>
+                  <!-- Search results only (MainWindow.Search.cs): where the message is; not part of view-layout.json -->
+                  <DataGridTextColumn Header="In Folder" Width="200" IsVisible="False" Binding="{Binding FolderDisplay}" SortMemberPath="FolderDisplay" />
                 </DataGrid.Columns>
               </DataGrid>
             </DockPanel>

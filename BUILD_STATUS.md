@@ -47,7 +47,7 @@ Never commit private PSTs, logs, tokens, `openoutlook-oauth.json`, `.secrets/` o
 1. Calendar: several calendars at once, overlay, editing a whole recurring series, offline access, scheduling tools (`docs/calendar.md`). Tasks, signatures, spelling, rules, undo/redo and Automatic Replies are not built.
 2. People phases 2-4: contacts in the mailbox copy, address book across accounts, contact groups, Gmail contacts (`docs/people.md`).
 3. Offline sending (Outbox) and queued actions for the mailbox copies; folder/label rename and delete from a copy; Sent Items probably lags like Drafts did before 0.1.71.
-4. Cross-store full-text search (only selected-folder header search exists).
+4. Search across the server beyond what a mailbox copy keeps (the search box covers all data files and mailbox copies, Deleted Items included, since 2026-11-15).
 5. Gmail: draft editing, permanent delete (needs a broader scope), Junk Cleaner / spam check for Gmail; the Google consent screen is still in Testing mode with a shared project name.
 6. Native print dialog; full-fidelity EML of inline images and original headers.
 7. Dark mode (the app does not follow GNOME's dark preference), high-DPI and large-archive (4 GB) verification; dependency vulnerability review.

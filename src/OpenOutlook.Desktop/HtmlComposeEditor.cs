@@ -148,9 +148,12 @@ public static partial class HtmlEditorDocument
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'">
         <style>
         html,body{margin:0;min-height:100%;background:#fff}
+        body{position:relative}
         #editor{min-height:calc(100vh / var(--oo-zoom, 1));box-sizing:border-box;padding:10px 14px 40px;outline:none;font-family:Aptos,Calibri,Arial,Helvetica,sans-serif;font-size:12pt;color:#000;overflow-wrap:break-word}
         #editor img{max-width:100%}
         #editor table{border-collapse:collapse}
+        #oo-sel{position:absolute;display:none;box-sizing:border-box;border:1px solid #6b6b6b;pointer-events:none;z-index:10}
+        #oo-sel i{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;box-sizing:border-box;background:#fff;border:1px solid #555;pointer-events:auto}
         #editor.marks :is(div,p,li,h1,h2,h3,h4,h5,h6,blockquote,pre):not(:has(div,p,li,h1,h2,h3,blockquote,pre,table))::after{content:'\00b6';color:#5b84c9;font-family:Arial}
         </style></head><body><div id="editor" contenteditable="true" spellcheck="true"></div>
         <script>
@@ -204,7 +207,7 @@ public static partial class HtmlEditorDocument
           let h='<table style="border-collapse:collapse"><tbody>';for(let r=0;r<rows;r++){h+='<tr>';for(let c=0;c<cols;c++)h+='<td style="border:1px solid #000;padding:2px 6px;min-width:60px">&nbsp;</td>';h+='</tr>';}
           ex('insertHTML',h+'</tbody></table><div><br></div>');}
         function run(c,v){
-          if(c==='zoom'){const z=Number(v);if(z>=0.1&&z<=5)document.body.style.zoom=z;return;}
+          if(c==='zoom'){const z=Number(v);if(z>=0.1&&z<=5)document.body.style.zoom=z;place();return;}
           if(c==='marks'){ed.classList.toggle('marks');queueState();return;}
           restore();css(true);
           switch(c){
@@ -241,9 +244,40 @@ public static partial class HtmlEditorDocument
             al:q('justifyCenter')?'center':q('justifyRight')?'right':q('justifyFull')?'justify':'left',font:fam,size:curPt(),block:blockTag(),marks:ed.classList.contains('marks')};}
         function queueState(){clearTimeout(stateTimer);stateTimer=setTimeout(()=>post('state:'+JSON.stringify(state())),60);}
         function changed(){post('dirty');clearTimeout(htmlTimer);htmlTimer=setTimeout(()=>post('html:'+ed.innerHTML),250);queueState();}
-        ed.addEventListener('input',()=>{normalizeSizes();changed();});
-        ed.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('a'))e.preventDefault();});
-        window.oo={run:run,get:()=>ed.innerHTML,set:h=>{ed.innerHTML=h;saved=null;queueState();},state:state,
+        // Pictures: a click selects one and shows a frame with eight handles (outside the editor, so it never reaches the message);
+        // the corners keep the proportions, the sides stretch one way. The new size goes in as width/height attributes and style.
+        const HS={nw:'nwse',n:'ns',ne:'nesw',e:'ew',se:'nwse',s:'ns',sw:'nesw',w:'ew'};
+        const frame=document.createElement('div');frame.id='oo-sel';
+        for(const k in HS){const h=document.createElement('i');h.dataset.h=k;h.style.cursor=HS[k]+'-resize';
+          h.style.left=/w/.test(k)?'0':/e/.test(k)?'100%':'50%';h.style.top=/^n/.test(k)?'0':/^s/.test(k)?'100%':'50%';frame.appendChild(h);}
+        document.body.appendChild(frame);
+        let pic=null,drag=null,cur='';
+        function place(){if(!pic||!ed.contains(pic)){pic=null;frame.style.display='none';return;}
+          let x=0,y=0,n=pic;while(n&&n!==document.body){x+=n.offsetLeft;y+=n.offsetTop;n=n.offsetParent;}
+          Object.assign(frame.style,{display:'block',left:x+'px',top:y+'px',width:pic.offsetWidth+'px',height:pic.offsetHeight+'px'});}
+        function pick(img){pic=img;const r=document.createRange();r.selectNode(img);const s=getSelection();s.removeAllRanges();s.addRange(r);saved=r.cloneRange();place();}
+        function picSelected(){const s=getSelection();if(!pic||!s.rangeCount)return false;const r=s.getRangeAt(0);
+          return r.startContainer===r.endContainer&&r.endOffset-r.startOffset===1&&r.startContainer.childNodes[r.startOffset]===pic;}
+        document.addEventListener('selectionchange',()=>{if(pic&&!drag&&!picSelected()){pic=null;place();}});
+        function maxW(){const cs=getComputedStyle(ed);return Math.max(16,ed.clientWidth-(parseFloat(cs.paddingLeft)||0)-(parseFloat(cs.paddingRight)||0));}
+        frame.addEventListener('mousedown',e=>{const h=e.target.dataset&&e.target.dataset.h;if(!h||!pic||e.button!==0)return;e.preventDefault();e.stopPropagation();
+          const r=pic.getBoundingClientRect();drag={h:h,x:e.clientX,y:e.clientY,w:pic.offsetWidth,ht:pic.offsetHeight,k:r.width?pic.offsetWidth/r.width:1,max:maxW()};});
+        function cursor(c){if(c!==cur){cur=c;post('cursor:'+c);}}
+        document.addEventListener('mousemove',e=>{
+          if(!drag){const h=e.target.dataset&&e.target.dataset.h;cursor(h?HS[h]+'-resize':inEd(e.target)&&e.target.tagName!=='IMG'?'text':'default');return;}
+          if(!(e.buttons&1)){drag=null;changed();return;}
+          let dx=(e.clientX-drag.x)*drag.k,dy=(e.clientY-drag.y)*drag.k;if(/w/.test(drag.h))dx=-dx;if(/^n/.test(drag.h))dy=-dy;
+          let w=drag.w,h=drag.ht;const ratio=drag.ht/drag.w;
+          if(drag.h.length===2){w=drag.w+(Math.abs(dx/drag.w)>=Math.abs(dy/drag.ht)?dx:dy/ratio);w=Math.min(drag.max,Math.max(8,w));h=w*ratio;}
+          else if(/[ew]/.test(drag.h))w=Math.min(drag.max,Math.max(8,drag.w+dx));
+          else h=Math.max(8,drag.ht+dy);
+          w=Math.round(w);h=Math.round(Math.max(8,h));
+          pic.style.width=w+'px';pic.style.height=h+'px';pic.setAttribute('width',w);pic.setAttribute('height',h);place();});
+        document.addEventListener('mouseup',()=>{if(drag){drag=null;changed();}});
+        window.addEventListener('resize',place);
+        ed.addEventListener('input',()=>{normalizeSizes();place();changed();});
+        ed.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('a'))e.preventDefault();if(e.target.tagName==='IMG')pick(e.target);});
+        window.oo={run:run,get:()=>ed.innerHTML,set:h=>{ed.innerHTML=h;saved=null;pic=null;place();queueState();},state:state,
           find:t=>{restore();return window.find(String(t),false,false,true,false,false,false);},focus:()=>{restore();},
           selHtml:()=>{const s=getSelection();if(!s.rangeCount||s.isCollapsed||!inEd(s.anchorNode))return '';const d=document.createElement('div');d.appendChild(s.getRangeAt(0).cloneContents());return d.innerHTML;},
           selText:()=>{const s=getSelection();return s.rangeCount&&inEd(s.anchorNode)&&!s.isCollapsed?s.toString():(saved?saved.toString():'');}};

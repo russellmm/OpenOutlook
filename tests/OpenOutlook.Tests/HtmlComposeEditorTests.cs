@@ -196,6 +196,67 @@ public sealed class HtmlComposeEditorTests
         Assert.Contains("<i>pasted</i>", HtmlEditorDocument.ScriptString(await session.EvaluateAsync("window.oo.get()")));
     }
 
+    /// <summary>Owner 2026-11-19: a pasted picture is resized like Outlook's: click it for a frame with handles, drag a corner (keeps the
+    /// proportions) or a side (one way). The frame never reaches the message; the new size does, as attributes and style.</summary>
+    [Fact]
+    public async Task A_picture_is_resized_by_dragging_its_handles()
+    {
+        if (BrowserHtmlRenderer.FindBrowser() is not { } exe) return;
+        var messages = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        await using var session = await OffscreenEditorSession.StartAsync(exe, 600, 400, 1, messages.Enqueue, (_, _, _) => { });
+        const string png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+        await session.EvaluateAsync(HtmlEditorDocument.SetCall("<div>text</div><div><img src=\"" + png + "\" width=\"200\" height=\"100\"></div>"));
+        async Task<double[]> Rect(string js) => System.Text.Json.JsonSerializer.Deserialize<double[]>(
+            HtmlEditorDocument.ScriptString(await session.EvaluateAsync("(r=>JSON.stringify([r.left,r.top,r.right,r.bottom]))(" + js + ".getBoundingClientRect())"))!)!;
+        var img = await Rect("document.querySelector('#editor img')");
+        await session.MouseAsync("mousePressed", img[0] + 50, img[1] + 40, "left", 1, 1, 0);
+        await session.MouseAsync("mouseReleased", img[0] + 50, img[1] + 40, "left", 0, 1, 0);
+        var frame = await Rect("document.getElementById('oo-sel')");
+        Assert.Equal(img, frame);                                                                     // the frame sits on the picture
+
+        // bottom-right corner, dragged 100 px right and 50 px down: 300 x 150, still 2:1
+        await session.MouseAsync("mouseMoved", img[2], img[3], "none", 0, 0, 0);
+        await session.MouseAsync("mousePressed", img[2], img[3], "left", 1, 1, 0);
+        await session.MouseAsync("mouseMoved", img[2] + 60, img[3] + 20, "left", 1, 0, 0);
+        await session.MouseAsync("mouseMoved", img[2] + 100, img[3] + 50, "left", 1, 0, 0);
+        await session.MouseAsync("mouseReleased", img[2] + 100, img[3] + 50, "left", 0, 1, 0);
+        var html = HtmlEditorDocument.ScriptString(await session.EvaluateAsync("window.oo.get()"))!;
+        Assert.Contains("width=\"300\"", html);
+        Assert.Contains("height=\"150\"", html);
+        Assert.Contains("width: 300px", html);
+        Assert.DoesNotContain("oo-sel", html);
+        Assert.Contains("cursor:nwse-resize", messages);
+        Assert.Equal(await Rect("document.querySelector('#editor img')"), await Rect("document.getElementById('oo-sel')"));
+
+        // right side, dragged 40 px left: narrower only
+        img = await Rect("document.querySelector('#editor img')");
+        var midY = (img[1] + img[3]) / 2;
+        await session.MouseAsync("mousePressed", img[2], midY, "left", 1, 1, 0);
+        await session.MouseAsync("mouseMoved", img[2] - 40, midY, "left", 1, 0, 0);
+        await session.MouseAsync("mouseReleased", img[2] - 40, midY, "left", 0, 1, 0);
+        html = HtmlEditorDocument.ScriptString(await session.EvaluateAsync("window.oo.get()"))!;
+        Assert.Contains("width=\"260\"", html);
+        Assert.Contains("height=\"150\"", html);
+        for (var i = 0; i < 50 && !messages.Any(m => m.StartsWith("html:", StringComparison.Ordinal) && m.Contains("width=\"260\"")); i++) await Task.Delay(20);
+        Assert.Contains(messages, m => m.StartsWith("html:", StringComparison.Ordinal) && m.Contains("width=\"260\""));
+
+        // clicking in the text drops the frame
+        var text = await Rect("document.querySelector('#editor div')");
+        await session.MouseAsync("mousePressed", text[0] + 5, text[1] + 5, "left", 1, 1, 0);
+        await session.MouseAsync("mouseReleased", text[0] + 5, text[1] + 5, "left", 0, 1, 0);
+        await Task.Delay(50);
+        Assert.Equal("none", HtmlEditorDocument.ScriptString(await session.EvaluateAsync("document.getElementById('oo-sel').style.display")));
+    }
+
+    [Fact]
+    public void The_page_cursor_maps_to_the_body_cursor()
+    {
+        Assert.Equal(Avalonia.Input.StandardCursorType.TopLeftCorner, OffscreenHtmlEditor.PageCursor("nwse-resize"));
+        Assert.Equal(Avalonia.Input.StandardCursorType.SizeWestEast, OffscreenHtmlEditor.PageCursor("ew-resize"));
+        Assert.Equal(Avalonia.Input.StandardCursorType.Arrow, OffscreenHtmlEditor.PageCursor("default"));
+        Assert.Equal(Avalonia.Input.StandardCursorType.Ibeam, OffscreenHtmlEditor.PageCursor("text"));
+    }
+
     /// <summary>Width and height from a JPEG's start-of-frame marker.</summary>
     private static (int, int) JpegSize(byte[] jpeg)
     {

@@ -265,7 +265,19 @@ internal sealed class OffscreenHtmlEditor : IHtmlEditorHost
         if (body == "dirty") Edited?.Invoke();
         else if (body.StartsWith("html:", StringComparison.Ordinal)) { _lastHtml = body[5..]; HtmlChanged?.Invoke(_lastHtml); }
         else if (body.StartsWith("state:", StringComparison.Ordinal) && HtmlEditorDocument.ParseState(body[6..]) is { } state) StateChanged?.Invoke(state);
+        else if (body.StartsWith("cursor:", StringComparison.Ordinal)) _view.Cursor = new Cursor(PageCursor(body[7..]));
     }
+
+    /// <summary>The page's CSS cursor as the body shows it (the frame is a picture, so the page tells which cursor is under the mouse).</summary>
+    internal static StandardCursorType PageCursor(string css) => css switch
+    {
+        "nwse-resize" => StandardCursorType.TopLeftCorner,
+        "nesw-resize" => StandardCursorType.TopRightCorner,
+        "ns-resize" => StandardCursorType.SizeNorthSouth,
+        "ew-resize" => StandardCursorType.SizeWestEast,
+        "default" => StandardCursorType.Arrow,
+        _ => StandardCursorType.Ibeam,
+    };
 
     public void Load(string html)
     {
